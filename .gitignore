@@ -9,3 +9,8 @@ node_modules
 dist
 *.log
 .DS_Store
+
+e2e/.auth
+e2e/.server.log
+test-results
+playwright-report
