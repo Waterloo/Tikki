@@ -11,8 +11,8 @@
 
 No single key, User, or attacker can overload the instance or abuse sign-in.
 
-- First, confirm that the Cloudflare rate-limiting binding is available on the Workers Free plan, and record the result in DECISIONS.md. If it is not available, use a D1 counter for the sign-in and OTP limits only.
-- Limits: API key 60 requests/min (10 creates/min); User web 120/min; User through MCP 30 tool calls/min (10 writes/min); sign-in 10/min for each IP.
+- First, confirm that the Cloudflare rate-limiting binding is available on the Workers Free plan, and record the result in DECISIONS.md. If it is not available, use a D1 counter for the sign-in limit only.
+- Limits: API key 60 requests/min (10 creates/min); User web 120/min; User through MCP 30 tool calls/min (10 writes/min); sign-in 10/min for each IP. (The limit on email codes for each address already exists from issue 01.)
 - Admins can change the limits for each API key on the Application page.
 - A limited request gets 429 with `Retry-After`, in the standard error format.
 

@@ -27,7 +27,7 @@ Each item is one of:
 | 2.5 | Two Deploy Profiles: `paid` (email on) and `free` (email off). No other feature is different (Q34). | Decided |
 | 2.6 | The Free plan is a hard constraint. Each route must stay below 5 ms CPU, and CI checks this budget in staging (Q24). | Decided |
 | 2.7 | The owner's instance runs on Workers Paid (Q15). | Decided |
-| 2.8 | Week 1 is a walking skeleton: a Nuxt Worker with Better-Auth and MCP, one `create_ticket` tool, connected to claude.ai, deployed to staging with real migrations. This tests the two largest risks first (Q15). | Decided |
+| 2.8 | Week 1 is a walking skeleton: a Nuxt Worker with Better-Auth (email OTP sign-in) and MCP, one `create_ticket` tool, connected to claude.ai, deployed to staging with real migrations. This tests the two largest risks first (Q15). | Decided |
 
 Facts verified on 2026-10-18 that the design depends on:
 - Workers Free: 10 ms CPU for each request. Time spent waiting on D1, R2 or `fetch` does not count. Startup limit 1 s. Request body limit 100 MB.
@@ -44,8 +44,10 @@ Facts verified on 2026-10-18 that the design depends on:
 
 | # | Decision | Status |
 |---|---|---|
-| 3.1 | Internal Users sign in with OIDC SSO: Google, Microsoft, or a generic OIDC provider (Q32). | Decided |
-| 3.2 | Email OTP sign-in is on only when a mail transport is configured (Q32). | Decided |
+| 3.1 | The **first** sign-in method is a one-time email code (email OTP). OIDC SSO (Google, Microsoft, generic OIDC) comes after the walking skeleton (issue 25). (Q32, revised by the owner.) | Decided |
+| 3.2 | Email OTP needs a mail transport. When the transport is `none`, the instance must have at least one SSO provider. | Decided |
+| 3.2a | No magic links. Mail scanners (for example Outlook Safe Links) open single-use links before the user does. The Claude connector sign-in runs in a popup or the system browser, and a link opens elsewhere, so the OAuth flow does not complete. Phone mail apps open links in their own built-in browser. A code is typed into the same window. | Decided (owner chose the code over a magic link) |
+| 3.2b | A public release needs at least one sign-in method that works without email (SSO), so that the `free` profile can sign in. | Delegated |
 | 3.3 | No passwords. This removes reset flows, breach risk, and the CPU cost of hashing on Free (Q15, Q32). | Decided |
 | 3.4 | Roles: Admin, Agent, Requester (Q10). | Decided |
 | 3.5 | Agents see all tickets. Requesters see only their own tickets (Q10). | Decided |
@@ -147,7 +149,8 @@ Facts verified on 2026-10-18 that the design depends on:
 | 8.5 | Admin Webhook Endpoints get all Events. Internal data goes only to endpoints marked "internal" (Q11). | Decided |
 | 8.6 | An Application Webhook Endpoint gets only the Events for that Application's tickets, and only Public Comments (Q18). | Decided |
 | 8.7 | Retries continue for up to 24 hours. After 3 days of continuous failure, the endpoint is disabled and the Admins are notified. | Delegated |
-| 8.8 | The mail transport is one `send(message)` function. v1 has two implementations: Cloudflare Email (Paid) and `none`. Other providers come only when a real self-hoster asks for one (Q32). | Decided |
+| 8.8 | The mail transport is one `send(message)` function. v1 has two production implementations: Cloudflare Email (Paid) and `none`. Other providers come only when a real self-hoster asks for one (Q32). | Decided |
+| 8.8a | A third transport, `console`, writes each email (including sign-in codes) to the `wrangler dev` output, for local development only. The Worker refuses to start with `console` outside the development environment, because codes in Workers Logs would let log readers take over accounts. | Decided |
 | 8.9 | The owner's instance uses Cloudflare Email. This needs Workers Paid and Cloudflare DNS on the sending domain. | Decided |
 | 8.10 | Every notification also goes to the Inbox in the app, so the `free` profile still notifies Users. | Delegated |
 | 8.11 | Applications and Webhooks are separate admin pages. An Application page has the Application's API keys, its permissions, and its **own** Webhook Endpoint. The Webhooks page has only the Admin endpoints (for example Slack or n8n). Reason: the two answer different questions ("who can create tickets?" and "where do we send all events?"), and they have different data limits. | Delegated |

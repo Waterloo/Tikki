@@ -25,11 +25,14 @@ Vertical slices of [the PRD](../PRD.md). Each slice goes through every layer and
 | 16 | [Attachments](16-attachments.md) | AFK | 05 |
 | 17 | [AI attachments: inline text and Upload Links](17-ai-attachments.md) | AFK | 11, 16 |
 | 18 | [Inbox notifications and preferences](18-inbox-notifications.md) | AFK | 06 |
-| 19 | [Email: transport, email OTP sign-in, notification emails](19-email.md) | HITL | 18 |
+| 19 | [Notification emails](19-email.md) | AFK | 18 |
 | 20 | [People: invites, roles, deactivation, Teams](20-people-and-teams.md) | AFK | 05 |
 | 21 | [Settings, branding, and the first-run screen](21-settings-and-first-run.md) | AFK | 03 |
 | 22 | [Soft delete and Erasure](22-soft-delete-and-erasure.md) | AFK | 12, 14 |
 | 23 | [Rate limits](23-rate-limits.md) | AFK | 12 |
 | 24 | [Production baseline and self-hosting](24-production-baseline.md) | HITL | 01 |
+| 25 | [SSO sign-in: Google, Microsoft, generic OIDC](25-sso-sign-in.md) | HITL | 01 |
 
-**Can run in parallel:** after 01: 02, 03, 24. After 03: 04, 05, 21. After 05: 06, 07, 10, 12, 16, 20.
+Email OTP is the first sign-in method (issue 01). Issue 25 must be done before a public release, because the `free` profile has no email.
+
+**Can run in parallel:** after 01: 02, 03, 24, 25. After 03: 04, 05, 21. After 05: 06, 07, 10, 12, 16, 20.

@@ -36,8 +36,8 @@ A self-hosted, open-source ticketing system that runs as one Cloudflare Worker, 
 
 ### Requester (internal User) in the web app
 
-1. As a Requester, I want to sign in with my work Google or Microsoft account, so that I need no new password.
-2. As a Requester without SSO, I want to sign in with a one-time email code, so that I can still use the system when email is configured.
+1. As a Requester, I want to sign in with a one-time code sent to my work email, so that I need no password.
+2. As a Requester, I want to sign in with my work Google or Microsoft account when the Admin turns it on, so that I can skip the email step.
 3. As a Requester, I want to choose a Ticket Type from cards with an icon and a one-sentence description, so that I know which one fits my problem.
 4. As a Requester, I want the form to show only the Fields of the type I chose, so that I give exactly the information the team needs.
 5. As a Requester, I want each Field to show help text, so that I know what to enter.
@@ -204,7 +204,8 @@ A self-hosted, open-source ticketing system that runs as one Cloudflare Worker, 
 Each module answers one question. They are listed with their interface in terms of behavior.
 
 1. **Identity and access**: "who is this Principal, and what may it do?"
-   - Better-Auth 1.7 with Google, Microsoft, and generic OIDC; email OTP only when a mail transport is configured; no passwords.
+   - Better-Auth 1.7. Email OTP is the first sign-in method (no magic links: mail scanners use single-use links, and links break the Claude OAuth popup flow). Google, Microsoft, and generic OIDC follow. No passwords. An instance with the `none` mail transport needs at least one SSO provider.
+   - Mail transports: Cloudflare Email, `none`, and `console` (development only; the Worker refuses to start with it in any other environment).
    - `@better-auth/mcp` and `@better-auth/cimd` make Better-Auth the only OAuth 2.1 authorization server for the MCP endpoint. DCR stays on as a fallback, and the legacy (stateless) protocol mode stays on, because Claude does not list MCP spec 2026-07-28. The protected-resource `resource` must equal the MCP URL exactly.
    - Three kinds of Principal: User, User via AI (same rights as the User, marked in the audit log), and Application (API key).
    - One policy function answers "may Principal P do action A on ticket T?" for every channel. The REST API, MCP tools, and UI never check permissions on their own.
@@ -238,7 +239,7 @@ Each module answers one question. They are listed with their interface in terms 
    - Delivered payloads are deleted after 30 days.
 8. **Notifications**: "which User gets which notice, and where?"
    - Fan-out follows the notification table in DECISIONS.md section 8. Every notice goes to the Inbox. Email follows each User's preferences, with "assigned to me" always on.
-9. **Mail transport**: one `send(message)` function, with two implementations: Cloudflare Email (Paid) and `none`.
+9. **Mail transport**: one `send(message)` function, with Cloudflare Email (Paid) and `none` for deployed instances, and `console` for local development.
 10. **Erasure**: "remove one Contact's personal data."
     - Name and email become `[erased]`. The free text, Field values, and attachments of the Contact's tickets are removed, and their Activity entries lose their values. The facts stay.
 11. **REST API**: `/api/v1`, OpenAPI generated from the same definitions as validation, `Idempotency-Key` on create (kept 24 hours), cursor pagination, one error format with `code`, `message`, and `details`.
