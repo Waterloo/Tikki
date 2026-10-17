@@ -34,6 +34,13 @@ export default defineConfig(async () => {
         },
         {
           test: {
+            name: 'unit',
+            include: ['test/unit/**/*.test.ts'],
+            environment: 'node',
+          },
+        },
+        {
+          test: {
             name: 'startup',
             include: ['test/startup/**/*.test.ts'],
             environment: 'node',

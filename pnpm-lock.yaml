@@ -57,6 +57,9 @@ importers:
       '@cloudflare/workers-types':
         specifier: ^5.20261016.1
         version: 5.20261016.1
+      '@iconify-json/lucide':
+        specifier: ^1.2.145
+        version: 1.2.145
       '@modelcontextprotocol/client':
         specifier: 2.3.1
         version: 2.3.1
@@ -1126,6 +1129,9 @@ packages:
     resolution: {integrity: sha512-043dyEKD9TDSfz080YH2vobubgg+NIo/9Fw4RAl7sEMpD8Am1DNrrSTl/GpMBjyGHoD/FbJY2QLawY+HSQsEIA==}
     peerDependencies:
       vue: '>=3.3.0'
+
+  '@iconify-json/lucide@1.2.145':
+    resolution: {integrity: sha512-eYBZipY6g4bbJNyKBAEq1wBy3mJ2jKtI4O2K30ArO2lMpVDOEuQfu5aDZhiimj1+Q/mIrn3ZxnDeX1BbILxkwQ==}
 
   '@iconify/collections@1.0.752':
     resolution: {integrity: sha512-7VthYrhNzcAxNlBejT8RB1Jwq3z+6+6hE8t/VsAx1GjCCCQEKtmbywmGBamKMKKLY7vSt72c5JqhVpW1x0uUZQ==}
@@ -6224,6 +6230,10 @@ snapshots:
       '@floating-ui/dom': 1.8.0
       '@floating-ui/utils': 0.2.12
       vue: 3.5.44(typescript@5.9.3)
+
+  '@iconify-json/lucide@1.2.145':
+    dependencies:
+      '@iconify/types': 2.0.0
 
   '@iconify/collections@1.0.752':
     dependencies:

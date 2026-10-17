@@ -106,3 +106,11 @@ export async function getMcpToken(cookie: string) {
 }
 
 export { worker }
+
+/** The ID of a seeded Ticket Type, by its prefix. */
+export async function typeId(cookie: string, prefix: string): Promise<number> {
+  const { data } = await (await call('/api/v1/ticket-types', { headers: { cookie } })).json() as { data: { id: number, prefix: string }[] }
+  const found = data.find(t => t.prefix === prefix)
+  if (!found) throw new Error(`no Ticket Type with prefix ${prefix}`)
+  return found.id
+}

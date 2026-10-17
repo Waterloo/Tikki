@@ -22,12 +22,26 @@ A Requester creates a ticket in the web app by choosing a Ticket Type and fillin
 
 ## Acceptance criteria
 
-- [ ] Table tests for the Field validator cover every data type, required, and unknown keys.
-- [ ] REST test: create with valid values returns the Ticket Reference, and the values read back correctly.
-- [ ] REST test: create with invalid values returns 422 with one entry for each Field problem (key, label, reason, options).
-- [ ] REST test: two creates in different types get consecutive numbers with different prefixes.
-- [ ] The seed creates the three example types and the Support Team on a fresh database only.
+- [x] Table tests for the Field validator cover every data type, required, and unknown keys.
+  Evidence: `test/unit/fields.test.ts` (54 cases: valid and invalid values for all ten types, required for each type, a required checkbox, archived Fields and options, unknown keys, all problems at once).
+- [x] REST test: create with valid values returns the Ticket Reference, and the values read back correctly.
+  Evidence: `test/worker/tickets.test.ts`, "creates a ticket with Field values, returns the Ticket Reference, and reads the values back" (also checks Priority, Schema Version 1, and that values are trimmed and empty values left out).
+- [x] REST test: create with invalid values returns 422 with one entry for each Field problem (key, label, reason, options).
+  Evidence: `test/worker/tickets.test.ts`, "returns 422 with one entry for each Field problem" and "reports core attribute problems and Field problems together".
+- [x] REST test: two creates in different types get consecutive numbers with different prefixes.
+  Evidence: `test/worker/tickets.test.ts`, "gives consecutive numbers from one counter, with the prefix of each type" (`BUG-n`, then `DATA-n+1`).
+- [x] The seed creates the three example types and the Support Team on a fresh database only.
+  Evidence: the seed is in `migrations/0001_ticket_types_and_fields.sql`, which runs once for each database. `test/worker/ticket-types.test.ts`: "lists the three seeded types, owned by the Support Team" and "seeds once: applying the migrations again adds no type, Team, or Schema Version". On a database that already has issue 01 tickets, the migration pins them to Bug version 1 with Priority `normal` (checked with sqlite3 and foreign keys on).
 - [ ] Playwright flow: sign in, choose Bug, fill the Fields, submit, see the new reference.
+  Not done: Playwright is not set up in this repository yet. The same flow was done by hand in the browser against `wrangler dev` on 2026-10-18: sign in with a code, choose Bug, submit empty (Title and "Page or feature" show "Required."), fill the Fields, choose High, submit, and the toast and list show `BUG-1`. The API returned `fields: { page_or_feature: "Reports", frequency: "Every time" }`, `priority: "high"`, `schema_version: 1`.
+
+## Notes for later issues
+
+- Validation error entries are `{ key, label, reason, options? }`. Core attributes use their body name as `key` (`title`, `description`, `priority`, `ticket_type_id`, `fields`), so issue 07 must refuse these as Field Keys.
+- Until issue 04, the MCP `create_ticket` tool creates a General request (`GEN`), because Bug has a required Field that the tool cannot fill yet.
+- The validator checks the format of `user` and `file` values only. Issue 16 (Attachments) and issue 20 (People) must check that the referenced file or User exists.
+- `ticket_type.team_id` is nullable in the database, because SQLite cannot add a NOT NULL column with a foreign key to a table that other tables reference. The code refuses a type without a Team with a clear error.
+- Type icons are bundled into the client (`nuxt.config.ts`, `icon.clientBundle.icons`). An icon that is not in this list does not show. Issue 07 must choose from a fixed icon set and add it there.
 
 ## Blocked by
 

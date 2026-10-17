@@ -14,6 +14,7 @@ const EVERYONE = ['admin', 'agent', 'requester'] as const
 /** Every sidebar item, in order. List a screen here only when its page exists. */
 const ITEMS: readonly NavItem[] = [
   { label: 'My tickets', icon: 'i-lucide-ticket', to: '/', roles: EVERYONE },
+  { label: 'New ticket', icon: 'i-lucide-plus', to: '/tickets/new', roles: EVERYONE },
 ]
 
 export function navigationFor(role: Role | undefined): NavigationMenuItem[] {

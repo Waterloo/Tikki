@@ -6,6 +6,13 @@ export default defineNuxtConfig({
   modules: ['@nuxt/ui'],
   css: ['~/assets/css/main.css'],
   devtools: { enabled: false },
+  // Icons are bundled into the client, so the browser never calls the Iconify API and the Worker serves no icon route.
+  icon: {
+    provider: 'none',
+    serverBundle: false,
+    // Ticket Type icons come from the database, so the scan cannot find them. These are the seeded ones.
+    clientBundle: { scan: true, icons: ['lucide:bug', 'lucide:database', 'lucide:life-buoy', 'lucide:ticket'] },
+  },
   nitro: {
     preset: 'cloudflare-module',
     cloudflare: {
