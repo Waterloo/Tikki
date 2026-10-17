@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { auditLog, comment, COMMENT_VISIBILITIES, status, ticket, user, type AuditAction, type CommentVisibility } from '../db/schema'
 import { auditEntry } from './audit'
 import type { Db } from './auth'
+import { noticeComment } from './notifications'
 import type { FieldDef } from './fields'
 import { assertAllowed, authorize, canBeAssignee, canSeeInternal, NOT_FOUND, PolicyRefusal, type TicketAction } from './policy'
 import { applyChange, loadFor, pinnedFields, policyFacts, TicketValidationError, type Channel, type ChangeEntry, type DetailRow, type PersonView, type Principal } from './tickets'
@@ -60,6 +61,7 @@ export async function createComment(db: Db, principal: Principal, number: number
     db.insert(comment).values({ id, ticketNumber: number, authorId: principal.userId, channel: principal.channel, visibility, body: parsed.data.body, createdAt: now }),
     auditEntry(db, principal, { ticketNumber: number, action: 'comment_added', commentId: id }),
     db.update(ticket).set({ updatedAt: now }).where(eq(ticket.number, number)),
+    noticeComment(db, principal.userId, number, id, visibility),
   ])
   return (await getComment(db, principal, number, id))!
 }

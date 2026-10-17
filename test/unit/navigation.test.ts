@@ -8,4 +8,8 @@ describe('navigationFor', () => {
     expect(navigationFor('requester').map(i => i.to)).not.toContain('/settings')
     expect(navigationFor(undefined)).toEqual([])
   })
+
+  it('lists the Inbox for every role', () => {
+    for (const role of ['admin', 'agent', 'requester'] as const) expect(navigationFor(role).map(i => i.to)).toContain('/inbox')
+  })
 })

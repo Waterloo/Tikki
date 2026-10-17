@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { comment, PRIORITIES, schemaVersion, status, team, ticket, ticketType, user, type AuditAction, type Priority } from '../db/schema'
 import { auditEntry } from './audit'
 import type { Db, Role } from './auth'
+import { noticeTicketCreated, noticesForChange } from './notifications'
 import { validateFields, type FieldDef, type FieldError, type FieldType, type FieldValues } from './fields'
 import { allowedActions, assertAllowed, canBeAssignee, canSeeInternal, NOT_FOUND, PolicyRefusal, readableTickets, type PolicyTicket, type TicketAction } from './policy'
 import type { StatusView } from './statuses'
@@ -276,6 +277,7 @@ export async function createTicket(db: Db, principal: Principal, input: unknown)
     updatedAt: now,
   }).returning({ number: ticket.number }),
   auditEntry(db, principal, { ticketNumber: sql`last_insert_rowid()`, action: 'ticket_created' }),
+  noticeTicketCreated(db, principal.userId),
   ])
   return getTicket(db, principal, created[0]!.number)
 }
@@ -519,5 +521,6 @@ export async function applyChange(db: Db, principal: Principal, number: number, 
       revertsId: e.revertsId,
       values: { before: e.before, after: e.after },
     })),
+    ...noticesForChange(db, principal.userId, number, entries),
   ])
 }

@@ -135,3 +135,36 @@ export const auditLog = sqliteTable('audit_log', {
   after: text('after'),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(() => new Date()),
 }, t => [index('audit_log_ticket_idx').on(t.ticketNumber, t.id)])
+
+// Issue 18: Inbox notifications and preferences
+export const NOTIFICATION_KINDS = ['ticket_created', 'assigned', 'public_comment', 'internal_comment', 'status_changed', 'webhook_failing', 'webhook_disabled'] as const
+export type NotificationKind = typeof NOTIFICATION_KINDS[number]
+
+/** One row for each notice for one User. The Inbox always gets every notice; preferences only control email (8.15). */
+export const notification = sqliteTable('notification', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  userId: text('user_id').notNull().references(() => user.id),
+  kind: text('kind', { enum: NOTIFICATION_KINDS }).notNull(),
+  ticketNumber: integer('ticket_number').references(() => ticket.number),
+  /** The comment, for the two comment kinds. The text is read from `comment`, so Erasure clears it too. */
+  commentId: text('comment_id').references(() => comment.id),
+  actorId: text('actor_id').references(() => user.id),
+  /** JSON. `{ status }` for status_changed; `{ head, body, href }` for the webhook kinds, which have no ticket. */
+  data: text('data', { mode: 'json' }).$type<Record<string, string>>(),
+  readAt: integer('read_at', { mode: 'timestamp_ms' }),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(() => new Date()),
+}, t => [
+  // The unread count and the Unread filter.
+  index('notification_user_read_idx').on(t.userId, t.readAt),
+  index('notification_user_id_idx').on(t.userId, t.id),
+])
+
+export const PREFERENCE_KEYS = ['team_ticket', 'assigned', 'public_comment', 'internal_comment', 'status_changed', 'webhook'] as const
+export type PreferenceKey = typeof PREFERENCE_KEYS[number]
+
+/** A row only exists after the User changed a default (see server/utils/notifications.ts). */
+export const notificationPreference = sqliteTable('notification_preference', {
+  userId: text('user_id').notNull().references(() => user.id),
+  key: text('key', { enum: PREFERENCE_KEYS }).notNull(),
+  enabled: integer('enabled', { mode: 'boolean' }).notNull(),
+}, t => [uniqueIndex('notification_preference_user_key_unique').on(t.userId, t.key)])
