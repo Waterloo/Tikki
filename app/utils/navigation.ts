@@ -14,6 +14,7 @@ export const STAFF = ['admin', 'agent'] as const
 
 /** Every sidebar item, in order. List a screen here only when its page exists. */
 const ITEMS: readonly NavItem[] = [
+  { label: 'Inbox', icon: 'i-lucide-inbox', to: '/inbox', roles: EVERYONE },
   { label: 'My tickets', icon: 'i-lucide-ticket', to: '/', roles: EVERYONE },
   { label: 'Assigned to me', icon: 'i-lucide-user-check', to: '/tickets?filter=mine', roles: STAFF },
   { label: 'All tickets', icon: 'i-lucide-layers', to: '/tickets', roles: STAFF },

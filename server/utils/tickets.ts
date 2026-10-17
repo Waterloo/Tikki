@@ -7,6 +7,7 @@ import { auditEntry } from './audit'
 import type { Db, Role } from './auth'
 import { checkFileRefs, claimUploads } from './attachments'
 import { activeOptions, validateFields, type FieldDef, type FieldError, type FieldType, type FieldValues } from './fields'
+import { noticeTicketCreated, noticesForChange } from './notifications'
 import { allowedActions, assertAllowed, canBeAssignee, canSeeInternal, NOT_FOUND, PolicyRefusal, readableTickets, type PolicyTicket, type TicketAction } from './policy'
 import type { StatusView } from './statuses'
 import { loadTicketType } from './ticket-types'
@@ -305,6 +306,7 @@ export async function createTicket(db: Db, principal: Principal, input: unknown)
   // An update keeps last_insert_rowid(), so the uploads join the new ticket; the audit insert must come last.
   ...(fileIds.length ? [claimUploads(db, principal, fileIds)] : []),
   auditEntry(db, principal, { ticketNumber: sql`last_insert_rowid()`, action: 'ticket_created' }),
+  noticeTicketCreated(db, principal.userId),
   ])
   return getTicket(db, principal, created[0]!.number)
 }
@@ -553,5 +555,6 @@ export async function applyChange(db: Db, principal: Principal, number: number, 
       values: { before: e.before, after: e.after },
     })),
     ...extra,
+    ...noticesForChange(db, principal.userId, number, entries),
   ])
 }

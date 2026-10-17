@@ -20,4 +20,8 @@ describe('navigationFor', () => {
     expect(navigationFor('agent').map(i => i.to)).not.toContain('/people')
     expect(navigationFor('requester').map(i => i.to)).not.toContain('/people')
   })
+
+  it('lists the Inbox for every role', () => {
+    for (const role of ['admin', 'agent', 'requester'] as const) expect(navigationFor(role).map(i => i.to)).toContain('/inbox')
+  })
 })
