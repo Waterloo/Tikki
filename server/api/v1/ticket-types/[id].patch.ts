@@ -8,7 +8,7 @@ export default defineEventHandler(async (event) => {
   const id = routeId(event)
   if (id === null) return apiError(404, 'NOT_FOUND', 'No Ticket Type has this ID.')
   try {
-    return await updateTicketType(db, id, await readBody(event))
+    return await updateTicketType(db, principal, id, await readBody(event))
   } catch (error) {
     return typeAdminError(error)
   }

@@ -6,7 +6,7 @@ export default defineEventHandler(async (event) => {
   const principal = await adminPrincipal(event)
   if (principal instanceof Response) return principal
   try {
-    const created = await createTicketType(db, await readBody(event))
+    const created = await createTicketType(db, principal, await readBody(event))
     setResponseStatus(event, 201)
     return created
   } catch (error) {

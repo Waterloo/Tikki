@@ -60,6 +60,7 @@ Agents and Requesters talk on the ticket, and every change is visible and revers
 
 ## Notes for later issues
 
+- **Entries without a ticket:** `audit_log.ticket_number` is nullable. A row has either a ticket, or `subject_type` (`ticket_type`, `user`, `invite`, `team`) and `subject_id`; a CHECK enforces exactly one. Use `adminAuditEntry(db, principal, { subject, action, values })` for those. `listActivity` filters by ticket number, so it shows only ticket entries.
 - **Write the log with `auditEntry`** (`server/utils/audit.ts`). It returns an insert. Put it in the same `db.batch([...])` as the change:
   `await db.batch([db.update(...), auditEntry(db, principal, { ticketNumber, action, fieldKey?, values: { before, after } })])`.
   To add an action, add it to `AUDIT_ACTIONS` in the schema (a TypeScript enum, no migration needed), and to `REVERSIBLE` in `server/utils/activity.ts` if it can be reverted. Put values only in `values`, never in other columns, so Erasure can clear them. Issues 07 (type and Field edits), 12 (Application as Principal: add an `application_id` column, `principal_id` is a User today), 16 and 20 should call it.

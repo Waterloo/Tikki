@@ -1,6 +1,7 @@
 import { and, asc, count, eq, inArray, max, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import { invite, oauthAccessToken, oauthRefreshToken, session, team, teamMember, ticketType, user } from '../db/schema'
+import { adminAuditEntry } from './audit'
 import type { Db, Role } from './auth'
 import { emailDomainAllowed, type Config } from './config'
 import type { MailTransport } from './mail'
@@ -112,19 +113,25 @@ const LAST_ADMIN = new PeopleError(409, 'LAST_ADMIN', 'There must be at least on
  */
 export async function changeRole(db: Db, principal: Principal, targetId: string, role: Role): Promise<void> {
   assertCanManagePeople(principal)
-  await findUser(db, targetId)
-  const [updated] = await db.batch([
-    db.update(user).set({ role }).where(and(
-      eq(user.id, targetId),
-      sql`(${role} = 'admin' OR ${user.role} != 'admin' OR ${user.deactivatedAt} IS NOT NULL
-        OR (SELECT count(*) FROM user WHERE role = 'admin' AND deactivated_at IS NULL) > 1)`,
-    )),
-    db.delete(teamMember).where(and(
-      eq(teamMember.userId, targetId),
-      sql`(SELECT role FROM user WHERE id = ${targetId}) NOT IN ('admin', 'agent')`,
-    )),
-  ])
-  if (updated.meta.changes === 0) throw LAST_ADMIN
+  const target = await findUser(db, targetId)
+  if (target.role === role) return
+  // Not a column reference, so the audit entry can use the same condition (see `onlyIf`).
+  const mayChange = sql`(${role} = 'admin' OR (SELECT role FROM user WHERE id = ${targetId}) != 'admin' OR (SELECT deactivated_at FROM user WHERE id = ${targetId}) IS NOT NULL
+        OR (SELECT count(*) FROM user WHERE role = 'admin' AND deactivated_at IS NULL) > 1)`
+  try {
+    await db.batch([
+      adminAuditEntry(db, principal, { subject: { type: 'user', id: targetId }, action: 'role_changed', values: { before: { role: target.role }, after: { role } }, onlyIf: mayChange }),
+      db.update(user).set({ role }).where(and(eq(user.id, targetId), mayChange)),
+      db.delete(teamMember).where(and(
+        eq(teamMember.userId, targetId),
+        sql`(SELECT role FROM user WHERE id = ${targetId}) NOT IN ('admin', 'agent')`,
+      )),
+    ])
+  } catch (error) {
+    // The entry is refused when the guard is false, which rolls the batch back.
+    if (String((error as Error).cause ?? error).includes('audit_log.principal_id')) throw LAST_ADMIN
+    throw error
+  }
 }
 
 /**
@@ -134,8 +141,10 @@ export async function changeRole(db: Db, principal: Principal, targetId: string,
  */
 export async function deactivateUser(db: Db, principal: Principal, targetId: string): Promise<void> {
   assertCanDeactivate(principal, targetId)
-  await findUser(db, targetId)
+  const target = await findUser(db, targetId)
+  if (target.deactivatedAt) return
   await db.batch([
+    adminAuditEntry(db, principal, { subject: { type: 'user', id: targetId }, action: 'user_deactivated' }),
     db.update(user).set({ deactivatedAt: new Date() }).where(and(eq(user.id, targetId), sql`${user.deactivatedAt} IS NULL`)),
     db.delete(session).where(eq(session.userId, targetId)),
     db.delete(oauthAccessToken).where(eq(oauthAccessToken.userId, targetId)),
@@ -147,8 +156,12 @@ export async function deactivateUser(db: Db, principal: Principal, targetId: str
 /** The User signs in again and connects Claude again. Old tokens and Team memberships do not come back. */
 export async function reactivateUser(db: Db, principal: Principal, targetId: string): Promise<void> {
   assertCanManagePeople(principal)
-  await findUser(db, targetId)
-  await db.update(user).set({ deactivatedAt: null }).where(eq(user.id, targetId))
+  const target = await findUser(db, targetId)
+  if (!target.deactivatedAt) return
+  await db.batch([
+    adminAuditEntry(db, principal, { subject: { type: 'user', id: targetId }, action: 'user_reactivated' }),
+    db.update(user).set({ deactivatedAt: null }).where(eq(user.id, targetId)),
+  ])
 }
 
 // ---------- Invites ----------
@@ -205,12 +218,19 @@ export async function createInvites(db: Db, deps: InviteMail, principal: Princip
   }
   if (problems.length) throw new PeopleError(422, 'VALIDATION_FAILED', 'The request has invalid values.', problems)
 
-  await db.insert(invite).values(emails.map(email => ({
-    email,
-    invitedBy: principal.userId,
-    createdAt: new Date(now),
-    expiresAt: new Date(now + INVITE_TTL_MS),
-  })))
+  await db.batch([
+    db.insert(invite).values(emails.map(email => ({
+      email,
+      invitedBy: principal.userId,
+      createdAt: new Date(now),
+      expiresAt: new Date(now + INVITE_TTL_MS),
+    }))),
+    ...emails.map(email => adminAuditEntry(db, principal, {
+      subject: { type: 'invite', id: sql`(select id from invite where email = ${email})` },
+      action: 'user_invited',
+      values: { after: { email } },
+    })),
+  ])
   // The rows are saved first: a failed email can then be sent again with Resend.
   for (const email of emails) await sendInviteMail(deps, db, principal, email)
   return emails
@@ -226,14 +246,21 @@ async function pendingInvite(db: Db, id: number) {
 export async function resendInvite(db: Db, deps: InviteMail, principal: Principal, id: number, now = Date.now()): Promise<void> {
   assertCanManagePeople(principal)
   const row = await pendingInvite(db, id)
-  await db.update(invite).set({ expiresAt: new Date(now + INVITE_TTL_MS) }).where(eq(invite.id, id))
+  const expiresAt = new Date(now + INVITE_TTL_MS)
+  await db.batch([
+    db.update(invite).set({ expiresAt }).where(eq(invite.id, id)),
+    adminAuditEntry(db, principal, { subject: { type: 'invite', id }, action: 'invite_resent', values: { before: { expires_at: row.expiresAt.toISOString() }, after: { expires_at: expiresAt.toISOString() } } }),
+  ])
   await sendInviteMail(deps, db, principal, row.email)
 }
 
 export async function revokeInvite(db: Db, principal: Principal, id: number): Promise<void> {
   assertCanManagePeople(principal)
-  await pendingInvite(db, id)
-  await db.delete(invite).where(eq(invite.id, id))
+  const row = await pendingInvite(db, id)
+  await db.batch([
+    db.delete(invite).where(eq(invite.id, id)),
+    adminAuditEntry(db, principal, { subject: { type: 'invite', id }, action: 'invite_revoked', values: { before: { email: row.email } } }),
+  ])
 }
 
 // ---------- Teams ----------
@@ -279,7 +306,10 @@ const nameTaken = (name: string) => new PeopleError(409, 'TEAM_NAME_TAKEN', `A T
 export async function createTeam(db: Db, principal: Principal, name: string): Promise<TeamView> {
   assertCanManagePeople(principal)
   try {
-    const [row] = await db.insert(team).values({ name }).returning({ id: team.id })
+    const [[row]] = await db.batch([
+      db.insert(team).values({ name }).returning({ id: team.id }),
+      adminAuditEntry(db, principal, { subject: { type: 'team', id: sql`last_insert_rowid()` }, action: 'team_created', values: { after: { name } } }),
+    ])
     return await getTeam(db, row!.id)
   } catch (error) {
     if (isUniqueViolation(error)) throw nameTaken(name)
@@ -289,9 +319,14 @@ export async function createTeam(db: Db, principal: Principal, name: string): Pr
 
 export async function renameTeam(db: Db, principal: Principal, id: number, name: string): Promise<TeamView> {
   assertCanManagePeople(principal)
+  const [found] = await db.select({ name: team.name }).from(team).where(eq(team.id, id))
+  if (!found) throw notFound('Team')
+  if (found.name === name) return getTeam(db, id)
   try {
-    const updated = await db.update(team).set({ name }).where(eq(team.id, id)).returning({ id: team.id })
-    if (updated.length === 0) throw notFound('Team')
+    await db.batch([
+      db.update(team).set({ name }).where(eq(team.id, id)),
+      adminAuditEntry(db, principal, { subject: { type: 'team', id }, action: 'team_renamed', values: { before: { name: found.name }, after: { name } } }),
+    ])
   } catch (error) {
     if (isUniqueViolation(error)) throw nameTaken(name)
     throw error
@@ -308,22 +343,34 @@ export async function deleteTeam(db: Db, principal: Principal, id: number): Prom
   if (found.owned > 0) {
     throw new PeopleError(409, 'TEAM_OWNS_TYPES', `${found.name} owns ${found.owned} Ticket ${found.owned === 1 ? 'Type' : 'Types'}. Move ${found.owned === 1 ? 'it' : 'them'} to another Team first.`)
   }
-  await db.batch([db.delete(teamMember).where(eq(teamMember.teamId, id)), db.delete(team).where(eq(team.id, id))])
+  await db.batch([
+    db.delete(teamMember).where(eq(teamMember.teamId, id)),
+    db.delete(team).where(eq(team.id, id)),
+    adminAuditEntry(db, principal, { subject: { type: 'team', id }, action: 'team_removed', values: { before: { name: found.name } } }),
+  ])
 }
 
 export async function addTeamMember(db: Db, principal: Principal, teamId: number, userId: string): Promise<TeamView> {
   assertCanManagePeople(principal)
-  await getTeam(db, teamId)
+  const current = await getTeam(db, teamId)
   const target = await findUser(db, userId)
   if (target.deactivatedAt) throw new PeopleError(409, 'USER_DEACTIVATED', 'A deactivated User cannot join a Team.')
   if (!canJoinTeam(target.role)) throw new PeopleError(409, 'NOT_AN_AGENT', 'Only Agents and Admins can be in a Team. Make this User an Agent first.')
-  await db.insert(teamMember).values({ teamId, userId }).onConflictDoNothing()
+  if (current.members.some(m => m.id === userId)) return current
+  await db.batch([
+    db.insert(teamMember).values({ teamId, userId }),
+    adminAuditEntry(db, principal, { subject: { type: 'team', id: teamId }, action: 'team_member_added', values: { after: { user_id: userId } } }),
+  ])
   return getTeam(db, teamId)
 }
 
 export async function removeTeamMember(db: Db, principal: Principal, teamId: number, userId: string): Promise<TeamView> {
   assertCanManagePeople(principal)
-  await getTeam(db, teamId)
-  await db.delete(teamMember).where(and(eq(teamMember.teamId, teamId), eq(teamMember.userId, userId)))
+  const current = await getTeam(db, teamId)
+  if (!current.members.some(m => m.id === userId)) return current
+  await db.batch([
+    db.delete(teamMember).where(and(eq(teamMember.teamId, teamId), eq(teamMember.userId, userId))),
+    adminAuditEntry(db, principal, { subject: { type: 'team', id: teamId }, action: 'team_member_removed', values: { before: { user_id: userId } } }),
+  ])
   return getTeam(db, teamId)
 }

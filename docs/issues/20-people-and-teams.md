@@ -26,8 +26,8 @@ Admins manage who can sign in and who owns what. The screen follows "Teams and u
   Evidence: `test/worker/people.test.ts`, "refuses to remove a Team that owns a Ticket Type, and removes one that owns none" (409 `TEAM_OWNS_TYPES`, "Support owns 4 Ticket Types. Move them to another Team first.").
 - [x] REST test: only Admins can change roles.
   Evidence: `test/worker/people.test.ts`, "lets only Admins change roles, and every other People route is Admin only" (Agent and Requester get 403, no session gets 401, the role does not change; the Admin succeeds). Also "keeps one active Admin".
-- [ ] The audit log records each role change, invite, and deactivation.
-  Not done: the audit log is issue 06, built in parallel. See "Notes for later issues" for the places to add the entries.
+- [x] The audit log records each role change, invite, and deactivation.
+  Evidence: `test/worker/people.test.ts`, "writes an audit entry with Principal and channel for each People change": `role_changed` (old and new role), `user_deactivated`, `user_reactivated`, `user_invited`, `invite_resent`, and the Team entries (`team_created`, `team_renamed`, `team_member_added`, `team_member_removed`, `team_removed`) each have the Admin as Principal and channel `web`. "keeps one active Admin" shows that a refused demotion writes no entry. The entries use `adminAuditEntry` (`server/utils/audit.ts`) in the same `db.batch` as the change.
 
 Other checks:
 - `e2e/people.spec.ts` (Playwright): an Admin opens "Teams and users" from the sidebar, invites an address outside the domain (row shows Invited), sees the refusal for a domain address, creates a Team, makes another User an Agent, adds the User to the Team, deactivates the User, and the other User's page returns to sign-in on reload. A Requester has no link and `/people` sends them to My tickets. At 375 px there is no horizontal scroll.
@@ -61,7 +61,7 @@ Other checks:
 
 ## Notes for later issues
 
-- Audit log (issue 06): add entries in `server/utils/people.ts` in these functions: `changeRole` (actor, target, old and new role; read the old role from `findUser`), `deactivateUser`, `reactivateUser`, `createInvites` (one entry for each email), `resendInvite`, `revokeInvite`, and the Team functions (`createTeam`, `renameTeam`, `deleteTeam`, `addTeamMember`, `removeTeamMember`). Put them in the same `db.batch` as the change where there is one. Sign-in by an invited email (invite accepted) is in the `user.create.after` hook in `server/utils/auth.ts`.
+- Audit log: done in `server/utils/people.ts` (entries have `subject_type` `user`, `invite` or `team`). One gap: the invite's first sign-in (`user.create.after` in `auth.ts`) writes no entry; it only sets `accepted_at`, and the User's creation is not an Admin change. `invite_revoked` was added as well.
 - Issue 07 (type editor): a Team is chosen for a Ticket Type from `GET /api/v1/teams`. Removing or moving types decides whether a Team can be removed, through `ticket_type.team_id`; if types get an archived flag, `deleteTeam` still counts archived types (the foreign key needs it).
 - Issue 21 (settings): the "Sign-in" strip on the People screen shows `allowed_domains` and `methods` from the deployment endpoint. When SSO (issue 25) adds methods, only `deploymentView` changes.
 - An Agent's Team does not yet filter their ticket queue; the Team is only the owner of Ticket Types. Routing by Team is later work.

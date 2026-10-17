@@ -1,7 +1,7 @@
 import { env } from 'cloudflare:workers'
 import { capturedMail } from '../../server/utils/mail'
 import { describe, expect, it } from 'vitest'
-import { call, getMcpToken, MCP_URL, postJson, requestCode, signIn, signInAs, uniqueEmail } from './helpers'
+import { adminAuditOf, call, getMcpToken, MCP_URL, postJson, requestCode, signIn, signInAs, uniqueEmail } from './helpers'
 
 type Session = Awaited<ReturnType<typeof signInAs>>
 
@@ -91,10 +91,12 @@ describe('roles', () => {
     expect(demote.status).toBe(409)
     expect((await errorOf(demote)).code).toBe('LAST_ADMIN')
     expect(await env.DB.prepare('SELECT role FROM user WHERE id = ?').bind(admin.user.id).first()).toEqual({ role: 'admin' })
+    expect(await adminAuditOf('user', admin.user.id)).toEqual([])
 
     // With a second Admin, the first can step down.
     const second = await signInAs('admin')
     expect((await patchUser(second, admin.user.id, { role: 'agent' })).status).toBe(200)
+    expect((await adminAuditOf('user', admin.user.id)).map(e => e.action)).toEqual(['role_changed'])
     // Now the second is the last one.
     const again = await patchUser(second, second.user.id, { role: 'requester' })
     expect(again.status).toBe(409)
@@ -307,5 +309,37 @@ describe('Teams', () => {
     expect((await send(admin, 'DELETE', `/api/v1/teams/${empty.id}`)).status).toBe(204)
     expect((await teams(admin)).some(t => t.id === empty.id)).toBe(false)
     expect((await send(admin, 'DELETE', `/api/v1/teams/${empty.id}`)).status).toBe(404)
+  })
+
+  it('writes an audit entry with Principal and channel for each People change', async () => {
+    const admin = await signInAs('admin')
+    const user = await signInAs('requester')
+    const email = uniqueEmail('contractor.test')
+
+    await patchUser(admin, user.user.id, { role: 'agent' })
+    await patchUser(admin, user.user.id, { active: false })
+    await patchUser(admin, user.user.id, { active: true })
+    const userLog = await adminAuditOf('user', user.user.id)
+    expect(userLog.map(e => e.action)).toEqual(['role_changed', 'user_deactivated', 'user_reactivated'])
+    expect(userLog[0]).toMatchObject({ principal_id: admin.user.id, channel: 'web', before: { role: 'requester' }, after: { role: 'agent' } })
+
+    expect((await invite(admin, email)).status).toBe(201)
+    const pending = (await people(admin)).find(p => p.email === email)!
+    await send(admin, 'POST', `/api/v1/invites/${pending.invite_id}/resend`)
+    const inviteLog = await adminAuditOf('invite', pending.invite_id!)
+    expect(inviteLog.map(e => e.action)).toEqual(['user_invited', 'invite_resent'])
+    expect(inviteLog[0]).toMatchObject({ principal_id: admin.user.id, channel: 'web', after: { email } })
+
+    const created = await (await send(admin, 'POST', '/api/v1/teams', { name: `Audit ${Date.now()}` })).json() as Team
+    await send(admin, 'PATCH', `/api/v1/teams/${created.id}`, { name: `${created.name} 2` })
+    await send(admin, 'PUT', `/api/v1/teams/${created.id}/members/${user.user.id}`)
+    await send(admin, 'PUT', `/api/v1/teams/${created.id}/members/${user.user.id}`)
+    await send(admin, 'DELETE', `/api/v1/teams/${created.id}/members/${user.user.id}`)
+    await send(admin, 'DELETE', `/api/v1/teams/${created.id}`)
+    const teamLog = await adminAuditOf('team', created.id)
+    expect(teamLog.map(e => e.action)).toEqual(['team_created', 'team_renamed', 'team_member_added', 'team_member_removed', 'team_removed'])
+    for (const e of teamLog) expect(e).toMatchObject({ principal_id: admin.user.id, channel: 'web' })
+    expect(teamLog[2]!.after).toEqual({ user_id: user.user.id })
+
   })
 })

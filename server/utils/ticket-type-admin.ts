@@ -2,8 +2,10 @@ import { asc, count, eq, or, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import { schemaVersion, status, team, ticket, ticketType } from '../db/schema'
 import { FIELD_KEY_PATTERN, firstUnusedColor, keyFromLabel, PREFIX_PATTERN, RESERVED_FIELD_KEYS, suggestIcon, suggestPrefix, TYPE_COLORS, TYPE_ICONS } from '../../shared/ticket-type-rules'
+import { adminAuditEntry } from './audit'
 import type { Db } from './auth'
 import { FIELD_TYPES, type FieldDef, type FieldOption } from './fields'
+import type { Principal } from './tickets'
 import { currentSchemaVersion, selectTypes, toView, type TicketTypeView } from './ticket-types'
 
 /** One problem with the input. `key` is the input name, or `fields.<index>.<name>` for a Field. */
@@ -192,6 +194,28 @@ function checkFieldChanges(current: readonly FieldDef[], next: readonly FieldDef
   return problems
 }
 
+/** What a new Schema Version changed, by Field Key (and option value). For the audit log. */
+function diffFields(current: readonly FieldDef[], next: readonly FieldDef[]) {
+  const before = new Map(current.map(f => [f.key, f]))
+  const diff = { added: [] as string[], renamed: [] as string[], archived: [] as string[], restored: [] as string[], options_added: [] as string[], options_archived: [] as string[], options_restored: [] as string[], other: [] as string[] }
+  for (const f of next) {
+    const old = before.get(f.key)
+    if (!old) { diff.added.push(f.key); continue }
+    if (f.label !== old.label) diff.renamed.push(f.key)
+    if (f.archived && !old.archived) diff.archived.push(f.key)
+    if (!f.archived && old.archived) diff.restored.push(f.key)
+    if (f.required !== old.required || f.help !== old.help) diff.other.push(f.key)
+    const oldOptions = new Map((old.options ?? []).map(o => [o.value, o]))
+    for (const o of f.options ?? []) {
+      const was = oldOptions.get(o.value)
+      if (!was) diff.options_added.push(`${f.key}:${o.value}`)
+      else if (o.archived && !was.archived) diff.options_archived.push(`${f.key}:${o.value}`)
+      else if (!o.archived && was.archived) diff.options_restored.push(`${f.key}:${o.value}`)
+    }
+  }
+  return diff
+}
+
 async function teamExists(db: Db, id: number) {
   const [row] = await db.select({ id: team.id }).from(team).where(eq(team.id, id)).limit(1)
   return row !== undefined
@@ -283,7 +307,7 @@ export async function getAdminType(db: Db, id: number): Promise<AdminTypeDetail 
 }
 
 /** Creates a type and its Schema Version 1 together. Nothing is saved when anything is invalid (4.15a). */
-export async function createTicketType(db: Db, input: unknown): Promise<AdminTypeDetail> {
+export async function createTicketType(db: Db, principal: Principal, input: unknown): Promise<AdminTypeDetail> {
   const parsed = createInput.safeParse(input)
   if (!parsed.success) throw invalid(toProblems(parsed.error.issues))
   const data = parsed.data
@@ -318,6 +342,11 @@ export async function createTicketType(db: Db, input: unknown): Promise<AdminTyp
       }).returning({ id: ticketType.id }),
       // Same batch, so a type never exists without version 1.
       db.insert(schemaVersion).values({ ticketTypeId: sql`(select id from ticket_type where prefix = ${prefix})`, version: 1, fields: built.fields }),
+      adminAuditEntry(db, principal, {
+        subject: { type: 'ticket_type', id: sql`(select id from ticket_type where prefix = ${prefix})` },
+        action: 'type_created',
+        values: { after: { name: data.name, prefix, team_id: teamId } },
+      }),
     ])
     return (await getAdminType(db, created!.id))!
   } catch (error) {
@@ -330,7 +359,7 @@ export async function createTicketType(db: Db, input: unknown): Promise<AdminTyp
  * Changes the settings of a type and/or its Fields. A change to the Fields adds a Schema Version and updates
  * no earlier one (4.4). `fields` is the full list: every earlier Field stays in it.
  */
-export async function updateTicketType(db: Db, id: number, input: unknown): Promise<AdminTypeDetail> {
+export async function updateTicketType(db: Db, principal: Principal, id: number, input: unknown): Promise<AdminTypeDetail> {
   const parsed = updateInput.safeParse(input)
   if (!parsed.success) throw invalid(toProblems(parsed.error.issues))
   const data = parsed.data
@@ -371,9 +400,32 @@ export async function updateTicketType(db: Db, id: number, input: unknown): Prom
   if (problems.length) throw invalid(problems)
 
   const writes = []
+  const subject = { type: 'ticket_type', id } as const
+  const { archivedAt, ...settingChanges } = set
   if (Object.keys(set).length) writes.push(db.update(ticketType).set(set).where(eq(ticketType.id, id)))
+  if (Object.keys(settingChanges).length) {
+    // One entry for all changed settings, with the old and new value of each.
+    const was: Record<string, unknown> = { name: current.name, prefix: current.prefix, description: current.description, icon: current.icon, color: current.color, visible_to_all: current.visible_to_all, team_id: current.team.id }
+    const now: Record<string, unknown> = { name: set.name, prefix: set.prefix, description: set.description, icon: set.icon, color: set.color, visible_to_all: set.visibleToAll, team_id: set.teamId }
+    const keys = Object.keys(now).filter(k => now[k] !== undefined)
+    writes.push(adminAuditEntry(db, principal, {
+      subject,
+      action: 'type_settings_changed',
+      values: { before: Object.fromEntries(keys.map(k => [k, was[k]])), after: Object.fromEntries(keys.map(k => [k, now[k]])) },
+    }))
+  }
+  if (archivedAt !== undefined) writes.push(adminAuditEntry(db, principal, { subject, action: archivedAt ? 'type_archived' : 'type_restored' }))
   // The unique index on (type, version) refuses a second save of the same version.
-  if (nextFields) writes.push(db.insert(schemaVersion).values({ ticketTypeId: id, version: current.schema_version + 1, fields: nextFields }))
+  if (nextFields) {
+    writes.push(
+      db.insert(schemaVersion).values({ ticketTypeId: id, version: current.schema_version + 1, fields: nextFields }),
+      adminAuditEntry(db, principal, {
+        subject,
+        action: 'schema_version_created',
+        values: { before: { version: current.schema_version }, after: { version: current.schema_version + 1, ...diffFields(current.fields, nextFields) } },
+      }),
+    )
+  }
   if (writes.length === 0) return current
   try {
     await db.batch(writes as [typeof writes[0], ...typeof writes])

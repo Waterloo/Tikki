@@ -150,3 +150,19 @@ export async function typeId(cookie: string, prefix: string): Promise<number> {
   if (!found) throw new Error(`no Ticket Type with prefix ${prefix}`)
   return found.id
 }
+
+export interface AdminAuditRow {
+  action: string
+  subject_type: string
+  subject_id: string
+  principal_id: string
+  channel: string
+  before: unknown
+  after: unknown
+}
+
+/** The audit entries of one non-ticket subject, oldest first, with the values parsed. */
+export async function adminAuditOf(subjectType: string, subjectId: string | number): Promise<AdminAuditRow[]> {
+  const { results } = await env.DB.prepare('SELECT * FROM audit_log WHERE subject_type = ? AND subject_id = ? ORDER BY id').bind(subjectType, String(subjectId)).all<Record<string, string | null>>()
+  return results.map(r => ({ ...r, before: r.before === null ? null : JSON.parse(r.before), after: r.after === null ? null : JSON.parse(r.after) }) as AdminAuditRow)
+}

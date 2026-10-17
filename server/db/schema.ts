@@ -1,4 +1,5 @@
-import { blob, index, integer, primaryKey, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core'
+import { sql } from 'drizzle-orm'
+import { blob, check, index, integer, primaryKey, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core'
 import type { FieldDef, FieldValues } from '../utils/fields'
 import { user } from './auth-schema'
 
@@ -112,7 +113,16 @@ export const comment = sqliteTable('comment', {
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(() => new Date()),
 }, t => [index('comment_ticket_idx').on(t.ticketNumber, t.createdAt)])
 
-export const AUDIT_ACTIONS = ['ticket_created', 'status_changed', 'priority_changed', 'assignee_changed', 'field_changed', 'comment_added'] as const
+export const AUDIT_ACTIONS = ['ticket_created', 'status_changed', 'priority_changed', 'assignee_changed', 'field_changed', 'comment_added',
+  // Admin changes with no ticket (subject = ticket type, user, invite or team)
+  'type_created', 'type_settings_changed', 'schema_version_created', 'type_archived', 'type_restored',
+  'role_changed', 'user_invited', 'invite_resent', 'invite_revoked', 'user_deactivated', 'user_reactivated',
+  'team_created', 'team_renamed', 'team_removed', 'team_member_added', 'team_member_removed',
+] as const
+
+/** What an Admin change without a ticket is about. A ticket entry has `ticketNumber` and no subject. */
+export const AUDIT_SUBJECT_TYPES = ['ticket_type', 'user', 'invite', 'team'] as const
+export type AuditSubjectType = typeof AUDIT_SUBJECT_TYPES[number]
 export type AuditAction = typeof AUDIT_ACTIONS[number]
 
 /**
@@ -123,7 +133,11 @@ export type AuditAction = typeof AUDIT_ACTIONS[number]
  */
 export const auditLog = sqliteTable('audit_log', {
   id: integer('id').primaryKey({ autoIncrement: true }),
-  ticketNumber: integer('ticket_number').notNull().references(() => ticket.number),
+  /** Set for a ticket entry. Null for an Admin change: then `subjectType` and `subjectId` are set (CHECK below). */
+  ticketNumber: integer('ticket_number').references(() => ticket.number),
+  subjectType: text('subject_type', { enum: AUDIT_SUBJECT_TYPES }),
+  /** The id of the type, User, invite or Team. No foreign key: the subject may be deleted and its entry stays. */
+  subjectId: text('subject_id'),
   principalId: text('principal_id').notNull().references(() => user.id),
   channel: text('channel', { enum: ['web', 'ai', 'api'] }).notNull(),
   action: text('action', { enum: AUDIT_ACTIONS }).notNull(),
@@ -136,7 +150,13 @@ export const auditLog = sqliteTable('audit_log', {
   before: text('before'),
   after: text('after'),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(() => new Date()),
-}, t => [index('audit_log_ticket_idx').on(t.ticketNumber, t.id)])
+}, t => [
+  index('audit_log_ticket_idx').on(t.ticketNumber, t.id),
+  index('audit_log_subject_idx').on(t.subjectType, t.subjectId, t.id),
+  // Exactly one subject: a ticket, or a thing without a ticket.
+  check('audit_log_one_subject', sql`(${t.ticketNumber} IS NOT NULL AND ${t.subjectType} IS NULL AND ${t.subjectId} IS NULL)
+    OR (${t.ticketNumber} IS NULL AND ${t.subjectType} IS NOT NULL AND ${t.subjectId} IS NOT NULL)`),
+])
 
 // Issue 16: attachments
 /**
