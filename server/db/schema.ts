@@ -112,7 +112,7 @@ export const comment = sqliteTable('comment', {
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(() => new Date()),
 }, t => [index('comment_ticket_idx').on(t.ticketNumber, t.createdAt)])
 
-export const AUDIT_ACTIONS = ['ticket_created', 'status_changed', 'priority_changed', 'assignee_changed', 'field_changed', 'comment_added'] as const
+export const AUDIT_ACTIONS = ['ticket_created', 'status_changed', 'priority_changed', 'assignee_changed', 'field_changed', 'comment_added', 'type_changed'] as const
 export type AuditAction = typeof AUDIT_ACTIONS[number]
 
 /**
@@ -173,4 +173,12 @@ export const invite = sqliteTable('invite', {
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
   expiresAt: integer('expires_at', { mode: 'timestamp_ms' }).notNull(),
   acceptedAt: integer('accepted_at', { mode: 'timestamp_ms' }),
+})
+
+// Issue 08: change prefix
+/** A prefix that a type had before. It stays reserved, so an old reference never reads as another type (4.9b). */
+export const ticketTypeOldPrefix = sqliteTable('ticket_type_old_prefix', {
+  prefix: text('prefix').primaryKey(),
+  ticketTypeId: integer('ticket_type_id').notNull().references(() => ticketType.id),
+  replacedAt: integer('replaced_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(() => new Date()),
 })

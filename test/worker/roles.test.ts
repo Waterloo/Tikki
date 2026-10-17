@@ -100,7 +100,7 @@ describe('policy: who can change a ticket', () => {
     expect(assigned.status).toBe(200)
     const a = await assigned.json() as Ticket
     expect(a.assignee?.id).toBe(agent.user.id)
-    expect(a.allowed_actions).toEqual(['change_status', 'change_priority', 'assign', 'edit_fields', 'comment', 'comment_internal'])
+    expect(a.allowed_actions).toEqual(['change_status', 'change_priority', 'assign', 'edit_fields', 'change_type', 'comment', 'comment_internal'])
     expect(a.updated_at > ticket.updated_at).toBe(true)
 
     const moved = await (await patch(agent, String(ticket.number), { status: 'in_progress', priority: 'high' })).json() as Ticket

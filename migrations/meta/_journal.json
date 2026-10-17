@@ -64,6 +64,13 @@
       "when": 1792279879387,
       "tag": "0008_issue_20_people_and_teams",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1792280088488,
+      "tag": "0009_issue_08_old_prefix",
+      "breakpoints": true
     }
   ]
 }

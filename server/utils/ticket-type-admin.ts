@@ -1,6 +1,6 @@
 import { asc, count, eq, or, sql } from 'drizzle-orm'
 import { z } from 'zod'
-import { schemaVersion, status, team, ticket, ticketType } from '../db/schema'
+import { schemaVersion, status, team, ticket, ticketType, ticketTypeOldPrefix } from '../db/schema'
 import { FIELD_KEY_PATTERN, firstUnusedColor, keyFromLabel, PREFIX_PATTERN, RESERVED_FIELD_KEYS, suggestIcon, suggestPrefix, TYPE_COLORS, TYPE_ICONS } from '../../shared/ticket-type-rules'
 import type { Db } from './auth'
 import { FIELD_TYPES, type FieldDef, type FieldOption } from './fields'
@@ -218,6 +218,11 @@ async function uniquenessProblems(db: Db, name: string | undefined, prefix: stri
       problems.push({ key: 'prefix', reason: row.archivedAt ? `${prefix} is used by ${row.name}, which is archived. An archived prefix stays reserved.` : `${prefix} is used by ${row.name}.` })
     }
   }
+  if (prefix !== undefined) {
+    const [old] = await db.select({ ownerId: ticketTypeOldPrefix.ticketTypeId }).from(ticketTypeOldPrefix).where(eq(ticketTypeOldPrefix.prefix, prefix)).limit(1)
+    // A type may take back its own earlier prefix.
+    if (old && old.ownerId !== exceptId) problems.push({ key: 'prefix', reason: `${prefix} was used by another type before. A replaced prefix stays reserved, so old references stay clear.` })
+  }
   return problems
 }
 
@@ -372,6 +377,7 @@ export async function updateTicketType(db: Db, id: number, input: unknown): Prom
 
   const writes = []
   if (Object.keys(set).length) writes.push(db.update(ticketType).set(set).where(eq(ticketType.id, id)))
+  if (set.prefix) writes.push(db.insert(ticketTypeOldPrefix).values({ prefix: current.prefix, ticketTypeId: id }).onConflictDoNothing())
   // The unique index on (type, version) refuses a second save of the same version.
   if (nextFields) writes.push(db.insert(schemaVersion).values({ ticketTypeId: id, version: current.schema_version + 1, fields: nextFields }))
   if (writes.length === 0) return current

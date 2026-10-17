@@ -3,7 +3,7 @@
 export type Priority = 'low' | 'normal' | 'high' | 'urgent'
 export type Channel = 'web' | 'ai' | 'api'
 export type StatusCategory = 'open' | 'active' | 'waiting' | 'done'
-export type TicketAction = 'change_status' | 'change_priority' | 'assign' | 'edit_fields' | 'comment' | 'comment_internal'
+export type TicketAction = 'change_status' | 'change_priority' | 'assign' | 'edit_fields' | 'change_type' | 'comment' | 'comment_internal'
 
 export interface Status {
   key: string
@@ -62,12 +62,14 @@ export type ActivityItem =
     type: 'event'
     id: string
     at: string
-    action: 'ticket_created' | 'status_changed' | 'priority_changed' | 'assignee_changed' | 'field_changed'
+    action: 'ticket_created' | 'status_changed' | 'priority_changed' | 'assignee_changed' | 'field_changed' | 'type_changed'
     principal: Person
     channel: Channel
     field: { key: string, label: string } | null
     before: string | null
     after: string | null
+    /** For a type change: the values that did not move. */
+    unmoved: { key: string, label: string, value: string }[]
     erased: boolean
     reverts_id: number | null
     reverted: boolean
