@@ -135,3 +135,66 @@ export const auditLog = sqliteTable('audit_log', {
   after: text('after'),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(() => new Date()),
 }, t => [index('audit_log_ticket_idx').on(t.ticketNumber, t.id)])
+
+// Issue 14: outbox and Webhook Endpoints
+export const WEBHOOK_EVENTS = ['ticket.created', 'ticket.updated', 'comment.created'] as const
+export type WebhookEventType = typeof WEBHOOK_EVENTS[number]
+/** The Event that "Send test event" sends. It goes only to the endpoint that asked for it. */
+export const TEST_EVENT = 'webhook.test'
+
+export const webhookEndpoint = sqliteTable('webhook_endpoint', {
+  id: text('id').primaryKey(),
+  /** `admin`: gets every Event. Issue 15 adds `application` and an `application_id` column. */
+  owner: text('owner', { enum: ['admin'] }).notNull().default('admin'),
+  name: text('name').notNull(),
+  url: text('url').notNull(),
+  events: text('events', { mode: 'json' }).$type<WebhookEventType[]>().notNull(),
+  includeInternal: integer('include_internal', { mode: 'boolean' }).notNull().default(false),
+  /** The signing secret, encrypted with a key from BETTER_AUTH_SECRET. Not a hash: the Worker must sign with it. */
+  secret: text('secret').notNull(),
+  enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
+  /** The first failed attempt since the last success. Null while healthy. */
+  failingSince: integer('failing_since', { mode: 'timestamp_ms' }),
+  /** Failed attempts since the last success. */
+  failures: integer('failures').notNull().default(0),
+  /** Set when the delivery run turned the endpoint off after 3 days of failure. */
+  disabledAt: integer('disabled_at', { mode: 'timestamp_ms' }),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(() => new Date()),
+})
+
+/** One Event. Written in the same batch as the ticket change. `id` is the `event_id` and never changes on retry. */
+export const outboxEvent = sqliteTable('outbox_event', {
+  id: text('id').primaryKey(),
+  type: text('type').notNull(),
+  /** Null for a test event. */
+  ticketNumber: integer('ticket_number'),
+  /** Only endpoints with "include internal data" get it. */
+  internal: integer('internal', { mode: 'boolean' }).notNull(),
+  /** The JSON body that is sent and signed, the same bytes on every attempt. Purged after 30 days (9.3). */
+  payload: text('payload').notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+}, t => [index('outbox_event_created_idx').on(t.createdAt)])
+
+export const DELIVERY_STATES = ['pending', 'delivered', 'failed'] as const
+export type DeliveryState = typeof DELIVERY_STATES[number]
+
+/** One Event for one endpoint. Made in the batch of the Event, for each endpoint that is on at that time. */
+export const webhookDelivery = sqliteTable('webhook_delivery', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  eventId: text('event_id').notNull().references(() => outboxEvent.id),
+  endpointId: text('endpoint_id').notNull().references(() => webhookEndpoint.id),
+  state: text('state', { enum: DELIVERY_STATES }).notNull(),
+  attempts: integer('attempts').notNull().default(0),
+  /** Null when the delivery is not pending. */
+  nextAttemptAt: integer('next_attempt_at', { mode: 'timestamp_ms' }),
+  lastAttemptAt: integer('last_attempt_at', { mode: 'timestamp_ms' }),
+  /** The HTTP status of the last attempt. Null: no response (network error or timeout). */
+  responseStatus: integer('response_status'),
+  error: text('error'),
+  /** The time of the Event. Retries stop 24 hours after it. */
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+}, t => [
+  uniqueIndex('webhook_delivery_event_endpoint_unique').on(t.eventId, t.endpointId),
+  index('webhook_delivery_due_idx').on(t.state, t.nextAttemptAt),
+  index('webhook_delivery_endpoint_idx').on(t.endpointId, t.id),
+])

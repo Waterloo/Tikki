@@ -8,6 +8,7 @@ import { validateFields, type FieldDef, type FieldError, type FieldType, type Fi
 import { allowedActions, assertAllowed, canBeAssignee, canSeeInternal, NOT_FOUND, PolicyRefusal, readableTickets, type PolicyTicket, type TicketAction } from './policy'
 import type { StatusView } from './statuses'
 import { loadTicketType } from './ticket-types'
+import { changedKey, withEvent } from './outbox'
 
 export type Channel = 'web' | 'ai' | 'api'
 
@@ -262,7 +263,8 @@ export async function createTicket(db: Db, principal: Principal, input: unknown)
 
   const now = new Date()
   // last_insert_rowid() is the new ticket: the audit entry is the next statement of the same batch.
-  const [created] = await db.batch([db.insert(ticket).values({
+  // The new ticket has the highest number: D1 runs one batch at a time.
+  const [created] = await db.batch(withEvent(db, principal, { type: 'ticket.created', ticketNumber: sql`(SELECT max(number) FROM ticket)` }, [db.insert(ticket).values({
     ticketTypeId: found.type.id,
     schemaVersion: found.version.version,
     title: core.data.title,
@@ -276,7 +278,7 @@ export async function createTicket(db: Db, principal: Principal, input: unknown)
     updatedAt: now,
   }).returning({ number: ticket.number }),
   auditEntry(db, principal, { ticketNumber: sql`last_insert_rowid()`, action: 'ticket_created' }),
-  ])
+  ])) as [{ number: number }[]]
   return getTicket(db, principal, created[0]!.number)
 }
 
@@ -508,9 +510,9 @@ export interface ChangeEntry {
   revertsId?: number
 }
 
-/** Writes the change and one audit entry for each value in one batch. Every change to a ticket goes through here. */
+/** Writes the change, one audit entry for each value, and the outbox Event in one batch. Every change to a ticket goes through here. */
 export async function applyChange(db: Db, principal: Principal, number: number, set: Partial<typeof ticket.$inferInsert>, entries: ChangeEntry[]) {
-  await db.batch([
+  await db.batch(withEvent(db, principal, { type: 'ticket.updated', ticketNumber: number, changed: entries.map(changedKey) }, [
     db.update(ticket).set({ ...set, updatedAt: new Date() }).where(eq(ticket.number, number)),
     ...entries.map(e => auditEntry(db, principal, {
       ticketNumber: number,
@@ -519,5 +521,5 @@ export async function applyChange(db: Db, principal: Principal, number: number, 
       revertsId: e.revertsId,
       values: { before: e.before, after: e.after },
     })),
-  ])
+  ]))
 }
