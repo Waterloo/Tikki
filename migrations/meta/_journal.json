@@ -22,6 +22,13 @@
       "when": 1792276963830,
       "tag": "0002_roles_and_agent_queue",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1792278053769,
+      "tag": "0003_organization",
+      "breakpoints": true
     }
   ]
 }

@@ -1,15 +1,34 @@
 <script setup lang="ts">
+import type { Setup } from '~/components/FirstRun.vue'
 import type { TicketList, TicketSummary } from '~/types/tickets'
 
 const tickets = ref<TicketSummary[]>([])
 const state = ref<'loading' | 'ready' | 'error'>('loading')
+const firstRun = ref<Setup | null>(null)
 
 // One grid for the header and the rows, so the columns line up. Below `xl` each row becomes a card.
 const COLUMNS = 'xl:grid-cols-[88px_minmax(0,2.2fr)_minmax(0,1fr)_minmax(0,1fr)_84px_minmax(0,0.9fr)_72px]'
 
+// Only an Admin can see the setup state. If it cannot be read, the normal page shows.
+async function checkFirstRun() {
+  const { data } = await authClient.getSession()
+  if ((data?.user as { role?: string } | undefined)?.role !== 'admin') return
+  try {
+    const setup = await $fetch<Setup>('/api/v1/setup')
+    if (!setup.first_ticket_exists) firstRun.value = setup
+  } catch {
+    firstRun.value = null
+  }
+}
+
 async function load() {
   state.value = 'loading'
   try {
+    await checkFirstRun()
+    if (firstRun.value) {
+      state.value = 'ready'
+      return
+    }
     const res = await $fetch<TicketList>('/api/v1/tickets', { query: { requester: 'me' } })
     tickets.value = res.data
     state.value = 'ready'
@@ -17,6 +36,11 @@ async function load() {
     if ((e as { status?: number }).status === 401) return navigateTo('/sign-in')
     state.value = 'error'
   }
+}
+
+function onFirstTicket() {
+  firstRun.value = null
+  load()
 }
 
 onMounted(load)
@@ -37,6 +61,8 @@ onMounted(load)
     </PageHeader>
 
     <ListSkeleton v-if="state === 'loading'" />
+
+    <FirstRun v-else-if="firstRun" :setup="firstRun" @first-ticket="onFirstTicket" />
 
     <ErrorState v-else-if="state === 'error'" title="Your tickets could not be loaded." description="Check your connection, then try again." @retry="load" />
 
