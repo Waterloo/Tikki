@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, isNull, type SQL } from 'drizzle-orm'
+import { and, asc, count, desc, eq, gt, isNull, lt, ne, or, sql, type SQL, type SQLWrapper } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/sqlite-core'
 import { z } from 'zod'
 import { PRIORITIES, schemaVersion, status, team, ticket, ticketType, user, type Priority } from '../db/schema'
@@ -127,6 +127,7 @@ const summaryColumns = {
   updatedAt: ticket.updatedAt,
   requesterId: ticket.requesterId,
   statusKey: status.key,
+  statusPosition: status.position,
   statusName: status.name,
   statusCategory: status.category,
   typeId: ticketType.id,
@@ -263,40 +264,139 @@ export async function createTicket(db: Db, principal: Principal, input: unknown)
 export interface ListFilter {
   /** Only the Principal's own tickets. */
   requesterIsMe?: boolean
-  /** `me`: assigned to the Principal. `none`: unassigned. */
-  assignee?: 'me' | 'none'
+  /** `me`: assigned to the Principal. `none`: unassigned. Any other value is a User ID. */
+  assignee?: string
+  /** Words in the title or description, or a Ticket Reference. Every word must match. */
+  search?: string
+  ticketTypeId?: number
+  priority?: Priority
+  /** Field Key and the wanted value. Matches tickets of every Schema Version (4.5). */
+  fields?: { key: string, value: string }[]
+  /** Only tickets whose Status Category is not `done`. */
+  openOnly?: boolean
+}
+
+export interface ListOptions {
+  /** From the `next_cursor` of the previous page. */
+  cursor?: string
+  limit?: number
 }
 
 export interface TicketList {
-  /** Ordered by Status, then by last update. At most LIST_LIMIT. */
+  /** Ordered by Status, then by last update. One page. */
   tickets: TicketSummary[]
-  /** The number of matching tickets for each Status key, also when `tickets` is cut at the limit. */
+  /** The number of matching tickets for each Status key, over all pages. */
   counts: Record<string, number>
+  /** Pass as `cursor` for the next page. Null on the last page. */
+  nextCursor: string | null
 }
 
-export const LIST_LIMIT = 200
+export const DEFAULT_LIMIT = 50
+export const MAX_LIMIT = 200
+const MAX_SEARCH_WORDS = 8
+export const MAX_SEARCH_LENGTH = 200
+export const FIELD_KEY = /^[\w-]{1,64}$/
 
-/** Tickets the Principal can see that match the filter. */
-export async function listTickets(db: Db, principal: Principal, filter: ListFilter = {}): Promise<TicketList> {
-  const where = and(
+/** `%` and `_` in the input are text, not wildcards. */
+function likePattern(word: string) {
+  return `%${word.replace(/[\\%_]/g, '\\$&')}%`
+}
+
+const contains = (column: SQLWrapper, word: string) => sql`${column} LIKE ${likePattern(word)} ESCAPE '\\'`
+
+/** Every word must be in the title or the description. A word that is a Ticket Reference also matches that number (4.9a). */
+function searchCondition(search: string): SQL | undefined {
+  const words = search.trim().split(/\s+/).filter(Boolean).slice(0, MAX_SEARCH_WORDS)
+  return and(...words.map((word) => {
+    const number = parseTicketReference(word)
+    return or(contains(ticket.title, word), contains(ticket.description, word), number === null ? undefined : eq(ticket.number, number))
+  }))
+}
+
+/** A multi-select value is an array, so the filter also matches one of its items. */
+function fieldCondition(key: string, value: string): SQL {
+  const path = `$."${key}"`
+  return sql`(json_extract(${ticket.fields}, ${path}) = ${value} OR (json_type(${ticket.fields}, ${path}) = 'array' AND EXISTS (SELECT 1 FROM json_each(${ticket.fields}, ${path}) WHERE value = ${value})))`
+}
+
+function filterCondition(principal: Principal, filter: ListFilter): SQL | undefined {
+  const assignee = filter.assignee === 'me' ? principal.userId : filter.assignee
+  return and(
     readableTickets(principal),
     filter.requesterIsMe ? eq(ticket.requesterId, principal.userId) : undefined,
-    filter.assignee === 'me' ? eq(ticket.assigneeId, principal.userId) : undefined,
-    filter.assignee === 'none' ? isNull(ticket.assigneeId) : undefined,
+    assignee === 'none' ? isNull(ticket.assigneeId) : assignee ? eq(ticket.assigneeId, assignee) : undefined,
+    filter.search ? searchCondition(filter.search) : undefined,
+    filter.ticketTypeId !== undefined ? eq(ticket.ticketTypeId, filter.ticketTypeId) : undefined,
+    filter.priority ? eq(ticket.priority, filter.priority) : undefined,
+    ...(filter.fields ?? []).map(f => fieldCondition(f.key, f.value)),
+    filter.openOnly ? ne(status.category, 'done') : undefined,
   )
+}
+
+// The cursor is the sort key of the last row: Status position, update time, number. The tuple is unique, so no row
+// repeats or is skipped. A ticket that changes between two page requests can move; the next list call shows it.
+type CursorKey = [position: number, updatedAt: number, number: number]
+
+function encodeCursor(row: SummaryRow): string {
+  if (row.statusPosition === null) throw new Error(`Ticket ${row.number} has no Status. Every ticket must have one (4.10).`)
+  return btoa(JSON.stringify([row.statusPosition, row.updatedAt.getTime(), row.number] satisfies CursorKey))
+}
+
+function decodeCursor(cursor: string): CursorKey {
+  try {
+    const key = JSON.parse(atob(cursor)) as unknown
+    if (Array.isArray(key) && key.length === 3 && key.every(n => Number.isSafeInteger(n))) return key as CursorKey
+  } catch { /* falls through */ }
+  throw new TicketValidationError([{ key: 'cursor', label: 'Cursor', reason: 'Must be the next_cursor of a previous page.' }])
+}
+
+function afterCursor([position, updatedAt, number]: CursorKey): SQL {
+  const updated = new Date(updatedAt)
+  return or(
+    gt(status.position, position),
+    and(eq(status.position, position), or(lt(ticket.updatedAt, updated), and(eq(ticket.updatedAt, updated), lt(ticket.number, number)))),
+  )!
+}
+
+/** One page of the tickets the Principal can see that match the filter. */
+export async function listTickets(db: Db, principal: Principal, filter: ListFilter = {}, options: ListOptions = {}): Promise<TicketList> {
+  const limit = Math.min(Math.max(options.limit ?? DEFAULT_LIMIT, 1), MAX_LIMIT)
+  const where = filterCondition(principal, filter)
+  const pageWhere = options.cursor ? and(where, afterCursor(decodeCursor(options.cursor))) : where
   // Not db.batch(): it reads rows as objects, so the joined columns with the same name (`name`, `email`) overwrite each other.
   const [rows, counts] = await Promise.all([
-    // Workflow order first, so open work is never the part that the limit cuts.
-    selectSummaries(db, where).orderBy(asc(status.position), desc(ticket.updatedAt), desc(ticket.number)).limit(LIST_LIMIT),
+    // One extra row tells whether another page exists.
+    selectSummaries(db, pageWhere).orderBy(asc(status.position), desc(ticket.updatedAt), desc(ticket.number)).limit(limit + 1),
     db.select({ status: ticket.status, count: count() }).from(ticket)
       .innerJoin(ticketType, eq(ticket.ticketTypeId, ticketType.id))
+      .leftJoin(status, eq(ticket.status, status.key))
       .where(where)
       .groupBy(ticket.status),
   ])
+  const page = rows.slice(0, limit)
   return {
-    tickets: rows.map(toSummary),
+    tickets: page.map(toSummary),
     counts: Object.fromEntries(counts.map(c => [c.status ?? '', c.count])),
+    nextCursor: rows.length > limit ? encodeCursor(page.at(-1)!) : null,
   }
+}
+
+const SIMILAR_LIMIT = 5
+const SIMILAR_MIN_WORD = 3
+
+/**
+ * Open tickets whose title shares words with `title`, best match first. Only tickets the Principal can read.
+ * A title of one word needs that word; a longer one needs two, so common words alone do not match.
+ */
+export async function similarTickets(db: Db, principal: Principal, title: string): Promise<TicketSummary[]> {
+  const words = [...new Set(title.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(w => w.length >= SIMILAR_MIN_WORD))].slice(0, MAX_SEARCH_WORDS)
+  if (words.length === 0) return []
+  const hits = words.map(w => sql`(${contains(ticket.title, w)})`)
+  const score = sql<number>`(${sql.join(hits, sql` + `)})`
+  const rows = await selectSummaries(db, and(readableTickets(principal), ne(status.category, 'done'), sql`${score} >= ${Math.min(2, words.length)}`))
+    .orderBy(desc(score), desc(ticket.updatedAt), desc(ticket.number))
+    .limit(SIMILAR_LIMIT)
+  return rows.map(toSummary)
 }
 
 /** The ticket, if the Principal may read it. Throws PolicyRefusal otherwise. */

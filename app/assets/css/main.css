@@ -34,6 +34,9 @@
   --app-hover: #eceef1;
   --app-row-hover: #f7f8fa;
   --app-segment: #e9ebee;
+  --app-similar-bg: #f4f7fd;
+  --app-similar-border: #d9e3f6;
+  --app-similar-text: #1f3a68;
 }
 
 .dark {
@@ -57,4 +60,7 @@
   --app-hover: #1e2025;
   --app-row-hover: #1c1e22;
   --app-segment: #26282e;
+  --app-similar-bg: #151c2b;
+  --app-similar-border: #263552;
+  --app-similar-text: #a9c3f0;
 }
