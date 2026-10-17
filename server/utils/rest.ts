@@ -2,6 +2,7 @@ import { getRouterParam, type H3Event } from 'h3'
 import type { Role } from './auth'
 import { useAuth } from './services'
 import { NOT_FOUND, PolicyRefusal } from './policy'
+import { TypeAdminError } from './ticket-type-admin'
 import { parseTicketReference, TicketValidationError, type Principal } from './tickets'
 
 /** The one error format of the REST API (6.4). */
@@ -45,4 +46,16 @@ export function routeTicketNumber(event: H3Event): number {
   const number = parseTicketReference(getRouterParam(event, 'ref') ?? '')
   if (number === null) throw new PolicyRefusal(NOT_FOUND)
   return number
+}
+
+/** Maps the errors of the Ticket Type editor to responses. Anything else is a bug and goes on as a 500. */
+export function typeAdminError(error: unknown): Response {
+  if (error instanceof TypeAdminError) return apiError(error.status, error.code, error.message, error.details)
+  throw error
+}
+
+/** The numeric ID in the route, or null. */
+export function routeId(event: H3Event): number | null {
+  const value = getRouterParam(event, 'id') ?? ''
+  return /^[1-9]\d{0,15}$/.test(value) ? Number(value) : null
 }

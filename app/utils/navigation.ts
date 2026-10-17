@@ -18,6 +18,7 @@ const ITEMS: readonly NavItem[] = [
   { label: 'Assigned to me', icon: 'i-lucide-user-check', to: '/tickets?filter=mine', roles: STAFF },
   { label: 'All tickets', icon: 'i-lucide-layers', to: '/tickets', roles: STAFF },
   { label: 'New ticket', icon: 'i-lucide-plus', to: '/tickets/new', roles: EVERYONE },
+  { label: 'Types and fields', icon: 'i-lucide-sliders-horizontal', to: '/admin/types', roles: ['admin'] },
   { label: 'Settings', icon: 'i-lucide-settings', to: '/settings', roles: ['admin'] },
 ]
 
