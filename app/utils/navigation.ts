@@ -19,6 +19,7 @@ const ITEMS: readonly NavItem[] = [
   { label: 'All tickets', icon: 'i-lucide-layers', to: '/tickets', roles: STAFF },
   { label: 'New ticket', icon: 'i-lucide-plus', to: '/tickets/new', roles: EVERYONE },
   { label: 'Types and fields', icon: 'i-lucide-sliders-horizontal', to: '/admin/types', roles: ['admin'] },
+  { label: 'Teams and users', icon: 'i-lucide-users', to: '/people', roles: ['admin'] },
   { label: 'Settings', icon: 'i-lucide-settings', to: '/settings', roles: ['admin'] },
 ]
 

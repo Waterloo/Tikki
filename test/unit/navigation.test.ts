@@ -14,4 +14,10 @@ describe('navigationFor', () => {
     expect(navigationFor('agent').map(i => i.to)).not.toContain('/admin/types')
     expect(navigationFor('requester').map(i => i.to)).not.toContain('/admin/types')
   })
+
+  it('lists Teams and users for Admins only', () => {
+    expect(navigationFor('admin').map(i => i.to)).toContain('/people')
+    expect(navigationFor('agent').map(i => i.to)).not.toContain('/people')
+    expect(navigationFor('requester').map(i => i.to)).not.toContain('/people')
+  })
 })

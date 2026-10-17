@@ -107,3 +107,27 @@ export function authorizeAttachmentRead(principal: Principal, a: { uploaderId: s
   if (a.ticket === null) return a.uploaderId === principal.userId ? null : NO_ATTACHMENT
   return canRead(principal, a.ticket) ? null : NO_ATTACHMENT
 }
+
+/** People and Teams: only Admins manage them (issue 20). */
+export function authorizeManagePeople(principal: Principal): Refusal | null {
+  if (principal.role === 'admin') return null
+  return { status: 403, code: 'FORBIDDEN', message: 'Only Admins can manage people and Teams.' }
+}
+
+export function assertCanManagePeople(principal: Principal): void {
+  const refusal = authorizeManagePeople(principal)
+  if (refusal) throw new PolicyRefusal(refusal)
+}
+
+/** An Admin cannot lock themself out. The last-Admin rule needs the database, so it is in `people.ts`. */
+export function assertCanDeactivate(principal: Principal, targetId: string): void {
+  assertCanManagePeople(principal)
+  if (principal.userId === targetId) {
+    throw new PolicyRefusal({ status: 403, code: 'FORBIDDEN', message: 'You cannot deactivate yourself. Ask another Admin.' })
+  }
+}
+
+/** A Team member must be an Agent or an Admin, because a Team is a group of Agents. */
+export function canJoinTeam(role: string) {
+  return STAFF_ROLES.includes(role)
+}
