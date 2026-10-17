@@ -1,10 +1,11 @@
 import { and, asc, count, desc, eq, gt, isNull, lt, ne, or, sql, type SQL, type SQLWrapper } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/sqlite-core'
+import type { BatchItem } from 'drizzle-orm/batch'
 import { z } from 'zod'
 import { comment, PRIORITIES, schemaVersion, status, team, ticket, ticketType, user, type AuditAction, type Priority } from '../db/schema'
 import { auditEntry } from './audit'
 import type { Db, Role } from './auth'
-import { validateFields, type FieldDef, type FieldError, type FieldType, type FieldValues } from './fields'
+import { activeOptions, validateFields, type FieldDef, type FieldError, type FieldType, type FieldValues } from './fields'
 import { allowedActions, assertAllowed, canBeAssignee, canSeeInternal, NOT_FOUND, PolicyRefusal, readableTickets, type PolicyTicket, type TicketAction } from './policy'
 import type { StatusView } from './statuses'
 import { loadTicketType } from './ticket-types'
@@ -44,6 +45,10 @@ export interface SchemaFieldView {
   key: string
   label: string
   type: FieldType
+  required: boolean
+  help: string
+  /** Active options of a select Field. */
+  options?: string[]
 }
 
 export interface TicketDetail extends TicketSummary {
@@ -54,6 +59,8 @@ export interface TicketDetail extends TicketSummary {
   team: { id: number, name: string }
   /** The comments the Principal can see. Internal Comments count only for Users who can see them. */
   comment_count: number
+  /** The old ticket, when a Requester reopened it after the 14 days (4.22). */
+  reopened_from: { number: number, ref: string } | null
   /** What the Principal who asked may do now, from the policy function. */
   allowed_actions: TicketAction[]
 }
@@ -73,12 +80,14 @@ const typeInput = z.object({
   fields: z.record(z.string(), z.unknown(), { error: 'Must be an object keyed by Field Key.' }).default({}),
 })
 
-const UPDATABLE = { status: 'change_status', priority: 'change_priority', assignee_id: 'assign', fields: 'edit_fields' } as const satisfies Record<string, TicketAction>
+const UPDATABLE = { status: 'change_status', priority: 'change_priority', assignee_id: 'assign', fields: 'edit_fields', description: 'edit_description' } as const satisfies Record<string, TicketAction>
 
 const updateInput = z.strictObject({
   status: z.string({ error: 'Must be a Status key.' }).min(1, 'Must be a Status key.').optional(),
   priority: z.enum(PRIORITIES, { error: 'Must be one of the options.' }).optional(),
   assignee_id: z.string({ error: 'Must be a User ID, or null to unassign.' }).min(1, 'Must be a User ID, or null to unassign.').nullable().optional(),
+  // Not `ticketTextInput.shape.description`: its default would clear the description when none is sent.
+  description: z.string({ error: 'Must be text.' }).trim().max(20_000, 'Description must be 20000 characters or fewer.').optional(),
   // Only the Fields that are sent change. An empty value clears the Field.
   fields: z.record(z.string(), z.unknown(), { error: 'Must be an object keyed by Field Key.' }).optional(),
 }, {
@@ -153,6 +162,7 @@ const detailColumns = {
   description: ticket.description,
   schemaVersion: ticket.schemaVersion,
   fields: ticket.fields,
+  reopenedFrom: ticket.reopenedFrom,
   teamId: team.id,
   teamName: team.name,
 }
@@ -200,8 +210,9 @@ function toSummary(row: SummaryRow): TicketSummary {
   }
 }
 
-export function policyFacts(row: Pick<SummaryRow, 'requesterId' | 'visibleToAll'>): PolicyTicket {
-  return { requesterId: row.requesterId, visibleToAll: row.visibleToAll }
+export function policyFacts(row: Pick<SummaryRow, 'requesterId' | 'visibleToAll' | 'statusKey' | 'statusCategory'>): PolicyTicket {
+  if (row.statusKey === null || row.statusCategory === null) throw new Error('A ticket has no Status. Every ticket must have one (4.10).')
+  return { requesterId: row.requesterId, visibleToAll: row.visibleToAll, statusKey: row.statusKey, statusCategory: row.statusCategory }
 }
 
 /** The Fields of the Schema Version that the ticket is pinned to. */
@@ -214,10 +225,13 @@ export async function pinnedFields(db: Db, row: Pick<DetailRow, 'number' | 'type
 
 async function toDetail(db: Db, principal: Principal, row: DetailRow): Promise<TicketDetail> {
   if (row.teamId === null || row.teamName === null) throw new Error(`Ticket Type ${row.prefix} has no Team. Every type must have one (4.13).`)
-  const [fields, [comments]] = await Promise.all([
+  const [fields, [comments], [origin]] = await Promise.all([
     pinnedFields(db, row),
     db.select({ n: count() }).from(comment)
       .where(and(eq(comment.ticketNumber, row.number), canSeeInternal(principal) ? undefined : eq(comment.visibility, 'public'))),
+    row.reopenedFrom === null
+      ? Promise.resolve([])
+      : db.select({ prefix: ticketType.prefix }).from(ticket).innerJoin(ticketType, eq(ticket.ticketTypeId, ticketType.id)).where(eq(ticket.number, row.reopenedFrom)),
   ])
   return {
     ...toSummary(row),
@@ -225,9 +239,13 @@ async function toDetail(db: Db, principal: Principal, row: DetailRow): Promise<T
     schema_version: row.schemaVersion,
     fields: row.fields,
     // An archived Field still shows when this ticket has a value for it.
-    schema_fields: fields.filter(f => !f.archived || f.key in row.fields).map(f => ({ key: f.key, label: f.label, type: f.type })),
+    schema_fields: fields.filter(f => !f.archived || f.key in row.fields).map(f => ({
+      key: f.key, label: f.label, type: f.type, required: f.required, help: f.help,
+      ...(f.options ? { options: activeOptions(f) } : {}),
+    })),
     team: { id: row.teamId, name: row.teamName },
     comment_count: comments!.n,
+    reopened_from: row.reopenedFrom === null ? null : { number: row.reopenedFrom, ref: `${origin?.prefix ?? '?'}-${row.reopenedFrom}` },
     allowed_actions: allowedActions(principal, policyFacts(row)),
   }
 }
@@ -486,6 +504,10 @@ export async function updateTicket(db: Db, principal: Principal, number: number,
     set.assigneeId = changes.assignee_id
     entries.push({ action: 'assignee_changed', before: row.assigneeId, after: changes.assignee_id })
   }
+  if (changes.description !== undefined && changes.description !== row.description) {
+    set.description = changes.description
+    entries.push({ action: 'description_changed', before: row.description, after: changes.description })
+  }
   if (nextFields) {
     for (const key of new Set([...Object.keys(row.fields), ...Object.keys(nextFields)])) {
       const [before, after] = [row.fields[key] ?? null, nextFields[key] ?? null]
@@ -501,7 +523,7 @@ export async function updateTicket(db: Db, principal: Principal, number: number,
 
 /** One change of one value, for the audit log. `before` and `after` are the real values, `null` for none. */
 export interface ChangeEntry {
-  action: Extract<AuditAction, 'status_changed' | 'priority_changed' | 'assignee_changed' | 'field_changed'>
+  action: Extract<AuditAction, 'status_changed' | 'priority_changed' | 'assignee_changed' | 'field_changed' | 'description_changed' | 'ticket_cancelled' | 'ticket_reopened'>
   fieldKey?: string
   before: unknown
   after: unknown
@@ -509,9 +531,9 @@ export interface ChangeEntry {
 }
 
 /** Writes the change and one audit entry for each value in one batch. Every change to a ticket goes through here. */
-export async function applyChange(db: Db, principal: Principal, number: number, set: Partial<typeof ticket.$inferInsert>, entries: ChangeEntry[]) {
+export async function applyChange(db: Db, principal: Principal, number: number, set: Partial<typeof ticket.$inferInsert>, entries: ChangeEntry[], extra: BatchItem<'sqlite'>[] = [], now = new Date()) {
   await db.batch([
-    db.update(ticket).set({ ...set, updatedAt: new Date() }).where(eq(ticket.number, number)),
+    db.update(ticket).set({ ...set, updatedAt: now }).where(eq(ticket.number, number)),
     ...entries.map(e => auditEntry(db, principal, {
       ticketNumber: number,
       action: e.action,
@@ -519,5 +541,6 @@ export async function applyChange(db: Db, principal: Principal, number: number, 
       revertsId: e.revertsId,
       values: { before: e.before, after: e.after },
     })),
+    ...extra,
   ])
 }

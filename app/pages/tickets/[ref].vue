@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { Priority, Status, TicketDetail } from '~/types/tickets'
+import type { Field } from '~/components/FieldInput.vue'
 
 const PRIORITIES: { value: Priority, label: string }[] = [
   { value: 'low', label: 'Low' },
@@ -18,6 +19,15 @@ const ticket = ref<TicketDetail | null>(null)
 const statuses = ref<Status[]>([])
 const state = ref<'loading' | 'ready' | 'not-found' | 'error'>('loading')
 const saving = ref<'status' | 'priority' | 'assignee' | null>(null)
+// Requester self-service (issue 09).
+const editing = ref(false)
+const editBusy = ref(false)
+const draftDescription = ref('')
+const draftFields = ref<Record<string, unknown>>({})
+const problems = ref<Record<string, string>>({})
+const editError = ref<string | null>(null)
+const cancelOpen = ref(false)
+const acting = ref<'cancel' | 'reopen' | null>(null)
 // Bumped after a save, so the timeline reloads.
 const activityVersion = ref(0)
 
@@ -25,6 +35,7 @@ const isStaff = computed(() => role.value === 'admin' || role.value === 'agent')
 const back = computed(() => isStaff.value ? { label: 'All tickets', to: '/tickets' } : { label: 'My tickets', to: '/' })
 const can = (action: TicketDetail['allowed_actions'][number]) => ticket.value?.allowed_actions.includes(action) ?? false
 const assignedToMe = computed(() => !!ticket.value?.assignee && ticket.value.assignee.id === user.value?.id)
+const canEdit = computed(() => can('edit_description') || can('edit_fields'))
 const statusItems = computed(() => statuses.value.map(s => ({ label: s.name, value: s.key })))
 
 async function load() {
@@ -80,6 +91,79 @@ function unassign() {
   save('assignee', { assignee_id: null }, 'Unassigned')
 }
 
+function startEdit() {
+  if (!ticket.value) return
+  draftDescription.value = ticket.value.description
+  draftFields.value = { ...ticket.value.fields }
+  problems.value = {}
+  editError.value = null
+  editing.value = true
+}
+
+const sameValue = (a: unknown, b: unknown) => JSON.stringify(a ?? '') === JSON.stringify(b ?? '')
+
+async function saveEdit() {
+  if (!ticket.value || editBusy.value) return
+  const body: Record<string, unknown> = {}
+  if (can('edit_description') && draftDescription.value !== ticket.value.description) body.description = draftDescription.value
+  if (can('edit_fields')) {
+    const changed = ticket.value.schema_fields.filter(f => !sameValue(draftFields.value[f.key], ticket.value!.fields[f.key]))
+    // An emptied Field is sent as an empty string: the server clears it.
+    if (changed.length) body.fields = Object.fromEntries(changed.map(f => [f.key, draftFields.value[f.key] ?? '']))
+  }
+  if (!Object.keys(body).length) {
+    editing.value = false
+    return
+  }
+  editBusy.value = true
+  problems.value = {}
+  editError.value = null
+  try {
+    ticket.value = await $fetch<TicketDetail>(`/api/v1/tickets/${ticket.value.ref}`, { method: 'PATCH', body })
+    activityVersion.value++
+    editing.value = false
+    toast.add({ title: 'Ticket updated', color: 'success', duration: 2500 })
+  } catch (e) {
+    const err = e as { status?: number, data?: { error?: { message?: string, details?: { key: string, reason: string }[] } } }
+    if (err.status === 401) return navigateTo('/sign-in')
+    const details = err.status === 422 ? err.data?.error?.details : undefined
+    if (details) problems.value = Object.fromEntries(details.map(d => [d.key, d.reason]))
+    else editError.value = err.data?.error?.message ?? 'The change was not saved. Check your connection, then try again.'
+    // The Status may have moved on while the form was open: reload, so the form shows what is allowed now.
+    if (err.status === 403) {
+      editing.value = false
+      await load()
+    }
+  } finally {
+    editBusy.value = false
+  }
+}
+
+async function selfService(action: 'cancel' | 'reopen') {
+  if (!ticket.value || acting.value) return
+  acting.value = action
+  try {
+    const res = await $fetch.raw<TicketDetail>(`/api/v1/tickets/${ticket.value.ref}/${action}`, { method: 'POST' })
+    cancelOpen.value = false
+    editing.value = false
+    if (res._data && res._data.ref !== ticket.value.ref) {
+      toast.add({ title: `Created ${res._data.ref}`, description: `The old ticket was resolved more than 14 days ago, so a new ticket links to it.`, color: 'success' })
+      return await navigateTo(`/tickets/${res._data.ref}`)
+    }
+    ticket.value = res._data!
+    activityVersion.value++
+    toast.add({ title: action === 'cancel' ? 'Ticket cancelled' : 'Ticket reopened', color: 'success', duration: 2500 })
+  } catch (e) {
+    const err = e as { status?: number, data?: { error?: { message?: string } } }
+    if (err.status === 401) return navigateTo('/sign-in')
+    toast.add({ title: action === 'cancel' ? 'The ticket was not cancelled.' : 'The ticket was not reopened.', description: err.data?.error?.message ?? 'Check your connection, then try again.', color: 'error' })
+    cancelOpen.value = false
+    await load()
+  } finally {
+    acting.value = null
+  }
+}
+
 function isEmptyValue(value: unknown) {
   return value === undefined || value === null || value === '' || (Array.isArray(value) && value.length === 0)
 }
@@ -129,6 +213,17 @@ onMounted(load)
         :subtitle="`Opened ${timeAgo(ticket.created_at)} by ${displayName(ticket.requester)}, from ${SOURCE[ticket.channel]}.`"
         :breadcrumb="[back, { label: ticket.ref }]"
       >
+        <template v-if="(canEdit && !editing) || can('cancel') || can('reopen')" #actions>
+          <UButton v-if="canEdit && !editing" variant="outline" color="neutral" icon="i-lucide-pencil" @click="startEdit">
+            Edit
+          </UButton>
+          <UButton v-if="can('reopen')" icon="i-lucide-rotate-ccw" :loading="acting === 'reopen'" :disabled="acting !== null" @click="selfService('reopen')">
+            Reopen
+          </UButton>
+          <UButton v-if="can('cancel')" variant="outline" color="error" icon="i-lucide-x" :disabled="acting !== null" @click="cancelOpen = true">
+            Cancel ticket
+          </UButton>
+        </template>
         <template #eyebrow>
           <TicketTypeChip :name="ticket.ticket_type.name" :icon="ticket.ticket_type.icon" :color="ticket.ticket_type.color" />
           <TicketRef :value="ticket.ref" />
@@ -136,10 +231,19 @@ onMounted(load)
         </template>
       </PageHeader>
 
+      <p v-if="ticket.reopened_from" class="text-sm text-(--ui-text-muted)">
+        Reopened from <NuxtLink :to="`/tickets/${ticket.reopened_from.ref}`" class="text-(--ui-primary) hover:underline">{{ ticket.reopened_from.ref }}</NuxtLink>, which was resolved more than 14 days ago.
+      </p>
+
+      <UAlert v-if="editing && editError" color="error" variant="subtle" icon="i-lucide-circle-alert" :description="editError" />
+
       <div class="flex flex-wrap gap-6 items-start">
         <div class="flex-[999_1_520px] min-w-0 flex flex-col gap-5">
           <section aria-label="Description" class="rounded-[14px] border border-(--ui-border) bg-(--ui-bg) px-4 py-4 sm:px-[22px] sm:py-5">
-            <p v-if="ticket.description" class="text-[15px] leading-relaxed text-(--ui-text) whitespace-pre-wrap [overflow-wrap:anywhere]">
+            <UFormField v-if="editing && can('edit_description')" label="Description" name="description" :error="problems.description">
+              <UTextarea v-model="draftDescription" :rows="6" autoresize class="w-full" />
+            </UFormField>
+            <p v-else-if="ticket.description" class="text-[15px] leading-relaxed text-(--ui-text) whitespace-pre-wrap [overflow-wrap:anywhere]">
               {{ ticket.description }}
             </p>
             <p v-else class="text-sm text-(--ui-text-muted)">
@@ -161,6 +265,20 @@ onMounted(load)
             <p v-if="ticket.schema_fields.length === 0" class="text-sm text-(--ui-text-muted)">
               This Ticket Type has no Fields.
             </p>
+            <div v-else-if="editing && can('edit_fields')" class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
+              <UFormField
+                v-for="f in ticket.schema_fields"
+                :key="f.key"
+                :label="f.label"
+                :name="f.key"
+                :required="f.required"
+                :help="f.help"
+                :error="problems[f.key]"
+                :class="f.type === 'long_text' || f.type === 'multi_select' ? 'sm:col-span-2' : ''"
+              >
+                <FieldInput v-model="draftFields[f.key]" :field="(f as Field)" @update:model-value="delete problems[f.key]" />
+              </UFormField>
+            </div>
             <dl v-else class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
               <div
                 v-for="f in ticket.schema_fields"
@@ -181,6 +299,15 @@ onMounted(load)
               </div>
             </dl>
           </section>
+
+          <div v-if="editing" class="flex flex-wrap items-center gap-2">
+            <UButton :loading="editBusy" :disabled="editBusy" @click="saveEdit">
+              Save changes
+            </UButton>
+            <UButton variant="outline" color="neutral" :disabled="editBusy" @click="editing = false">
+              Discard
+            </UButton>
+          </div>
 
           <TicketConversation :ticket="ticket" :version="activityVersion" @reverted="ticket = $event" />
         </div>
@@ -281,5 +408,18 @@ onMounted(load)
         </aside>
       </div>
     </template>
+
+    <UModal v-model:open="cancelOpen" title="Cancel this ticket?" description="The team stops working on it. You can still add comments, but you cannot reopen a cancelled ticket.">
+      <template #footer>
+        <div class="flex flex-wrap justify-end gap-2 w-full">
+          <UButton variant="outline" color="neutral" :disabled="acting !== null" @click="cancelOpen = false">
+            Keep ticket
+          </UButton>
+          <UButton color="error" :loading="acting === 'cancel'" :disabled="acting !== null" @click="selfService('cancel')">
+            Cancel ticket
+          </UButton>
+        </div>
+      </template>
+    </UModal>
   </AppPage>
 </template>

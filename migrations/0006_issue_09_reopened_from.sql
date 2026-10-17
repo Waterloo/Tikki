@@ -1,0 +1,1 @@
+ALTER TABLE `ticket` ADD `reopened_from` integer REFERENCES ticket(number);

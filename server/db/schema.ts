@@ -1,4 +1,4 @@
-import { blob, index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core'
+import { blob, index, integer, sqliteTable, text, uniqueIndex, type AnySQLiteColumn } from 'drizzle-orm/sqlite-core'
 import type { FieldDef, FieldValues } from '../utils/fields'
 import { user } from './auth-schema'
 
@@ -68,6 +68,8 @@ export const ticket = sqliteTable('ticket', {
   assigneeId: text('assignee_id').references(() => user.id),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(() => new Date()),
   updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(() => new Date()),
+  // Issue 09: set when a Requester reopened a resolved ticket after the 14 days. Points to the old ticket.
+  reopenedFrom: integer('reopened_from').references((): AnySQLiteColumn => ticket.number),
 }, t => [
   index('ticket_requester_idx').on(t.requesterId),
   // Issue 10: list filters and the Status-ordered cursor.
@@ -110,7 +112,7 @@ export const comment = sqliteTable('comment', {
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(() => new Date()),
 }, t => [index('comment_ticket_idx').on(t.ticketNumber, t.createdAt)])
 
-export const AUDIT_ACTIONS = ['ticket_created', 'status_changed', 'priority_changed', 'assignee_changed', 'field_changed', 'comment_added'] as const
+export const AUDIT_ACTIONS = ['ticket_created', 'status_changed', 'priority_changed', 'assignee_changed', 'field_changed', 'comment_added', 'description_changed', 'ticket_cancelled', 'ticket_reopened'] as const
 export type AuditAction = typeof AUDIT_ACTIONS[number]
 
 /**

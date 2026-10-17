@@ -1,5 +1,5 @@
 import { eq, or, type SQL } from 'drizzle-orm'
-import { ticket, ticketType } from '../db/schema'
+import { ticket, ticketType, type StatusCategory } from '../db/schema'
 import type { Principal } from './tickets'
 
 /**
@@ -7,13 +7,15 @@ import type { Principal } from './tickets'
  * REST, MCP, and the UI (through `allowed_actions`) use it. No other code checks permissions.
  */
 
-export const TICKET_ACTIONS = ['read', 'change_status', 'change_priority', 'assign', 'edit_fields', 'comment', 'comment_internal'] as const
+export const TICKET_ACTIONS = ['read', 'change_status', 'change_priority', 'assign', 'edit_fields', 'edit_description', 'comment', 'comment_internal', 'cancel', 'reopen'] as const
 export type TicketAction = typeof TICKET_ACTIONS[number]
 
 /** The facts about a ticket that the rules use. */
 export interface PolicyTicket {
   requesterId: string
   visibleToAll: boolean
+  statusKey: string
+  statusCategory: StatusCategory
 }
 
 /** Why an action is refused. Every channel returns these same values. */
@@ -37,8 +39,10 @@ const AGENT_ONLY: Record<Exclude<TicketAction, 'read'>, string> = {
   change_status: 'Only Agents can change the Status of a ticket.',
   change_priority: 'Only Agents can change the Priority of a ticket.',
   assign: 'Only Agents can assign a ticket.',
-  // Issue 09 lets a Requester edit Field values while the ticket is open (4.20).
-  edit_fields: 'Only Agents can edit the Fields of a ticket.',
+  edit_fields: 'Only the Requester or an Agent can edit the Fields of a ticket.',
+  edit_description: 'Only the Requester or an Agent can edit the description of a ticket.',
+  cancel: 'Only the Requester can cancel a ticket.',
+  reopen: 'Only the Requester can reopen a ticket.',
   comment: 'You cannot comment on this ticket.',
   comment_internal: 'Only Agents can write Internal Comments.',
 }
@@ -63,8 +67,26 @@ function canRead(principal: Principal, t: PolicyTicket) {
 export function authorize(principal: Principal, action: TicketAction, t: PolicyTicket): Refusal | null {
   if (!canRead(principal, t)) return NOT_FOUND
   // Everyone who can read a ticket can write a Public Comment (4.18).
-  if (action === 'read' || action === 'comment' || isStaff(principal)) return null
-  return { status: 403, code: 'FORBIDDEN', message: AGENT_ONLY[action] }
+  if (action === 'read' || action === 'comment') return null
+  const forbidden = (message: string): Refusal => ({ status: 403, code: 'FORBIDDEN', message })
+  const isRequester = t.requesterId === principal.userId
+  switch (action) {
+    // The Requester edits only while the Status Category is `open` (4.20).
+    case 'edit_fields':
+    case 'edit_description':
+      if (isStaff(principal)) return null
+      if (!isRequester) return forbidden(AGENT_ONLY[action])
+      return t.statusCategory === 'open' ? null : forbidden('You can edit a ticket only while it is open. Add a comment instead.')
+    // Cancel and reopen are for the Requester of the ticket only. Agents change the Status (4.21, 4.22).
+    case 'cancel':
+      if (!isRequester) return forbidden(AGENT_ONLY.cancel)
+      return t.statusCategory === 'done' ? forbidden('A ticket that is done cannot be cancelled.') : null
+    case 'reopen':
+      if (!isRequester) return forbidden(AGENT_ONLY.reopen)
+      return t.statusKey === 'resolved' ? null : forbidden('Only a resolved ticket can be reopened.')
+    default:
+      return isStaff(principal) ? null : forbidden(AGENT_ONLY[action])
+  }
 }
 
 export function assertAllowed(principal: Principal, action: TicketAction, t: PolicyTicket): void {
