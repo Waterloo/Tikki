@@ -1,0 +1,46 @@
+// One Worker serves the SPA (static assets), the REST API, OAuth, and the MCP endpoint.
+// The top level is local development (`pnpm dev`). `env.staging` is deployed by CI on merge to main.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "ticketing",
+  "main": ".output/server/index.mjs",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": ".output/public",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    // Everything else is a static file or the SPA shell, so the Worker does not run (and costs no CPU) for it.
+    "run_worker_first": ["/api/*", "/mcp", "/.well-known/*"]
+  },
+  "observability": { "enabled": true },
+  "vars": {
+    "APP_ENV": "development",
+    "APP_URL": "http://localhost:8787",
+    "MAIL_TRANSPORT": "console",
+    "ALLOWED_EMAIL_DOMAINS": "example.com",
+    "ADMIN_EMAIL": "admin@example.com"
+  },
+  "d1_databases": [
+    { "binding": "DB", "database_name": "ticketing-dev", "database_id": "00000000-0000-0000-0000-000000000000", "migrations_dir": "migrations" }
+  ],
+  "env": {
+    "staging": {
+      "name": "ticketing-staging",
+      "vars": {
+        "APP_ENV": "staging",
+        "MAIL_TRANSPORT": "cloudflare",
+        // CI sets these from the GitHub "staging" environment with --var. Empty values stop the Worker at startup.
+        "APP_URL": "",
+        "MAIL_FROM": "",
+        "ALLOWED_EMAIL_DOMAINS": "",
+        "ADMIN_EMAIL": ""
+      },
+      "d1_databases": [
+        // CI replaces this id with the STAGING_D1_DATABASE_ID repository variable before it deploys.
+        { "binding": "DB", "database_name": "ticketing-staging", "database_id": "STAGING_D1_DATABASE_ID", "migrations_dir": "migrations" }
+      ],
+      "send_email": [{ "name": "EMAIL" }]
+    }
+  }
+}

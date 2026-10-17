@@ -1,0 +1,2 @@
+# Copy to .dev.vars for `pnpm dev`. Generate a secret with: openssl rand -base64 32
+BETTER_AUTH_SECRET=
