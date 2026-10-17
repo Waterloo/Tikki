@@ -50,6 +50,13 @@
       "when": 1792279477391,
       "tag": "0006_issue_16_attachments",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1792279542506,
+      "tag": "0007_issue_07_type_archive",
+      "breakpoints": true
     }
   ]
 }

@@ -1,0 +1,1 @@
+ALTER TABLE `ticket_type` ADD `archived_at` integer;

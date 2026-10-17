@@ -1,4 +1,4 @@
-import { asc, desc, eq } from 'drizzle-orm'
+import { asc, desc, eq, isNull } from 'drizzle-orm'
 import { schemaVersion, team, ticketType } from '../db/schema'
 import type { Db } from './auth'
 import { activeOptions, type FieldDef, type FieldType } from './fields'
@@ -37,17 +37,18 @@ const columns = {
   color: ticketType.color,
   prefix: ticketType.prefix,
   visibleToAll: ticketType.visibleToAll,
+  archivedAt: ticketType.archivedAt,
   teamId: team.id,
   teamName: team.name,
 }
 
-type Row = Awaited<ReturnType<typeof selectTypes>>[number]
+export type Row = Awaited<ReturnType<typeof selectTypes>>[number]
 
-function selectTypes(db: Db) {
+export function selectTypes(db: Db) {
   return db.select(columns).from(ticketType).leftJoin(team, eq(ticketType.teamId, team.id))
 }
 
-function toView(row: Row): TicketTypeView {
+export function toView(row: Row): TicketTypeView {
   if (row.teamId === null || row.teamName === null) throw new Error(`Ticket Type ${row.prefix} has no Team. Every type must have one (4.13).`)
   return {
     id: row.id,
@@ -67,26 +68,28 @@ export function toFieldView(field: FieldDef): FieldView {
   return view
 }
 
+/** The types that take new tickets. Archived types are left out (4.15f). */
 export async function listTicketTypes(db: Db): Promise<TicketTypeView[]> {
-  return (await selectTypes(db).orderBy(asc(ticketType.id))).map(toView)
+  return (await selectTypes(db).where(isNull(ticketType.archivedAt)).orderBy(asc(ticketType.id))).map(toView)
 }
 
 /** The newest Schema Version of a type. New tickets use it. */
-async function currentSchemaVersion(db: Db, ticketTypeId: number) {
+export async function currentSchemaVersion(db: Db, ticketTypeId: number) {
   const [row] = await db.select().from(schemaVersion).where(eq(schemaVersion.ticketTypeId, ticketTypeId)).orderBy(desc(schemaVersion.version)).limit(1)
   if (!row) throw new Error(`Ticket Type ${ticketTypeId} has no Schema Version. Creating a type must make version 1 (4.15a).`)
   return row
 }
 
-/** A type and its newest Schema Version, or null when no type has this ID. */
+/** A type and its newest Schema Version, or null when no type has this ID. Archived types are included. */
 export async function loadTicketType(db: Db, id: number) {
   const [row] = await selectTypes(db).where(eq(ticketType.id, id)).limit(1)
   if (!row) return null
-  return { type: toView(row), version: await currentSchemaVersion(db, id) }
+  return { type: toView(row), archived: row.archivedAt !== null, version: await currentSchemaVersion(db, id) }
 }
 
+/** The type for readers and Claude. An archived type is not found: nobody can create tickets of it. */
 export async function getTicketTypeWithFields(db: Db, id: number): Promise<TicketTypeWithFields | null> {
   const found = await loadTicketType(db, id)
-  if (!found) return null
+  if (!found || found.archived) return null
   return { ...found.type, schema_version: found.version.version, fields: found.version.fields.filter(f => !f.archived).map(toFieldView) }
 }

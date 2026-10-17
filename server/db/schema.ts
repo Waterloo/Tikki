@@ -26,6 +26,8 @@ export const ticketType = sqliteTable('ticket_type', {
   // Nullable only because SQLite cannot add a NOT NULL column with a foreign key. Every type has a Team (4.13).
   teamId: integer('team_id').references(() => team.id),
   visibleToAll: integer('visible_to_all', { mode: 'boolean' }).notNull().default(false),
+  /** Set when an Admin archives the type (4.15f). Archived types take no new tickets; old tickets keep them. */
+  archivedAt: integer('archived_at', { mode: 'timestamp_ms' }),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(() => new Date()),
 })
 

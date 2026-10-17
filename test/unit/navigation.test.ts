@@ -8,4 +8,10 @@ describe('navigationFor', () => {
     expect(navigationFor('requester').map(i => i.to)).not.toContain('/settings')
     expect(navigationFor(undefined)).toEqual([])
   })
+
+  it('lists Types and fields for Admins only', () => {
+    expect(navigationFor('admin').map(i => i.to)).toContain('/admin/types')
+    expect(navigationFor('agent').map(i => i.to)).not.toContain('/admin/types')
+    expect(navigationFor('requester').map(i => i.to)).not.toContain('/admin/types')
+  })
 })

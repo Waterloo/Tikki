@@ -255,6 +255,8 @@ export async function createTicket(db: Db, principal: Principal, input: unknown)
   let fileIds: string[] = []
   if (target.success && !found) {
     errors.push({ key: 'ticket_type_id', label: 'Ticket Type', reason: 'No Ticket Type has this ID.' })
+  } else if (target.success && found?.archived) {
+    errors.push({ key: 'ticket_type_id', label: 'Ticket Type', reason: 'This Ticket Type is archived and takes no new tickets. Choose another one.' })
   } else if (target.success && found) {
     const result = validateFields(found.version.fields, target.data.fields)
     if (result.ok) {
