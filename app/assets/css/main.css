@@ -7,6 +7,54 @@
   --font-mono: 'Geist Mono', ui-monospace, monospace;
 }
 
+/*
+ * Values from the design canvas (DECISIONS.md section 14). Nuxt UI declares its tokens in a layer,
+ * so these unlayered declarations win. `--app-*` tokens are ours, for surfaces Nuxt UI has no token for.
+ */
 :root {
   --ui-radius: 0.5rem;
+
+  --ui-text-highlighted: #17181c;
+  --ui-text: #2b2e35;
+  --ui-text-toned: #3d424b;
+  --ui-text-muted: #5b606b;
+  --ui-text-dimmed: #8a8f98;
+
+  --ui-bg: #ffffff;
+  --ui-bg-muted: #f2f3f5;
+  --ui-bg-elevated: #f7f8fa;
+  --ui-bg-accented: #e9ebee;
+  --ui-bg-inverted: #17181c;
+
+  --ui-border: #e4e6ea;
+  --ui-border-muted: #eef0f3;
+  --ui-border-accented: #dadde2;
+
+  --app-sidebar: #f7f8fa;
+  --app-hover: #eceef1;
+  --app-row-hover: #f7f8fa;
+  --app-segment: #e9ebee;
+}
+
+.dark {
+  --ui-text-highlighted: #f4f5f7;
+  --ui-text: #d7d9de;
+  --ui-text-toned: #c3c6cc;
+  --ui-text-muted: #9ea3ad;
+  --ui-text-dimmed: #6b7079;
+
+  --ui-bg: #17181c;
+  --ui-bg-muted: #0f1013;
+  --ui-bg-elevated: #1e2025;
+  --ui-bg-accented: #26282e;
+  --ui-bg-inverted: #f4f5f7;
+
+  --ui-border: #2a2d33;
+  --ui-border-muted: #222429;
+  --ui-border-accented: #34373e;
+
+  --app-sidebar: #131417;
+  --app-hover: #1e2025;
+  --app-row-hover: #1c1e22;
+  --app-segment: #26282e;
 }

@@ -1,22 +1,24 @@
-<script setup lang="ts">
-const session = authClient.useSession()
-const items = computed(() => {
-  const role = (session.value.data?.user as { role?: unknown } | undefined)?.role
-  return navigationFor(isRole(role) ? role : undefined)
-})
-</script>
-
 <template>
-  <UDashboardGroup>
+  <!-- rem with equal sizes: a fixed 248 px sidebar, as on the canvas. -->
+  <UDashboardGroup unit="rem">
     <UDashboardSidebar
-      :ui="{ root: 'bg-(--ui-bg-muted)', footer: 'border-t border-(--ui-border)' }"
+      :default-size="15.5"
+      :min-size="15.5"
+      :max-size="15.5"
+      :ui="{
+        root: 'bg-(--app-sidebar) border-r border-(--ui-border)',
+        header: 'h-auto px-3.5 pt-5 pb-1',
+        body: 'px-3.5 pt-4 gap-6',
+        footer: 'px-3.5 py-3 border-t border-(--ui-border)',
+      }"
     >
       <template #header>
-        <OrgMark />
+        <OrgMark class="px-2" />
       </template>
 
       <template #default>
-        <UNavigationMenu :items="items" orientation="vertical" />
+        <SidebarNav />
+        <ClaudeHint />
       </template>
 
       <template #footer>

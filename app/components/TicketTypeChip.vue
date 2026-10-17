@@ -6,20 +6,20 @@ const props = withDefaults(defineProps<{
   color?: string
 }>(), {
   icon: 'i-lucide-ticket',
-  color: '#64748b',
+  color: '#4b5563',
 })
 
 const tile = computed(() => ({
   color: props.color,
-  backgroundColor: `color-mix(in srgb, ${props.color} 14%, transparent)`,
+  backgroundColor: `color-mix(in srgb, ${props.color} 13%, transparent)`,
 }))
 </script>
 
 <template>
   <span class="inline-flex items-center gap-2 min-w-0">
-    <span class="size-6 shrink-0 rounded-md flex items-center justify-center" :style="tile" aria-hidden="true">
-      <UIcon :name="icon" class="size-3.5" />
+    <span class="size-[22px] shrink-0 rounded-md flex items-center justify-center" :style="tile" aria-hidden="true">
+      <UIcon :name="icon" class="size-[13px]" />
     </span>
-    <span class="text-sm truncate">{{ name }}</span>
+    <span class="text-sm truncate text-(--ui-text)">{{ name }}</span>
   </span>
 </template>

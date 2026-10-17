@@ -113,69 +113,61 @@ onMounted(loadTypes)
 </script>
 
 <template>
-  <UDashboardPanel id="new-ticket" :ui="{ body: 'bg-(--ui-bg-muted)' }">
-    <template #header>
-      <UDashboardNavbar title="New ticket">
-        <template #right>
-          <UButton to="/" variant="ghost" icon="i-lucide-arrow-left">
-            My tickets
-          </UButton>
-        </template>
-      </UDashboardNavbar>
-    </template>
+  <AppPage id="new-ticket" title="New ticket">
+    <div class="w-full max-w-[760px] flex flex-col gap-6">
+      <PageHeader
+        title="New ticket"
+        subtitle="Choose what kind of help you need. The form asks only for what the team needs."
+        :breadcrumb="[{ label: 'Tickets', to: '/' }, { label: 'New ticket' }]"
+      />
 
-    <template #body>
-      <div class="w-full max-w-3xl mx-auto flex flex-col gap-4">
-        <p class="text-sm text-(--ui-text-muted)">
-          Choose what kind of help you need. The form asks only for what the team needs.
-        </p>
+      <div v-if="state === 'loading'" class="grid gap-2.5 grid-cols-[repeat(auto-fill,minmax(170px,1fr))]" aria-busy="true" aria-label="Loading ticket types">
+        <USkeleton v-for="n in 4" :key="n" class="h-28 rounded-xl" />
+      </div>
+      <ErrorState v-else-if="state === 'error'" title="The ticket types could not be loaded." description="Check your connection, then try again." @retry="loadTypes" />
 
-        <div v-if="state === 'loading'" class="grid gap-3 sm:grid-cols-2" aria-busy="true" aria-label="Loading ticket types">
-          <USkeleton v-for="n in 4" :key="n" class="h-20 rounded-lg" />
-        </div>
-        <ErrorState v-else-if="state === 'error'" title="The ticket types could not be loaded." description="Check your connection, then try again." @retry="loadTypes" />
+      <form v-else class="flex flex-col gap-6" novalidate @submit.prevent="submit">
+        <fieldset class="flex flex-col gap-2.5">
+          <legend class="text-sm font-medium text-(--ui-text-highlighted) mb-2.5">
+            What is this about?
+          </legend>
+          <div class="grid gap-2.5 grid-cols-[repeat(auto-fill,minmax(170px,1fr))]">
+            <button
+              v-for="t in types"
+              :key="t.id"
+              type="button"
+              :aria-pressed="selectedId === t.id"
+              class="flex flex-col items-start gap-2.5 min-h-28 rounded-xl bg-(--ui-bg) text-left transition-colors hover:bg-(--app-row-hover)"
+              :class="selectedId === t.id ? 'border-2 p-[13px]' : 'border border-(--ui-border) p-3.5'"
+              :style="selectedId === t.id ? { borderColor: t.color } : {}"
+              @click="pick(t.id)"
+            >
+              <span class="flex size-[30px] items-center justify-center rounded-lg" :style="{ color: t.color, backgroundColor: `color-mix(in srgb, ${t.color} 13%, transparent)` }" aria-hidden="true">
+                <UIcon :name="t.icon" class="size-[17px]" />
+              </span>
+              <span class="flex flex-col gap-1">
+                <span class="text-sm font-semibold text-(--ui-text-highlighted)">{{ t.name }}</span>
+                <span class="text-[13px] leading-snug text-(--ui-text-muted)">{{ t.description }}</span>
+              </span>
+            </button>
+          </div>
+        </fieldset>
 
-        <form v-else class="flex flex-col gap-6" novalidate @submit.prevent="submit">
-          <fieldset>
-            <legend class="text-sm font-medium mb-2">
-              What is this about?
-            </legend>
-            <div class="grid gap-3 sm:grid-cols-2">
-              <button
-                v-for="t in types"
-                :key="t.id"
-                type="button"
-                :aria-pressed="selectedId === t.id"
-                class="flex items-start gap-3 text-left rounded-lg border bg-(--ui-bg) p-3 transition-colors hover:bg-(--ui-bg-elevated)"
-                :style="selectedId === t.id ? { borderColor: t.color, boxShadow: `0 0 0 1px ${t.color}` } : {}"
-                :class="selectedId === t.id ? '' : 'border-(--ui-border)'"
-                @click="pick(t.id)"
-              >
-                <span class="flex size-9 shrink-0 items-center justify-center rounded-md" :style="{ color: t.color, backgroundColor: `color-mix(in srgb, ${t.color} 14%, transparent)` }">
-                  <UIcon :name="t.icon" class="size-5" />
-                </span>
-                <span>
-                  <span class="block font-medium">{{ t.name }}</span>
-                  <span class="block text-sm text-(--ui-text-muted)">{{ t.description }}</span>
-                </span>
-              </button>
-            </div>
-          </fieldset>
-
-          <div v-if="selectedId !== null" class="flex flex-col gap-6 rounded-xl border border-(--ui-border) bg-(--ui-bg) p-4 sm:p-6">
+        <template v-if="selectedId !== null">
+          <div class="flex flex-col gap-5 rounded-[14px] border border-(--ui-border) bg-(--ui-bg) p-4 sm:p-[22px]">
             <UFormField label="Title" name="title" required :error="problems.title">
-              <UInput v-model="title" @update:model-value="delete problems.title" placeholder="One line that says what is wrong or what you need" class="w-full" />
+              <UInput v-model="title" placeholder="One line that says what is wrong or what you need" class="w-full" @update:model-value="delete problems.title" />
             </UFormField>
 
             <UFormField label="Description" name="description" :error="problems.description">
-              <UTextarea v-model="description" @update:model-value="delete problems.description" :rows="4" placeholder="What happened? What did you expect?" class="w-full" />
+              <UTextarea v-model="description" :rows="4" placeholder="What happened? What did you expect?" class="w-full" @update:model-value="delete problems.description" />
             </UFormField>
 
-            <div v-if="fieldsState === 'loading'" class="flex flex-col gap-3" aria-busy="true" aria-label="Loading fields">
-              <USkeleton v-for="n in 2" :key="n" class="h-14" />
+            <div v-if="fieldsState === 'loading'" class="grid gap-4 sm:grid-cols-2" aria-busy="true" aria-label="Loading fields">
+              <USkeleton v-for="n in 2" :key="n" class="h-16" />
             </div>
             <ErrorState v-else-if="fieldsState === 'error'" title="The fields of this type could not be loaded." @retry="reloadFields" />
-            <template v-else>
+            <div v-else-if="fields.length" class="grid gap-4 sm:grid-cols-2">
               <UFormField
                 v-for="f in fields"
                 :key="f.key"
@@ -184,47 +176,51 @@ onMounted(loadTypes)
                 :description="f.help"
                 :required="f.required"
                 :error="problems[f.key]"
+                :class="f.type === 'long_text' || f.type === 'multi_select' ? 'sm:col-span-2' : ''"
               >
                 <FieldInput v-model="values[f.key]" :field="f" @update:model-value="delete problems[f.key]" />
               </UFormField>
-            </template>
+            </div>
 
-            <fieldset>
-              <legend class="text-sm font-medium mb-2">
+            <fieldset class="flex flex-col gap-2">
+              <legend class="text-sm font-medium text-(--ui-text-highlighted) mb-2">
                 Priority
               </legend>
-              <div class="inline-flex rounded-md border border-(--ui-border) p-0.5 gap-0.5">
-                <UButton
+              <div class="inline-flex flex-wrap gap-1 p-1 rounded-xl bg-(--app-segment) self-start">
+                <button
                   v-for="p in PRIORITIES"
                   :key="p.value"
                   type="button"
-                  size="sm"
                   :aria-pressed="priority === p.value"
-                  :color="priority === p.value && p.value === 'urgent' ? 'error' : 'neutral'"
-                  :variant="priority === p.value ? (p.value === 'urgent' ? 'solid' : 'outline') : 'ghost'"
+                  class="min-h-9 px-4 rounded-[9px] border text-sm font-medium transition-colors"
+                  :class="priority !== p.value
+                    ? 'border-transparent text-(--ui-text-toned) hover:text-(--ui-text-highlighted)'
+                    : p.value === 'urgent'
+                      ? 'border-[#b42318] bg-[#b42318] text-white'
+                      : 'border-(--ui-border-accented) bg-(--ui-bg) text-(--ui-text-highlighted) shadow-xs'"
                   @click="priority = p.value; delete problems.priority"
                 >
                   {{ p.label }}
-                </UButton>
+                </button>
               </div>
-              <p v-if="problems.priority" class="text-sm text-(--ui-error) mt-1">
+              <p v-if="problems.priority" class="text-sm text-(--ui-error)">
                 {{ problems.priority }}
               </p>
             </fieldset>
 
-            <UAlert v-if="formError" color="error" variant="subtle" :description="formError" />
-
-            <div class="flex justify-end gap-2 border-t border-(--ui-border) pt-4">
-              <UButton to="/" color="neutral" variant="ghost">
-                Cancel
-              </UButton>
-              <UButton type="submit" :loading="busy" :disabled="fieldsState !== 'idle'">
-                Create ticket
-              </UButton>
-            </div>
+            <UAlert v-if="formError" color="error" variant="subtle" icon="i-lucide-circle-alert" :description="formError" />
           </div>
-        </form>
-      </div>
-    </template>
-  </UDashboardPanel>
+
+          <div class="flex flex-wrap justify-end gap-2.5">
+            <UButton to="/" size="lg" variant="ghost">
+              Cancel
+            </UButton>
+            <UButton type="submit" size="lg" :loading="busy" :disabled="fieldsState !== 'idle'">
+              Create ticket
+            </UButton>
+          </div>
+        </template>
+      </form>
+    </div>
+  </AppPage>
 </template>

@@ -5,17 +5,20 @@ const props = defineProps<{
   application?: string
 }>()
 
+const NEUTRAL = 'bg-[#eef0f3] text-[#3d424b] dark:bg-[#222429] dark:text-[#c3c6cc]'
+
 const look = computed(() => {
   switch (props.channel) {
-    case 'ai': return { label: 'Claude', icon: 'i-lucide-sparkles', color: 'warning' as const }
-    case 'api': return { label: props.application ?? 'Application', icon: 'i-lucide-plug', color: 'neutral' as const }
-    default: return { label: 'Web', icon: 'i-lucide-globe', color: 'neutral' as const }
+    case 'ai': return { label: 'Claude', icon: 'i-lucide-sparkles', class: 'bg-[#f4f1ec] text-[#6b4a1f] dark:bg-[#2a2218] dark:text-[#e2c08a]' }
+    case 'api': return { label: props.application ?? 'Application', icon: 'i-lucide-key-round', class: NEUTRAL }
+    default: return { label: 'Web', icon: 'i-lucide-globe', class: NEUTRAL }
   }
 })
 </script>
 
 <template>
-  <UBadge :color="look.color" variant="subtle" :icon="look.icon" size="sm" class="shrink-0">
+  <span class="inline-flex items-center gap-1 min-h-[22px] px-2 rounded-full text-xs whitespace-nowrap shrink-0" :class="look.class">
+    <UIcon :name="look.icon" class="size-3" aria-hidden="true" />
     {{ look.label }}
-  </UBadge>
+  </span>
 </template>

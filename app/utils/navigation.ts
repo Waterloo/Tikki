@@ -1,8 +1,6 @@
-import type { NavigationMenuItem } from '@nuxt/ui'
-
 export type Role = 'admin' | 'agent' | 'requester'
 
-interface NavItem {
+export interface NavItem {
   label: string
   icon: string
   to: string
@@ -17,9 +15,9 @@ const ITEMS: readonly NavItem[] = [
   { label: 'New ticket', icon: 'i-lucide-plus', to: '/tickets/new', roles: EVERYONE },
 ]
 
-export function navigationFor(role: Role | undefined): NavigationMenuItem[] {
+export function navigationFor(role: Role | undefined): NavItem[] {
   if (!role) return []
-  return ITEMS.filter(item => item.roles.includes(role)).map(({ label, icon, to }) => ({ label, icon, to }))
+  return ITEMS.filter(item => item.roles.includes(role))
 }
 
 export function isRole(value: unknown): value is Role {

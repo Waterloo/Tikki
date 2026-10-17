@@ -14,6 +14,9 @@ const state = ref<'loading' | 'ready' | 'error'>('loading')
 
 const dateFormat = new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short' })
 
+// One grid for the header and the rows, so the columns line up. Below `md` each row becomes a card.
+const COLUMNS = 'md:grid-cols-[96px_minmax(220px,1fr)_160px_96px_120px_72px]'
+
 async function load() {
   state.value = 'loading'
   try {
@@ -30,51 +33,59 @@ onMounted(load)
 </script>
 
 <template>
-  <UDashboardPanel id="my-tickets" :ui="{ body: 'bg-(--ui-bg-muted)' }">
-    <template #header>
-      <UDashboardNavbar title="My tickets">
-        <template #right>
-          <UButton to="/tickets/new" icon="i-lucide-plus">
-            New ticket
-          </UButton>
-        </template>
-      </UDashboardNavbar>
-    </template>
+  <AppPage id="my-tickets" title="My tickets">
+    <PageHeader
+      title="My tickets"
+      subtitle="Everything you raised, from the web and from Claude."
+      :breadcrumb="[{ label: 'Tickets' }, { label: 'My tickets' }]"
+    >
+      <template #actions>
+        <UButton to="/tickets/new" icon="i-lucide-plus" size="lg">
+          New ticket
+        </UButton>
+      </template>
+    </PageHeader>
 
-    <template #body>
-      <div class="w-full max-w-5xl mx-auto flex flex-col gap-4">
-        <ListSkeleton v-if="state === 'loading'" />
+    <ListSkeleton v-if="state === 'loading'" />
 
-        <ErrorState v-else-if="state === 'error'" title="Your tickets could not be loaded." description="Check your connection, then try again." @retry="load" />
+    <ErrorState v-else-if="state === 'error'" title="Your tickets could not be loaded." description="Check your connection, then try again." @retry="load" />
 
-        <EmptyState
-          v-else-if="tickets.length === 0"
-          icon="i-lucide-ticket"
-          title="You have no tickets yet"
-          description="Create one here, or add this site to Claude as a custom connector and say, for example, “raise a bug: the export button fails”."
-        >
-          <UButton to="/tickets/new" icon="i-lucide-plus">
-            New ticket
-          </UButton>
-        </EmptyState>
+    <EmptyState
+      v-else-if="tickets.length === 0"
+      icon="i-lucide-ticket"
+      title="You have no tickets yet"
+      description="Create one here, or add this site to Claude as a custom connector and say, for example, “raise a bug: the export button fails”."
+    >
+      <UButton to="/tickets/new" icon="i-lucide-plus" size="lg">
+        New ticket
+      </UButton>
+    </EmptyState>
 
-        <ul v-else class="rounded-xl border border-(--ui-border) bg-(--ui-bg) divide-y divide-(--ui-border) overflow-hidden">
-          <li v-for="t in tickets" :key="t.number" class="grid grid-cols-[auto_minmax(0,1fr)_auto] sm:grid-cols-[6rem_minmax(0,1fr)_11rem_5.5rem_6rem_4rem] items-center gap-x-4 gap-y-1 px-4 py-3">
-            <TicketRef :value="t.ref" />
-            <span class="font-medium truncate col-span-3 sm:col-span-1 row-start-2 sm:row-start-auto col-start-1 sm:col-start-auto" :title="t.title">{{ t.title }}</span>
-            <TicketTypeChip :name="t.ticket_type.name" :icon="t.ticket_type.icon" :color="t.ticket_type.color" />
-            <span class="hidden sm:block">
-              <PriorityBadge :priority="t.priority" />
-            </span>
-            <span class="flex sm:block justify-end">
-              <SourceChip :channel="t.channel" />
-            </span>
-            <time class="hidden sm:block text-xs text-(--ui-text-muted) text-right" :datetime="t.created_at">
-              {{ dateFormat.format(new Date(t.created_at)) }}
-            </time>
-          </li>
-        </ul>
+    <section v-else aria-label="My tickets" class="rounded-[14px] border border-(--ui-border) bg-(--ui-bg) p-2">
+      <div class="hidden md:grid items-center gap-4 px-4 min-h-10 text-[13px] text-(--ui-text-muted)" :class="COLUMNS" aria-hidden="true">
+        <span>Ticket</span><span>Title</span><span>Type</span><span>Priority</span><span>Source</span><span class="text-right">Created</span>
       </div>
-    </template>
-  </UDashboardPanel>
+      <ul class="flex flex-col">
+        <li
+          v-for="t in tickets"
+          :key="t.number"
+          class="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5 md:gap-4 px-4 py-3 md:py-0 md:min-h-[52px] rounded-lg border-t border-(--ui-border-muted) first:border-t-0 md:first:border-t hover:bg-(--app-row-hover)"
+          :class="COLUMNS"
+        >
+          <TicketRef :value="t.ref" />
+          <span class="font-medium text-sm truncate text-(--ui-text-highlighted) col-span-3 md:col-span-1 row-start-2 md:row-start-auto col-start-1 md:col-start-auto" :title="t.title">{{ t.title }}</span>
+          <TicketTypeChip :name="t.ticket_type.name" :icon="t.ticket_type.icon" :color="t.ticket_type.color" />
+          <span class="justify-self-end md:justify-self-start">
+            <PriorityBadge :priority="t.priority" />
+          </span>
+          <span class="hidden md:block">
+            <SourceChip :channel="t.channel" />
+          </span>
+          <time class="hidden md:block text-[13px] text-(--ui-text-muted) text-right whitespace-nowrap" :datetime="t.created_at">
+            {{ dateFormat.format(new Date(t.created_at)) }}
+          </time>
+        </li>
+      </ul>
+    </section>
+  </AppPage>
 </template>

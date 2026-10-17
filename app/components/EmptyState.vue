@@ -9,9 +9,9 @@ withDefaults(defineProps<{
 </script>
 
 <template>
-  <div class="flex flex-col items-center text-center gap-2 px-6 py-12 rounded-xl border border-(--ui-border) bg-(--ui-bg)">
-    <UIcon :name="icon" class="size-7 text-(--ui-text-dimmed)" aria-hidden="true" />
-    <p class="font-semibold">
+  <div class="flex flex-col items-center text-center gap-2 px-6 py-10 rounded-[14px] border border-(--ui-border) bg-(--ui-bg)">
+    <UIcon :name="icon" class="size-7 text-(--ui-text-muted)" aria-hidden="true" />
+    <p class="text-base font-semibold text-(--ui-text-highlighted)">
       {{ title }}
     </p>
     <p v-if="description" class="max-w-md text-sm text-(--ui-text-muted)">

@@ -3,8 +3,8 @@ withDefaults(defineProps<{ rows?: number }>(), { rows: 4 })
 </script>
 
 <template>
-  <div class="rounded-xl border border-(--ui-border) bg-(--ui-bg) divide-y divide-(--ui-border)" aria-busy="true" aria-label="Loading">
-    <div v-for="n in rows" :key="n" class="flex items-center gap-4 px-4 py-3.5">
+  <div class="rounded-[14px] border border-(--ui-border) bg-(--ui-bg) p-2" aria-busy="true" aria-label="Loading">
+    <div v-for="n in rows" :key="n" class="flex items-center gap-4 px-4 min-h-[52px] border-t border-(--ui-border-muted) first:border-t-0">
       <USkeleton class="h-4 w-16" />
       <USkeleton class="h-4 flex-1" />
       <USkeleton class="h-5 w-20 hidden sm:block" />
