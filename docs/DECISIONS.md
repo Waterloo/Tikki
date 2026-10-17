@@ -65,6 +65,8 @@ Facts verified on 2026-10-18 that the design depends on:
 | 3.17 | The Admin role includes everything an Agent can do. | Delegated |
 | 3.18 | Users are deactivated, never deleted, so the Activity always shows who did what. A User has one of three states: invited, active, deactivated. | Delegated |
 | 3.19 | An API key starts with `gt_live_` and is shown in full only once. The UI shows its first characters, when it was created and last used, and a Revoke action. | Delegated |
+| 3.20 | A ticket that the Principal cannot read answers "not found", so its existence is not revealed. A change that a Principal may not make on a ticket it can read answers "forbidden". REST and MCP send the same refusal (issue 05). | Delegated |
+| 3.21 | All permission rules live in one policy module. Pages may declare roles to hide screens, but the API is the boundary (issue 05). | Delegated |
 
 ## 4. Tickets, types, and fields
 
@@ -118,6 +120,7 @@ Facts verified on 2026-10-18 that the design depends on:
 | 5.8 | AI attachments: inline text up to about 256 KB, plus an Upload Link tool. The link expires after 15 minutes, works once, is limited to one ticket, and requires the User's web session (Q33). | Decided |
 | 5.9 | When Claude supports the MCP file-upload extension, we use it (Q33). | Decided |
 | 5.10 | A validation error tells the AI what to fix: for each problem, the Field Key, label, reason, and allowed options. Claude can then ask the user for exactly the missing information. | Delegated |
+| 5.11 | A validation problem in an MCP tool is a tool result marked as an error, with a `problems` list, not a protocol error. `list_ticket_types` returns the type ID that `create_ticket` needs (issue 04). | Delegated |
 
 ## 6. REST API
 
@@ -213,6 +216,8 @@ Before implementation, confirm that the Cloudflare rate-limiting binding is avai
 | 12.3a | The Settings page edits the organization name, the subtitle and the logo. Ticket prefixes are set on each Ticket Type (4.9). Settings shows the deployment values (address, connector URL, sign-in, profile, email sender) as read-only, because they come from the environment. | Delegated |
 | 12.3b | The logo must be a PNG of 1 MB or less. SVG is not accepted, because an SVG file can contain script. Without a logo, the UI shows the first letter of the name. | Delegated |
 | 12.3c | Admins start Erasure (9.2) from Settings › Privacy. They search by email or external ID. | Delegated |
+| 12.3d | The organization name, subtitle and logo can be read without a session, because the sign-in page shows them. Only Admins change them (issue 21). | Delegated |
+| 12.3e | Until R2 is bound, the logo is stored in D1 (at most 1 MB, PNG signature checked) and served with `nosniff` and a sandbox CSP (issue 21). | Delegated |
 | 12.4 | Install with a "Deploy to Cloudflare" button, plus docs for `wrangler`. Migrations run on each deploy (Q25). | Decided |
 
 ## 13. Product experience

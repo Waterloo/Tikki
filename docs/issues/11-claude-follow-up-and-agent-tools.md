@@ -12,7 +12,7 @@
 Requesters follow their tickets from Claude, and Agents work from Claude, with the same permissions as in the web app.
 
 - Tools for everyone: `list_my_tickets`, `get_ticket` (Status, Field values, Public Comments; Internal Comments only for Agents), `add_comment`.
-- Tools for Agents: `search_tickets`, `assign_ticket`, `change_status`, `change_priority`. Every call goes through the policy function.
+- Tools for Agents: `search_tickets`, `assign_ticket`, `change_status`, `change_priority`. Every call goes through the policy function. (Issue 05 already added `assign_ticket`, `change_status` and `change_priority`; this issue adds `search_tickets` and the rest.)
 - No delete tool and no bulk tool. One ticket for each call.
 - Ticket text in tool results is marked as untrusted user content.
 - Write tools have confirmation annotations. Each change is recorded "via AI by <User>".
