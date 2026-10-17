@@ -1,6 +1,10 @@
 <script setup lang="ts">
 definePageMeta({ layout: 'auth' })
 
+// Only a path on this site: no other host, no `//host`.
+const back = String(useRoute().query.redirect ?? '')
+const backTo = /^\/(?![/\\])/.test(back) ? back : '/'
+
 const email = ref('')
 const otp = ref('')
 const step = ref<'email' | 'code'>('email')
@@ -28,7 +32,7 @@ async function signIn() {
     error.value = err.message ?? 'The code is not correct.'
     return
   }
-  if (!followRedirect(data)) await navigateTo('/')
+  if (!followRedirect(data)) await navigateTo(backTo)
 }
 
 function useAnotherEmail() {

@@ -88,6 +88,7 @@ function describe(e: Extract<ActivityItem, { type: 'event' }>): { text: string, 
   const from = before ?? 'none'
   const label = e.action === 'status_changed' ? 'Status' : e.action === 'priority_changed' ? 'priority' : (e.field?.label ?? 'a Field')
   if (e.action === 'ticket_created') return [{ text: `${who} created this ticket` }]
+  if (e.action === 'attachment_added') return [{ text: `${who} attached ` }, { text: '', strong: after ?? 'a file' }]
   if (e.erased) return [{ text: `${prefix}changed ${label}` }]
   if (e.action === 'assignee_changed') {
     return after === null ? [{ text: `${prefix}unassigned this ticket` }] : [{ text: `${prefix}assigned this ticket to ` }, { text: '', strong: after }]

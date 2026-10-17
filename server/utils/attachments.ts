@@ -1,5 +1,6 @@
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { attachment, ticket, ticketType } from '../db/schema'
+import { auditEntry } from './audit'
 import type { Db } from './auth'
 import type { FieldError } from './fields'
 import { authorizeAttach, authorizeAttachmentRead, NO_ATTACHMENT, NOT_FOUND, PolicyRefusal, type PolicyTicket } from './policy'
@@ -9,7 +10,7 @@ import type { Principal } from './tickets'
 export const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
 
 export class AttachmentError extends Error {
-  constructor(readonly status: 400 | 411 | 413 | 422, readonly code: string, message: string) {
+  constructor(readonly status: 400 | 403 | 404 | 410 | 411 | 413 | 422, readonly code: string, message: string) {
     super(message)
     this.name = 'AttachmentError'
   }
@@ -47,6 +48,11 @@ interface UploadInfo {
   contentType: string
 }
 
+/** Path separators and control characters never belong in a name that people download. */
+export function cleanFilename(name: string): string {
+  return name.replace(/[\u0000-\u001F\u007F/\\]/g, '_').trim().slice(0, 200)
+}
+
 /** Checks the headers only, so a refused upload costs no body read. */
 export function parseUploadHeaders(headers: Headers): UploadInfo {
   const length = headers.get('content-length')
@@ -64,8 +70,7 @@ export function parseUploadHeaders(headers: Headers): UploadInfo {
   } catch {
     throw new AttachmentError(422, 'INVALID_FILENAME', 'X-Filename must be percent-encoded UTF-8.')
   }
-  // Path separators and control characters never belong in a name that people download.
-  const filename = decoded.replace(/[\u0000-\u001F\u007F/\\]/g, '_').trim().slice(0, 200)
+  const filename = cleanFilename(decoded)
   if (!filename) throw new AttachmentError(422, 'FILENAME_REQUIRED', 'Send the file name in the X-Filename header (percent-encoded).')
 
   const type = headers.get('content-type')?.split(';')[0]?.trim().toLowerCase() ?? ''
@@ -79,23 +84,30 @@ async function loadPolicyTicket(db: Db, number: number): Promise<PolicyTicket | 
   return row ?? null
 }
 
+/** Throws the refusal when the Principal may not add a file to the ticket. */
+export async function assertCanAttach(db: Db, principal: Principal, ticketNumber: number): Promise<void> {
+  const facts = await loadPolicyTicket(db, ticketNumber)
+  const refusal = facts ? authorizeAttach(principal, facts) : NOT_FOUND
+  if (refusal) throw new PolicyRefusal(refusal)
+}
+
 /**
  * Streams the body straight into R2 and records it. `ticketNumber` null is an upload made before its ticket exists.
  * The caller passes the raw request: its body must not have been read.
  */
 export async function storeUpload(db: Db, bucket: R2Bucket, principal: Principal, ticketNumber: number | null, request: Request): Promise<AttachmentView> {
-  if (ticketNumber !== null) {
-    const facts = await loadPolicyTicket(db, ticketNumber)
-    const refusal = facts ? authorizeAttach(principal, facts) : NOT_FOUND
-    if (refusal) throw new PolicyRefusal(refusal)
-  }
+  if (ticketNumber !== null) await assertCanAttach(db, principal, ticketNumber)
   const info = parseUploadHeaders(request.headers)
   if (!request.body) throw new AttachmentError(422, 'EMPTY_FILE', 'The file is empty.')
+  return putObject(db, bucket, principal, ticketNumber, info, request.body)
+}
 
+/** The one place that writes a file: R2 first, then the record (with its audit entry, for a ticket). The caller has checked the policy. */
+export async function putObject(db: Db, bucket: R2Bucket, principal: Principal, ticketNumber: number | null, info: UploadInfo, body: ReadableStream | string): Promise<AttachmentView> {
   const id = crypto.randomUUID()
   let stored: R2Object
   try {
-    stored = await bucket.put(id, request.body, { httpMetadata: { contentType: info.contentType } })
+    stored = await bucket.put(id, body, { httpMetadata: { contentType: info.contentType } })
   } catch {
     // The runtime ends the body when fewer bytes than declared arrive.
     throw new AttachmentError(400, 'UPLOAD_INCOMPLETE', 'The body did not match Content-Length. Upload the file again.')
@@ -106,14 +118,37 @@ export async function storeUpload(db: Db, bucket: R2Bucket, principal: Principal
     throw new AttachmentError(400, 'UPLOAD_INCOMPLETE', 'The body did not match Content-Length. Upload the file again.')
   }
   try {
-    const [row] = await db.insert(attachment).values({
+    const insert = db.insert(attachment).values({
       id, ticketNumber, uploaderId: principal.userId, filename: info.filename, contentType: info.contentType, size: info.size,
     }).returning()
+    const [row] = ticketNumber === null
+      ? await insert
+      : (await db.batch([insert, auditEntry(db, principal, { ticketNumber, action: 'attachment_added', values: { before: null, after: info.filename } })]))[0]
     return toView(row!)
   } catch (error) {
     await bucket.delete(id)
     throw error
   }
+}
+
+/** 256 KB (UTF-8 bytes) for text that Claude sends in a tool call. */
+export const MAX_TEXT_BYTES = 256 * 1024
+
+/**
+ * Attaches text from Claude. Same policy and same code as a REST upload; the size is counted in UTF-8 bytes.
+ * The type is never taken from the caller: `text/csv` for a `.csv` name, else `text/plain`. Both are safe types.
+ */
+export async function attachText(db: Db, bucket: R2Bucket, principal: Principal, ticketNumber: number, filename: unknown, content: unknown): Promise<AttachmentView> {
+  await assertCanAttach(db, principal, ticketNumber)
+  const name = typeof filename === 'string' ? cleanFilename(filename) : ''
+  if (!name) throw new AttachmentError(422, 'FILENAME_REQUIRED', 'Send a file name, for example "error.log".')
+  if (typeof content !== 'string' || content.length === 0) throw new AttachmentError(422, 'EMPTY_FILE', 'The text is empty.')
+  const size = new TextEncoder().encode(content).byteLength
+  if (size > MAX_TEXT_BYTES) {
+    throw new AttachmentError(413, 'FILE_TOO_LARGE', `The text is ${size} bytes. The limit is ${MAX_TEXT_BYTES} bytes (256 KB). Send a shorter excerpt, or ask the user to upload the file with request_upload_link.`)
+  }
+  const contentType = name.toLowerCase().endsWith('.csv') ? 'text/csv' : 'text/plain'
+  return putObject(db, bucket, principal, ticketNumber, { size, filename: name, contentType }, content)
 }
 
 /** The attachments of a ticket the Principal may read (seeing a ticket and adding to it need the same right). */

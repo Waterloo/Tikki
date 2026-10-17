@@ -112,7 +112,7 @@ export const comment = sqliteTable('comment', {
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(() => new Date()),
 }, t => [index('comment_ticket_idx').on(t.ticketNumber, t.createdAt)])
 
-export const AUDIT_ACTIONS = ['ticket_created', 'status_changed', 'priority_changed', 'assignee_changed', 'field_changed', 'comment_added'] as const
+export const AUDIT_ACTIONS = ['ticket_created', 'status_changed', 'priority_changed', 'assignee_changed', 'field_changed', 'comment_added', 'attachment_added'] as const
 export type AuditAction = typeof AUDIT_ACTIONS[number]
 
 /**
@@ -152,3 +152,17 @@ export const attachment = sqliteTable('attachment', {
   size: integer('size').notNull(),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(() => new Date()),
 }, t => [index('attachment_ticket_idx').on(t.ticketNumber)])
+
+// Issue 17: Upload Links
+/**
+ * A one-time link that lets one User upload one file to one ticket. Only a hash of the token is stored.
+ * `usedAt` is set by a conditional UPDATE, which is what makes "works once" hold on D1.
+ */
+export const uploadLink = sqliteTable('upload_link', {
+  tokenHash: text('token_hash').primaryKey(),
+  ticketNumber: integer('ticket_number').notNull().references(() => ticket.number),
+  userId: text('user_id').notNull().references(() => user.id),
+  expiresAt: integer('expires_at', { mode: 'timestamp_ms' }).notNull(),
+  usedAt: integer('used_at', { mode: 'timestamp_ms' }),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(() => new Date()),
+})

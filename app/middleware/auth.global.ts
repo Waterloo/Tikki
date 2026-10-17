@@ -13,7 +13,8 @@ declare module '#app' {
 export default defineNuxtRouteMiddleware(async (to) => {
   if (PUBLIC_PATHS.has(to.path)) return
   const { data } = await authClient.getSession()
-  if (!data) return navigateTo('/sign-in')
+  // The page that needed the session comes back after sign-in (the Upload Link relies on it).
+  if (!data) return navigateTo(to.fullPath === '/' ? '/sign-in' : { path: '/sign-in', query: { redirect: to.fullPath } })
   const role = (data.user as { role?: unknown }).role
   if (to.meta.roles && !(isRole(role) && to.meta.roles.includes(role))) return navigateTo('/')
 })
