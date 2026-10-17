@@ -15,6 +15,13 @@
       "when": 1792273640504,
       "tag": "0001_ticket_types_and_fields",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1792276963830,
+      "tag": "0002_roles_and_agent_queue",
+      "breakpoints": true
     }
   ]
 }

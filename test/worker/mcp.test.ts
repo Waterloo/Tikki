@@ -1,15 +1,5 @@
-import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { describe, expect, it } from 'vitest'
-import { BASE, call, getMcpToken, MCP_URL, signIn, uniqueEmail, worker } from './helpers'
-
-function connect(accessToken: string, mode: 'modern' | 'legacy') {
-  const client = new Client({ name: 'test-client', version: '1.0.0' })
-  const transport = new StreamableHTTPClientTransport(new URL(MCP_URL), {
-    fetch: (input, init) => worker.fetch(input as string, init),
-    requestInit: { headers: { authorization: `Bearer ${accessToken}` } },
-  })
-  return client.connect(transport, mode === 'legacy' ? { prior: { kind: 'legacy' } } : {}).then(() => client)
-}
+import { BASE, call, connectMcp as connect, getMcpToken, MCP_URL, signIn, uniqueEmail } from './helpers'
 
 describe('MCP endpoint', () => {
   it('answers a request without a token with 401 and the protected-resource metadata pointer', async () => {
@@ -51,6 +41,10 @@ describe('MCP endpoint', () => {
       const tool = tools.find(t => t.name === 'create_ticket')
       expect(tool?.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: false })
       expect(tool?.inputSchema.required).toEqual(['title'])
+      // Agent tools are listed for everyone; the policy refuses them for Requesters, as REST does.
+      for (const name of ['change_status', 'change_priority', 'assign_ticket']) {
+        expect(tools.find(t => t.name === name)?.annotations, name).toMatchObject({ readOnlyHint: false, destructiveHint: false })
+      }
 
       const result = await client.callTool({ name: 'create_ticket', arguments: { title: 'The export button fails' } })
       expect(result.isError).toBeFalsy()
@@ -60,7 +54,7 @@ describe('MCP endpoint', () => {
 
       const read = await call(`/api/v1/tickets/${ref}`, { headers: { cookie } })
       expect(read.status).toBe(200)
-      expect(await read.json()).toMatchObject({ number, ref, title: 'The export button fails', requester_id: user.id, channel: 'ai', ticket_type: { prefix: 'GEN' } })
+      expect(await read.json()).toMatchObject({ number, ref, title: 'The export button fails', requester: { id: user.id }, channel: 'ai', ticket_type: { prefix: 'GEN' }, status: { key: 'open' } })
 
       const list = await (await call('/api/v1/tickets?requester=me', { headers: { cookie } })).json() as { data: { ref: string }[] }
       expect(list.data.map(t => t.ref)).toContain(ref)

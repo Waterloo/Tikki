@@ -37,12 +37,22 @@ describe('tickets REST API', () => {
       title: 'Export fails',
       description: 'Since Monday.',
       priority: 'high',
+      status: { key: 'open', name: 'Open', category: 'open' },
       ticket_type: { id: bug, name: 'Bug', prefix: 'BUG', icon: 'i-lucide-bug', color: '#C2362F' },
+      team: { id: expect.any(Number), name: 'Support' },
       schema_version: 1,
       fields: { page_or_feature: 'Reports', frequency: 'Every time' },
-      requester_id: user.id,
+      schema_fields: [
+        { key: 'page_or_feature', label: 'Page or feature', type: 'short_text' },
+        { key: 'steps_to_reproduce', label: 'Steps to reproduce', type: 'long_text' },
+        { key: 'frequency', label: 'How often does it happen?', type: 'single_select' },
+      ],
+      requester: { id: user.id, name: expect.any(String), email: user.email },
+      assignee: null,
+      allowed_actions: [],
       channel: 'web',
       created_at: expect.any(String),
+      updated_at: expect.any(String),
     })
   })
 
@@ -120,7 +130,9 @@ describe('tickets REST API', () => {
     const other = await signIn(uniqueEmail())
     const { ref } = await (await postJson('/api/v1/tickets', { ticket_type_id: owner.gen, title: 'Private' }, { cookie: owner.cookie })).json() as Created
 
-    expect((await call(`/api/v1/tickets/${ref}`, { headers: { cookie: other.cookie } })).status).toBe(404)
+    const read = await call(`/api/v1/tickets/${ref}`, { headers: { cookie: other.cookie } })
+    expect(read.status).toBe(404)
+    expect(await read.json()).toEqual({ error: { code: 'NOT_FOUND', message: 'No ticket with this reference.', details: null } })
     const list = await (await call('/api/v1/tickets', { headers: { cookie: other.cookie } })).json() as { data: { ref: string }[] }
     expect(list.data.map(t => t.ref)).not.toContain(ref)
   })

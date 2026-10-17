@@ -19,7 +19,10 @@ defineProps<{
     </nav>
     <div class="flex flex-wrap items-end justify-between gap-4">
       <div class="flex flex-col gap-1.5 min-w-0">
-        <h1 class="text-[28px] leading-tight font-semibold tracking-[-0.02em] text-(--ui-text-highlighted)">
+        <div v-if="$slots.eyebrow" class="flex flex-wrap items-center gap-2 mb-1">
+          <slot name="eyebrow" />
+        </div>
+        <h1 class="text-[28px] leading-tight font-semibold tracking-[-0.02em] text-(--ui-text-highlighted) [overflow-wrap:anywhere]">
           {{ title }}
         </h1>
         <p v-if="subtitle" class="text-sm text-(--ui-text-muted)">
