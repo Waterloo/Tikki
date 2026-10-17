@@ -11,6 +11,8 @@ export interface Field {
 defineProps<{ field: Field }>()
 // Each input sets the value type of its own Field; the Field validator on the server checks it.
 const value = defineModel<any>()
+// True while a file Field uploads, so the form does not submit without it.
+const uploading = defineModel<boolean>('uploading', { default: false })
 </script>
 
 <template>
@@ -21,8 +23,8 @@ const value = defineModel<any>()
   <USelect v-else-if="field.type === 'single_select'" v-model="value" :items="field.options ?? []" placeholder="Choose one" class="w-full" />
   <UCheckboxGroup v-else-if="field.type === 'multi_select'" v-model="value" :items="field.options ?? []" />
   <UCheckbox v-else-if="field.type === 'checkbox'" v-model="value" :label="field.label" />
-  <!-- User and file Fields take an ID, until People (issue 20) and Attachments (issue 16) give pickers. -->
+  <!-- User Fields take an ID, until People (issue 20) gives a picker. -->
   <UInput v-else-if="field.type === 'user'" v-model="value" placeholder="User ID" class="w-full" />
-  <UInput v-else-if="field.type === 'file'" v-model="value" placeholder="File reference" class="w-full" />
+  <FileDrop v-else-if="field.type === 'file'" v-model="value" v-model:uploading="uploading" />
   <UInput v-else v-model="value" class="w-full" />
 </template>

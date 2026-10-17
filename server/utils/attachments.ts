@@ -1,0 +1,202 @@
+import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm'
+import { attachment, ticket, ticketType } from '../db/schema'
+import type { Db } from './auth'
+import type { FieldError } from './fields'
+import { authorizeAttach, authorizeAttachmentRead, NO_ATTACHMENT, NOT_FOUND, PolicyRefusal, type PolicyTicket } from './policy'
+import type { Principal } from './tickets'
+
+/** 25 MB (7.4). */
+export const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
+
+export class AttachmentError extends Error {
+  constructor(readonly status: 400 | 411 | 413 | 422, readonly code: string, message: string) {
+    super(message)
+    this.name = 'AttachmentError'
+  }
+}
+
+export interface AttachmentView {
+  id: string
+  ticket_number: number | null
+  filename: string
+  content_type: string
+  size: number
+  uploader_id: string
+  created_at: string
+  url: string
+}
+
+type Row = typeof attachment.$inferSelect
+
+function toView(row: Row): AttachmentView {
+  return {
+    id: row.id,
+    ticket_number: row.ticketNumber,
+    filename: row.filename,
+    content_type: row.contentType,
+    size: row.size,
+    uploader_id: row.uploaderId,
+    created_at: row.createdAt.toISOString(),
+    url: `/api/v1/attachments/${row.id}`,
+  }
+}
+
+interface UploadInfo {
+  size: number
+  filename: string
+  contentType: string
+}
+
+/** Checks the headers only, so a refused upload costs no body read. */
+export function parseUploadHeaders(headers: Headers): UploadInfo {
+  const length = headers.get('content-length')
+  if (length === null) throw new AttachmentError(411, 'LENGTH_REQUIRED', 'Send a Content-Length header. Uploads are not accepted without it.')
+  if (!/^\d{1,15}$/.test(length)) throw new AttachmentError(400, 'INVALID_LENGTH', 'Content-Length must be a number of bytes.')
+  const size = Number(length)
+  if (size === 0) throw new AttachmentError(422, 'EMPTY_FILE', 'The file is empty.')
+  if (size > MAX_ATTACHMENT_BYTES) throw new AttachmentError(413, 'FILE_TOO_LARGE', 'The file must be 25 MB or smaller.')
+
+  // Percent-encoded UTF-8, because header values cannot carry other characters.
+  const raw = headers.get('x-filename')
+  let decoded = ''
+  try {
+    decoded = raw === null ? '' : decodeURIComponent(raw)
+  } catch {
+    throw new AttachmentError(422, 'INVALID_FILENAME', 'X-Filename must be percent-encoded UTF-8.')
+  }
+  // Path separators and control characters never belong in a name that people download.
+  const filename = decoded.replace(/[\u0000-\u001F\u007F/\\]/g, '_').trim().slice(0, 200)
+  if (!filename) throw new AttachmentError(422, 'FILENAME_REQUIRED', 'Send the file name in the X-Filename header (percent-encoded).')
+
+  const type = headers.get('content-type')?.split(';')[0]?.trim().toLowerCase() ?? ''
+  return { size, filename, contentType: /^[a-z0-9!#$&^_.+-]{1,60}\/[a-z0-9!#$&^_.+-]{1,60}$/.test(type) ? type : 'application/octet-stream' }
+}
+
+async function loadPolicyTicket(db: Db, number: number): Promise<PolicyTicket | null> {
+  const [row] = await db.select({ requesterId: ticket.requesterId, visibleToAll: ticketType.visibleToAll }).from(ticket)
+    .innerJoin(ticketType, eq(ticket.ticketTypeId, ticketType.id))
+    .where(eq(ticket.number, number)).limit(1)
+  return row ?? null
+}
+
+/**
+ * Streams the body straight into R2 and records it. `ticketNumber` null is an upload made before its ticket exists.
+ * The caller passes the raw request: its body must not have been read.
+ */
+export async function storeUpload(db: Db, bucket: R2Bucket, principal: Principal, ticketNumber: number | null, request: Request): Promise<AttachmentView> {
+  if (ticketNumber !== null) {
+    const facts = await loadPolicyTicket(db, ticketNumber)
+    const refusal = facts ? authorizeAttach(principal, facts) : NOT_FOUND
+    if (refusal) throw new PolicyRefusal(refusal)
+  }
+  const info = parseUploadHeaders(request.headers)
+  if (!request.body) throw new AttachmentError(422, 'EMPTY_FILE', 'The file is empty.')
+
+  const id = crypto.randomUUID()
+  let stored: R2Object
+  try {
+    stored = await bucket.put(id, request.body, { httpMetadata: { contentType: info.contentType } })
+  } catch {
+    // The runtime ends the body when fewer bytes than declared arrive.
+    throw new AttachmentError(400, 'UPLOAD_INCOMPLETE', 'The body did not match Content-Length. Upload the file again.')
+  }
+  // R2 knows the length from the header; this stops a stored size that differs from the declared one.
+  if (stored.size !== info.size) {
+    await bucket.delete(id)
+    throw new AttachmentError(400, 'UPLOAD_INCOMPLETE', 'The body did not match Content-Length. Upload the file again.')
+  }
+  try {
+    const [row] = await db.insert(attachment).values({
+      id, ticketNumber, uploaderId: principal.userId, filename: info.filename, contentType: info.contentType, size: info.size,
+    }).returning()
+    return toView(row!)
+  } catch (error) {
+    await bucket.delete(id)
+    throw error
+  }
+}
+
+/** The attachments of a ticket the Principal may read (seeing a ticket and adding to it need the same right). */
+export async function listAttachments(db: Db, principal: Principal, ticketNumber: number): Promise<AttachmentView[]> {
+  const facts = await loadPolicyTicket(db, ticketNumber)
+  const refusal = facts ? authorizeAttach(principal, facts) : NOT_FOUND
+  if (refusal) throw new PolicyRefusal(refusal)
+  const rows = await db.select().from(attachment).where(eq(attachment.ticketNumber, ticketNumber)).orderBy(asc(attachment.createdAt), asc(attachment.id))
+  return rows.map(toView)
+}
+
+// Served as sent only for types that cannot run script. Anything else, HTML and SVG included, is a plain download.
+const SAFE_TYPES = new Set([
+  'image/png', 'image/jpeg', 'image/gif', 'image/webp',
+  'application/pdf', 'text/plain', 'text/csv', 'application/json', 'application/zip',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+])
+
+/** RFC 6266 with the RFC 5987 form for names that are not plain ASCII. */
+export function contentDisposition(filename: string): string {
+  const fallback = filename.replace(/[^\x20-\x7E]|["\\%;]/g, '_')
+  const encoded = encodeURIComponent(filename).replace(/['()*]/g, c => `%${c.charCodeAt(0).toString(16).toUpperCase()}`)
+  return `attachment; filename="${fallback}"; filename*=UTF-8''${encoded}`
+}
+
+/** The file, if the Principal may read it. Throws PolicyRefusal otherwise. */
+export async function downloadAttachment(db: Db, bucket: R2Bucket, principal: Principal, id: string): Promise<Response> {
+  const [row] = await db.select({
+    file: attachment,
+    requesterId: ticket.requesterId,
+    visibleToAll: ticketType.visibleToAll,
+  }).from(attachment)
+    .leftJoin(ticket, eq(attachment.ticketNumber, ticket.number))
+    .leftJoin(ticketType, eq(ticket.ticketTypeId, ticketType.id))
+    .where(eq(attachment.id, id)).limit(1)
+  if (!row) throw new PolicyRefusal(NO_ATTACHMENT)
+  const refusal = authorizeAttachmentRead(principal, {
+    uploaderId: row.file.uploaderId,
+    ticket: row.requesterId === null ? null : { requesterId: row.requesterId, visibleToAll: row.visibleToAll ?? false },
+  })
+  if (refusal) throw new PolicyRefusal(refusal)
+
+  const object = await bucket.get(id)
+  if (!object) throw new Error(`Attachment ${id} has a record but no file in the bucket.`)
+  return new Response(object.body, {
+    headers: {
+      'content-type': SAFE_TYPES.has(row.file.contentType) ? row.file.contentType : 'application/octet-stream',
+      'content-length': String(object.size),
+      'content-disposition': contentDisposition(row.file.filename),
+      'x-content-type-options': 'nosniff',
+      'content-security-policy': 'default-src \'none\'; sandbox',
+      'cache-control': 'private, no-store',
+    },
+  })
+}
+
+export interface FileRef {
+  key: string
+  label: string
+  id: unknown
+}
+
+/**
+ * A file Field may point only to a file of the same ticket, or to an unattached upload of the same User.
+ * Unknown IDs and other people's IDs get the same reason, so nobody can probe for files.
+ */
+export async function checkFileRefs(db: Db, principal: Principal, ticketNumber: number | null, refs: FileRef[]): Promise<FieldError[]> {
+  if (refs.length === 0) return []
+  const rows = await db.select({ id: attachment.id, ticketNumber: attachment.ticketNumber, uploaderId: attachment.uploaderId })
+    .from(attachment).where(inArray(attachment.id, refs.map(r => String(r.id))))
+  const byId = new Map(rows.map(r => [r.id, r]))
+  return refs.flatMap((ref) => {
+    const row = byId.get(String(ref.id))
+    const usable = row && (ticketNumber !== null && row.ticketNumber === ticketNumber
+      || row.ticketNumber === null && row.uploaderId === principal.userId)
+    return usable ? [] : [{ key: ref.key, label: ref.label, reason: 'Must be the ID of a file you uploaded to this ticket.' }]
+  })
+}
+
+/** A batch statement: the new ticket (the last insert in the batch) takes the unattached uploads of this User. */
+export function claimUploads(db: Db, principal: Principal, ids: string[]) {
+  return db.update(attachment).set({ ticketNumber: sql`last_insert_rowid()` })
+    .where(and(inArray(attachment.id, ids), isNull(attachment.ticketNumber), eq(attachment.uploaderId, principal.userId)))
+}

@@ -24,6 +24,8 @@
   "d1_databases": [
     { "binding": "DB", "database_name": "ticketing-dev", "database_id": "00000000-0000-0000-0000-000000000000", "migrations_dir": "migrations" }
   ],
+  // Private bucket. Files are served only through the Worker (7.1). Local dev and tests use the local R2 simulation.
+  "r2_buckets": [{ "binding": "FILES", "bucket_name": "ticketing-files-dev" }],
   "env": {
     "staging": {
       "name": "ticketing-staging",
@@ -40,6 +42,8 @@
         // CI replaces this id with the STAGING_D1_DATABASE_ID repository variable before it deploys.
         { "binding": "DB", "database_name": "ticketing-staging", "database_id": "STAGING_D1_DATABASE_ID", "migrations_dir": "migrations" }
       ],
+      // The bucket must exist before the deploy: `wrangler r2 bucket create ticketing-files-staging`.
+      "r2_buckets": [{ "binding": "FILES", "bucket_name": "ticketing-files-staging" }],
       "send_email": [{ "name": "EMAIL" }]
     }
   }

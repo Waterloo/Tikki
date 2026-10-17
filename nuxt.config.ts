@@ -19,6 +19,8 @@ export default defineNuxtConfig({
   },
   nitro: {
     preset: 'cloudflare-module',
+    // Puts the upload routes in front of Nitro, which would buffer the body (server/utils/upload.ts).
+    entry: fileURLToPath(new URL('./server/entry.ts', import.meta.url)),
     cloudflare: {
       // wrangler.jsonc is the source of truth for bindings and environments.
       deployConfig: false,
@@ -28,6 +30,8 @@ export default defineNuxtConfig({
     prerender: { routes: ['/'] },
     hooks: {
       'prerender:config'(prerenderConfig) {
+        // The prerenderer runs on Node, where the Cloudflare entry does not load.
+        delete prerenderConfig.entry
         prerenderConfig.alias = { ...prerenderConfig.alias, 'cloudflare:workers': fileURLToPath(new URL('./server/prerender/cloudflare-workers.ts', import.meta.url)) }
       },
     },

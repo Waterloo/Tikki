@@ -29,6 +29,13 @@
       "when": 1792278053769,
       "tag": "0003_organization",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1792278816678,
+      "tag": "0004_issue_16_attachments",
+      "breakpoints": true
     }
   ]
 }

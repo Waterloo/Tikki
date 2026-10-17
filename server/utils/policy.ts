@@ -80,3 +80,20 @@ export function readableTickets(principal: Principal): SQL | undefined {
   if (isStaff(principal)) return undefined
   return or(eq(ticket.requesterId, principal.userId), eq(ticketType.visibleToAll, true))
 }
+
+// Attachments (issue 16). A file is as visible as its ticket (7.1).
+export const NO_ATTACHMENT: Refusal = { status: 404, code: 'NOT_FOUND', message: 'No attachment with this ID.' }
+
+/**
+ * Adding a file to a ticket takes the right to read the ticket.
+ * Issue 12: the Application principal needs one rule in `canRead` ("only the tickets it created"); this follows.
+ */
+export function authorizeAttach(principal: Principal, t: PolicyTicket): Refusal | null {
+  return canRead(principal, t) ? null : NOT_FOUND
+}
+
+/** An upload made before its ticket exists (`ticket` is null) belongs to its uploader alone. */
+export function authorizeAttachmentRead(principal: Principal, a: { uploaderId: string, ticket: PolicyTicket | null }): Refusal | null {
+  if (a.ticket === null) return a.uploaderId === principal.userId ? null : NO_ATTACHMENT
+  return canRead(principal, a.ticket) ? null : NO_ATTACHMENT
+}

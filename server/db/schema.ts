@@ -87,3 +87,18 @@ export const otpRequest = sqliteTable('otp_request', {
   email: text('email').notNull(),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
 }, t => [index('otp_request_email_created_idx').on(t.email, t.createdAt)])
+
+// Issue 16: attachments
+/**
+ * A file in the private R2 bucket (7.1). The R2 key is the `id`.
+ * `ticketNumber` is null for an upload made before its ticket exists; only the uploader can read it until a ticket claims it.
+ */
+export const attachment = sqliteTable('attachment', {
+  id: text('id').primaryKey(),
+  ticketNumber: integer('ticket_number').references(() => ticket.number),
+  uploaderId: text('uploader_id').notNull().references(() => user.id),
+  filename: text('filename').notNull(),
+  contentType: text('content_type').notNull(),
+  size: integer('size').notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(() => new Date()),
+}, t => [index('attachment_ticket_idx').on(t.ticketNumber)])

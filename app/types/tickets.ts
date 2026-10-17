@@ -44,3 +44,15 @@ export interface TicketList {
   data: TicketSummary[]
   counts: Record<string, number>
 }
+
+/** A file of a ticket, or an upload that no ticket owns yet (`ticket_number` null). */
+export interface Attachment {
+  id: string
+  ticket_number: number | null
+  filename: string
+  content_type: string
+  size: number
+  uploader_id: string
+  created_at: string
+  url: string
+}

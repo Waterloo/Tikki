@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { Priority, Status, TicketDetail } from '~/types/tickets'
+import type { Attachment, Priority, Status, TicketDetail } from '~/types/tickets'
 
 const PRIORITIES: { value: Priority, label: string }[] = [
   { value: 'low', label: 'Low' },
@@ -17,6 +17,8 @@ const { user, role } = useCurrentUser()
 const ticket = ref<TicketDetail | null>(null)
 const statuses = ref<Status[]>([])
 const state = ref<'loading' | 'ready' | 'not-found' | 'error'>('loading')
+const attachments = ref<Attachment[]>([])
+const attachmentsState = ref<'loading' | 'ready' | 'error'>('loading')
 const saving = ref<'status' | 'priority' | 'assignee' | null>(null)
 
 const isStaff = computed(() => role.value === 'admin' || role.value === 'agent')
@@ -34,12 +36,23 @@ async function load() {
     }
     ticket.value = t
     state.value = 'ready'
+    loadAttachments(t.ref)
     // An old prefix or a bare number still opens the ticket (4.9a); the address then shows the current reference.
     if (route.params.ref !== t.ref) router.replace(`/tickets/${t.ref}`)
   } catch (e) {
     const status = (e as { status?: number }).status
     if (status === 401) return navigateTo('/sign-in')
     state.value = status === 404 ? 'not-found' : 'error'
+  }
+}
+
+async function loadAttachments(ref: string) {
+  attachmentsState.value = 'loading'
+  try {
+    attachments.value = (await $fetch<{ data: Attachment[] }>(`/api/v1/tickets/${encodeURIComponent(ref)}/attachments`)).data
+    attachmentsState.value = 'ready'
+  } catch {
+    attachmentsState.value = 'error'
   }
 }
 
@@ -75,6 +88,10 @@ function assignToMe() {
 
 function unassign() {
   save('assignee', { assignee_id: null }, 'Unassigned')
+}
+
+function fileOf(id: unknown) {
+  return attachments.value.find(a => a.id === id)
 }
 
 function isEmptyValue(value: unknown) {
@@ -171,6 +188,11 @@ onMounted(load)
                 <dd class="text-[15px] text-(--ui-text-highlighted) [overflow-wrap:anywhere]" :class="f.type === 'long_text' ? 'whitespace-pre-wrap' : ''">
                   <span v-if="isEmptyValue(ticket.fields[f.key])" class="text-(--ui-text-dimmed)">Not given</span>
                   <a v-else-if="f.type === 'url'" :href="String(ticket.fields[f.key])" target="_blank" rel="noopener noreferrer" class="text-(--ui-primary) hover:underline">{{ ticket.fields[f.key] }}</a>
+                  <template v-else-if="f.type === 'file'">
+                    <AttachmentChip v-if="fileOf(ticket.fields[f.key])" :attachment="fileOf(ticket.fields[f.key])!" />
+                    <span v-else-if="attachmentsState === 'loading'" class="text-(--ui-text-dimmed)">Loading…</span>
+                    <span v-else class="text-(--ui-text-dimmed)">File not available</span>
+                  </template>
                   <template v-else>
                     {{ formatValue(f.type, ticket.fields[f.key]) }}
                   </template>
@@ -178,6 +200,8 @@ onMounted(load)
               </div>
             </dl>
           </section>
+
+          <TicketAttachments :ticket-ref="ticket.ref" :attachments="attachments" :state="attachmentsState" @uploaded="attachments.push($event)" @retry="loadAttachments(ticket.ref)" />
         </div>
 
         <aside aria-label="Ticket properties" class="flex-[1_1_300px] min-w-0 flex flex-col gap-4">

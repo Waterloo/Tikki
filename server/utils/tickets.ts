@@ -3,6 +3,7 @@ import { alias } from 'drizzle-orm/sqlite-core'
 import { z } from 'zod'
 import { PRIORITIES, schemaVersion, status, team, ticket, ticketType, user, type Priority } from '../db/schema'
 import type { Db, Role } from './auth'
+import { checkFileRefs, claimUploads } from './attachments'
 import { validateFields, type FieldError, type FieldType, type FieldValues } from './fields'
 import { allowedActions, assertAllowed, canBeAssignee, NOT_FOUND, PolicyRefusal, readableTickets, type PolicyTicket, type TicketAction } from './policy'
 import type { StatusView } from './statuses'
@@ -234,17 +235,24 @@ export async function createTicket(db: Db, principal: Principal, input: unknown)
 
   const found = target.success ? await loadTicketType(db, target.data.ticket_type_id) : null
   let values: FieldValues = {}
+  let fileIds: string[] = []
   if (target.success && !found) {
     errors.push({ key: 'ticket_type_id', label: 'Ticket Type', reason: 'No Ticket Type has this ID.' })
   } else if (target.success && found) {
     const result = validateFields(found.version.fields, target.data.fields)
-    if (result.ok) values = result.values
-    else errors.push(...result.errors)
+    if (result.ok) {
+      values = result.values
+      const refs = found.version.fields.filter(f => f.type === 'file' && f.key in values).map(f => ({ key: f.key, label: f.label, id: values[f.key] }))
+      errors.push(...await checkFileRefs(db, principal, null, refs))
+      fileIds = refs.map(r => String(r.id))
+    } else {
+      errors.push(...result.errors)
+    }
   }
   if (errors.length || !core.success || !found) throw new TicketValidationError(errors)
 
   const now = new Date()
-  const [created] = await db.insert(ticket).values({
+  const insert = db.insert(ticket).values({
     ticketTypeId: found.type.id,
     schemaVersion: found.version.version,
     title: core.data.title,
@@ -257,6 +265,8 @@ export async function createTicket(db: Db, principal: Principal, input: unknown)
     createdAt: now,
     updatedAt: now,
   }).returning({ number: ticket.number })
+  // The uploads join the ticket in the same batch, so a ticket never exists with its files still unattached.
+  const [created] = fileIds.length ? (await db.batch([insert, claimUploads(db, principal, fileIds)]))[0] : await insert
   return getTicket(db, principal, created!.number)
 }
 
