@@ -1,4 +1,6 @@
 <script setup lang="ts">
+definePageMeta({ layout: 'auth' })
+
 const email = ref('')
 const otp = ref('')
 const step = ref<'email' | 'code'>('email')
@@ -28,42 +30,46 @@ async function signIn() {
   }
   if (!followRedirect(data)) await navigateTo('/')
 }
+
+function useAnotherEmail() {
+  step.value = 'email'
+  otp.value = ''
+  error.value = null
+}
 </script>
 
 <template>
-  <div class="min-h-screen flex items-center justify-center p-4 bg-(--ui-bg-muted)">
-    <UCard class="w-full max-w-sm">
-      <template #header>
-        <h1 class="text-lg font-semibold">
-          Sign in
-        </h1>
-      </template>
+  <UCard :ui="{ body: 'p-6 sm:p-6' }">
+    <div class="flex flex-col gap-1 mb-6">
+      <h1 class="text-xl font-semibold tracking-tight">
+        Sign in
+      </h1>
+      <p class="text-sm text-(--ui-text-muted)">
+        {{ step === 'email' ? 'We send a one-time code to your work email.' : `We sent a code to ${email}.` }}
+      </p>
+    </div>
 
-      <form v-if="step === 'email'" class="space-y-4" @submit.prevent="sendCode">
-        <UFormField label="Work email">
-          <UInput v-model="email" type="email" autocomplete="email" required autofocus class="w-full" />
-        </UFormField>
-        <UButton type="submit" block :loading="busy">
-          Send code
-        </UButton>
-      </form>
+    <form v-if="step === 'email'" class="flex flex-col gap-4" @submit.prevent="sendCode">
+      <UFormField label="Work email">
+        <UInput v-model="email" type="email" autocomplete="email" required autofocus size="lg" class="w-full" />
+      </UFormField>
+      <UButton type="submit" block size="lg" :loading="busy">
+        Send code
+      </UButton>
+    </form>
 
-      <form v-else class="space-y-4" @submit.prevent="signIn">
-        <p class="text-sm text-(--ui-text-muted)">
-          We sent a code to {{ email }}. Type it here.
-        </p>
-        <UFormField label="Code">
-          <UInput v-model="otp" inputmode="numeric" autocomplete="one-time-code" required autofocus class="w-full" />
-        </UFormField>
-        <UButton type="submit" block :loading="busy">
-          Sign in
-        </UButton>
-        <UButton variant="link" size="sm" @click="step = 'email'; otp = ''">
-          Use another email
-        </UButton>
-      </form>
+    <form v-else class="flex flex-col gap-4" @submit.prevent="signIn">
+      <UFormField label="Code" help="It expires in 10 minutes.">
+        <UInput v-model="otp" inputmode="numeric" autocomplete="one-time-code" required autofocus size="lg" class="w-full font-mono tracking-widest" />
+      </UFormField>
+      <UButton type="submit" block size="lg" :loading="busy">
+        Sign in
+      </UButton>
+      <UButton variant="link" color="primary" size="sm" class="self-start px-0" @click="useAnotherEmail">
+        Use another email
+      </UButton>
+    </form>
 
-      <UAlert v-if="error" class="mt-4" color="error" variant="subtle" :description="error" />
-    </UCard>
-  </div>
+    <UAlert v-if="error" class="mt-4" color="error" variant="subtle" icon="i-lucide-circle-alert" :description="error" />
+  </UCard>
 </template>

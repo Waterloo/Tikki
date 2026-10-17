@@ -32,6 +32,7 @@ Vertical slices of [the PRD](../PRD.md). Each slice goes through every layer and
 | 23 | [Rate limits](23-rate-limits.md) | AFK | 12 |
 | 24 | [Production baseline and self-hosting](24-production-baseline.md) | HITL | 01 |
 | 25 | [SSO sign-in: Google, Microsoft, generic OIDC](25-sso-sign-in.md) | HITL | 01 |
+| 26 | [UI foundation: theme, app shell, shared parts](26-ui-foundation.md) | AFK | 01 |
 
 Email OTP is the first sign-in method (issue 01). Issue 25 must be done before a public release, because the `free` profile has no email.
 

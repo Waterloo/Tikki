@@ -6,6 +6,15 @@
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["dev"],
       "port": 8787
+    },
+    {
+      "name": "ticketing-dev-ui-foundation",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "pnpm exec nuxt build && pnpm exec wrangler d1 migrations apply DB --local --persist-to .wrangler/ui-foundation && pnpm exec wrangler dev --port 8789 --var APP_URL:http://localhost:8789 --persist-to .wrangler/ui-foundation"
+      ],
+      "port": 8789
     }
   ]
 }
