@@ -88,6 +88,7 @@ function describe(e: Extract<ActivityItem, { type: 'event' }>): { text: string, 
   const from = before ?? 'none'
   const label = e.action === 'status_changed' ? 'Status' : e.action === 'priority_changed' ? 'priority' : (e.field?.label ?? 'a Field')
   if (e.action === 'ticket_created') return [{ text: `${who} created this ticket` }]
+  if (e.action === 'type_changed') return e.erased ? [{ text: `${who} changed the Ticket Type` }] : [{ text: `${who} changed the Ticket Type from ${from} to ` }, { text: '', strong: after ?? 'none' }]
   if (e.erased) return [{ text: `${prefix}changed ${label}` }]
   if (e.action === 'assignee_changed') {
     return after === null ? [{ text: `${prefix}unassigned this ticket` }] : [{ text: `${prefix}assigned this ticket to ` }, { text: '', strong: after }]
@@ -153,6 +154,9 @@ onMounted(() => load())
             </template>
             <span class="no-underline"> · <time :datetime="item.at" :title="formatDateTime(item.at)">{{ timeAgo(item.at) }}</time></span>
           </span>
+          <p v-if="item.unmoved.length" class="basis-full m-0 pl-6 [overflow-wrap:anywhere]">
+            Did not move: <template v-for="(u, i) in item.unmoved" :key="u.key">{{ i ? '; ' : '' }}{{ u.label }}: <strong class="font-medium text-(--ui-text)">{{ u.value }}</strong></template>
+          </p>
           <span v-if="item.reverted" class="text-xs">Reverted</span>
           <UButton
             v-if="item.revertible"

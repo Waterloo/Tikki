@@ -19,7 +19,11 @@ const statuses = ref<Status[]>([])
 const state = ref<'loading' | 'ready' | 'not-found' | 'error'>('loading')
 const attachments = ref<Attachment[]>([])
 const attachmentsState = ref<'loading' | 'ready' | 'error'>('loading')
-const saving = ref<'status' | 'priority' | 'assignee' | null>(null)
+const saving = ref<'status' | 'priority' | 'assignee' | 'type' | null>(null)
+// The type picker is open when `typeChoice` is not null. Types load on first open.
+const typeChoice = ref<number | null>(null)
+const types = ref<{ label: string, value: number }[]>([])
+const typesState = ref<'idle' | 'loading' | 'error'>('idle')
 // Bumped after a save, so the timeline reloads.
 const activityVersion = ref(0)
 
@@ -58,7 +62,7 @@ async function loadAttachments(ref: string) {
   }
 }
 
-async function save(field: 'status' | 'priority' | 'assignee', body: Record<string, unknown>, done: string) {
+async function save(field: 'status' | 'priority' | 'assignee' | 'type', body: Record<string, unknown>, done: string) {
   if (!ticket.value || saving.value) return
   saving.value = field
   try {
@@ -91,6 +95,39 @@ function assignToMe() {
 
 function unassign() {
   save('assignee', { assignee_id: null }, 'Unassigned')
+}
+
+async function openTypePicker() {
+  if (!ticket.value) return
+  typeChoice.value = ticket.value.ticket_type.id
+  if (types.value.length) return
+  typesState.value = 'loading'
+  try {
+    types.value = (await $fetch<{ data: { id: number, name: string }[] }>('/api/v1/ticket-types')).data.map(t => ({ label: t.name, value: t.id }))
+    typesState.value = 'idle'
+  } catch {
+    typesState.value = 'error'
+  }
+}
+
+async function changeType() {
+  if (!ticket.value || typeChoice.value === null || typeChoice.value === ticket.value.ticket_type.id || saving.value) return
+  saving.value = 'type'
+  try {
+    const next = await $fetch<TicketDetail>(`/api/v1/tickets/${ticket.value.ref}/type`, { method: 'PUT', body: { ticket_type_id: typeChoice.value } })
+    ticket.value = next
+    typeChoice.value = null
+    activityVersion.value++
+    // The old reference still opens the ticket; the address shows the new one.
+    router.replace(`/tickets/${next.ref}`)
+    toast.add({ title: `Ticket Type changed. The reference is now ${next.ref}`, color: 'success', duration: 4000 })
+  } catch (e) {
+    const err = e as { status?: number, data?: { error?: { message?: string, details?: { reason: string }[] | null } } }
+    if (err.status === 401) return navigateTo('/sign-in')
+    toast.add({ title: 'The Ticket Type was not changed.', description: err.data?.error?.details?.[0]?.reason ?? err.data?.error?.message ?? 'Check your connection, then try again.', color: 'error' })
+  } finally {
+    saving.value = null
+  }
 }
 
 function fileOf(id: unknown) {
@@ -268,7 +305,29 @@ onMounted(load)
 
             <div class="flex flex-col gap-1.5">
               <span class="text-[13px] text-(--ui-text-muted)">Ticket Type</span>
-              <TicketTypeChip :name="ticket.ticket_type.name" :icon="ticket.ticket_type.icon" :color="ticket.ticket_type.color" />
+              <div v-if="typeChoice === null" class="flex items-center justify-between gap-2">
+                <TicketTypeChip :name="ticket.ticket_type.name" :icon="ticket.ticket_type.icon" :color="ticket.ticket_type.color" />
+                <UButton v-if="can('change_type')" size="sm" variant="outline" color="neutral" @click="openTypePicker">
+                  Change type
+                </UButton>
+              </div>
+              <form v-else class="flex flex-col gap-2.5" @submit.prevent="changeType">
+                <USelect v-model="typeChoice" aria-label="New Ticket Type" :items="types" :loading="typesState === 'loading'" :disabled="saving !== null" class="w-full" />
+                <p v-if="typesState === 'error'" class="text-[13px] text-(--ui-error)" role="alert">
+                  The Ticket Types could not be loaded.
+                </p>
+                <p class="text-[13px] leading-snug text-(--ui-text-muted)">
+                  The number stays and the prefix changes. Values of Fields with the same key and data type move. The other values stay in the Activity. The Team changes too. You cannot revert this.
+                </p>
+                <div class="flex gap-2">
+                  <UButton type="submit" size="sm" :loading="saving === 'type'" :disabled="saving !== null || typeChoice === ticket.ticket_type.id">
+                    Change type
+                  </UButton>
+                  <UButton size="sm" variant="outline" color="neutral" :disabled="saving !== null" @click="typeChoice = null">
+                    Cancel
+                  </UButton>
+                </div>
+              </form>
             </div>
           </div>
 

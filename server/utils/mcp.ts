@@ -12,6 +12,7 @@ import { fieldsToJsonSchema } from './mcp-schema'
 import { NOT_FOUND, PolicyRefusal } from './policy'
 import { db, useAuth } from './services'
 import { getTicketTypeWithFields, listTicketTypes } from './ticket-types'
+import { changeTicketType } from './ticket-type-change'
 import { createTicket, parseTicketReference, TicketValidationError, updateTicket, type Principal } from './tickets'
 
 function buildServer(principal: Principal) {
@@ -79,13 +80,13 @@ function buildServer(principal: Principal) {
   const writeAnnotations = { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false }
 
   /** Runs one change through the same module function and policy as REST, and reports the result or the refusal. */
-  async function change(ref: string, input: Record<string, unknown>) {
+  async function change(ref: string, input: Record<string, unknown>, run: typeof updateTicket = updateTicket) {
     try {
       const number = parseTicketReference(ref)
       if (number === null) throw new PolicyRefusal(NOT_FOUND)
-      const t = await updateTicket(db, principal, number, input)
+      const t = await run(db, principal, number, input)
       return {
-        content: [{ type: 'text' as const, text: `${t.ref}: Status ${t.status.name}, Priority ${t.priority}, ${t.assignee ? `assigned to ${t.assignee.name || t.assignee.email}` : 'unassigned'}.` }],
+        content: [{ type: 'text' as const, text: `${t.ref} (${t.ticket_type.name}): Status ${t.status.name}, Priority ${t.priority}, ${t.assignee ? `assigned to ${t.assignee.name || t.assignee.email}` : 'unassigned'}.` }],
         structuredContent: { number: t.number, ref: t.ref, status: t.status.key, priority: t.priority, assignee_id: t.assignee?.id ?? null },
       }
     } catch (error) {
@@ -120,6 +121,13 @@ function buildServer(principal: Principal) {
     inputSchema: z.object({ ticket: ticketArg, assignee: z.enum(['me', 'nobody']) }),
     annotations: { title: 'Assign ticket', ...writeAnnotations },
   }, ({ ticket, assignee }) => change(ticket, { assignee_id: assignee === 'me' ? principal.userId : null }))
+
+  server.registerTool('change_ticket_type', {
+    title: 'Change ticket type',
+    description: 'Agents only. Move one ticket to another Ticket Type, for example when it was filed as the wrong kind. The number stays and the prefix changes, so the old reference still works. Values of Fields with the same key and data type move; the others stay in the Activity. The Team changes to the Team of the new type. Ask the user to confirm before you call it.',
+    inputSchema: z.object({ ticket: ticketArg, ticket_type_id: z.number().describe('The id from list_ticket_types.') }),
+    annotations: { title: 'Change ticket type', ...writeAnnotations },
+  }, ({ ticket, ticket_type_id }) => change(ticket, { ticket_type_id }, changeTicketType))
 
   return server
 }

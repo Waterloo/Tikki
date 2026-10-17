@@ -93,6 +93,8 @@ export type ActivityItem =
     /** Readable values. Null: no value (a Field not set, or no assignee). */
     before: string | null
     after: string | null
+    /** For a type change: the values that did not move, as text. Empty after Erasure. */
+    unmoved: { key: string, label: string, value: string }[]
     /** Erasure removed the values (9.2). The entry still says what changed. */
     erased: boolean
     reverts_id: number | null
@@ -116,6 +118,12 @@ function currentValue(row: DetailRow, action: AuditAction, fieldKey: string | nu
     case 'assignee_changed': return row.assigneeId
     default: return row.fields[fieldKey ?? ''] ?? null
   }
+}
+
+function unmovedOf(e: { action: string, before: string | null }): { key: string, label: string, value: string }[] {
+  if (e.action !== 'type_changed' || e.before === null) return []
+  const list = (JSON.parse(e.before) as { unmoved?: { key: string, label: string, value: unknown }[] }).unmoved ?? []
+  return list.map(u => ({ key: u.key, label: u.label, value: Array.isArray(u.value) ? u.value.join(', ') : typeof u.value === 'boolean' ? (u.value ? 'Yes' : 'No') : String(u.value) }))
 }
 
 const keyOf = (e: { action: string, fieldKey: string | null }) => `${e.action}:${e.fieldKey ?? ''}`
@@ -164,6 +172,10 @@ export async function listActivity(db: Db, principal: Principal, number: number)
       case 'status_changed': return statusNames.get(String(value)) ?? String(value)
       case 'priority_changed': return String(value)
       case 'assignee_changed': return personNames.get(String(value)) ?? 'unknown User'
+      case 'type_changed': {
+        const v = value as { type: string, ref: string }
+        return `${v.type} (${v.ref})`
+      }
       default: return Array.isArray(value) ? value.join(', ') : typeof value === 'boolean' ? (value ? 'Yes' : 'No') : String(value)
     }
   }
@@ -184,7 +196,8 @@ export async function listActivity(db: Db, principal: Principal, number: number)
       field: e.fieldKey === null ? null : { key: e.fieldKey, label: defByKey.get(e.fieldKey)?.label ?? e.fieldKey },
       before: show(e, e.before),
       after: show(e, e.after),
-      erased: !!action && e.before === null,
+      unmoved: unmovedOf(e),
+      erased: (!!action || e.action === 'type_changed') && e.before === null,
       reverts_id: e.revertsId,
       reverted: revertedIds.has(e.id),
       revertible,

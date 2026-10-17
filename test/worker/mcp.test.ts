@@ -49,7 +49,7 @@ describe('MCP endpoint', () => {
     const { client } = await connected()
     const { tools } = await client.listTools()
     const by = Object.fromEntries(tools.map(t => [t.name, t]))
-    expect(Object.keys(by).sort()).toEqual(['assign_ticket', 'change_priority', 'change_status', 'create_ticket', 'get_ticket_type', 'list_ticket_types'])
+    expect(Object.keys(by).sort()).toEqual(['assign_ticket', 'change_priority', 'change_status', 'change_ticket_type', 'create_ticket', 'get_ticket_type', 'list_ticket_types'])
     expect(by.list_ticket_types!.annotations).toMatchObject({ readOnlyHint: true })
     expect(by.get_ticket_type!.annotations).toMatchObject({ readOnlyHint: true })
     expect(by.create_ticket!.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: false })

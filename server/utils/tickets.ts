@@ -512,7 +512,7 @@ export async function updateTicket(db: Db, principal: Principal, number: number,
 
 /** One change of one value, for the audit log. `before` and `after` are the real values, `null` for none. */
 export interface ChangeEntry {
-  action: Extract<AuditAction, 'status_changed' | 'priority_changed' | 'assignee_changed' | 'field_changed'>
+  action: Extract<AuditAction, 'status_changed' | 'priority_changed' | 'assignee_changed' | 'field_changed' | 'type_changed'>
   fieldKey?: string
   before: unknown
   after: unknown

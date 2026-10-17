@@ -7,7 +7,7 @@ import type { Principal } from './tickets'
  * REST, MCP, and the UI (through `allowed_actions`) use it. No other code checks permissions.
  */
 
-export const TICKET_ACTIONS = ['read', 'change_status', 'change_priority', 'assign', 'edit_fields', 'comment', 'comment_internal'] as const
+export const TICKET_ACTIONS = ['read', 'change_status', 'change_priority', 'assign', 'edit_fields', 'change_type', 'comment', 'comment_internal'] as const
 export type TicketAction = typeof TICKET_ACTIONS[number]
 
 /** The facts about a ticket that the rules use. */
@@ -39,6 +39,7 @@ const AGENT_ONLY: Record<Exclude<TicketAction, 'read'>, string> = {
   assign: 'Only Agents can assign a ticket.',
   // Issue 09 lets a Requester edit Field values while the ticket is open (4.20).
   edit_fields: 'Only Agents can edit the Fields of a ticket.',
+  change_type: 'Only Agents can change the Ticket Type of a ticket.',
   comment: 'You cannot comment on this ticket.',
   comment_internal: 'Only Agents can write Internal Comments.',
 }
