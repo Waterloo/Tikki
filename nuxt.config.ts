@@ -1,4 +1,5 @@
 import { fileURLToPath } from 'node:url'
+import { createJiti } from 'jiti'
 
 export default defineNuxtConfig({
   compatibilityDate: '2026-10-01',
@@ -23,6 +24,14 @@ export default defineNuxtConfig({
       // wrangler.jsonc is the source of truth for bindings and environments.
       deployConfig: false,
       nodeCompat: true,
+    },
+    virtual: {
+      // Built once here: z.toJSONSchema takes about 10 ms, more than the CPU budget of a request (6.2).
+      '#openapi-document': async () => {
+        // jiti, because Node cannot load the server's TypeScript imports, which have no file extensions.
+        const { buildOpenApiDocument } = await createJiti(import.meta.url).import<typeof import('./server/utils/openapi')>('./server/utils/openapi')
+        return `export default ${JSON.stringify(JSON.stringify(buildOpenApiDocument()))}`
+      },
     },
     // Workers static assets serve the SPA shell, so the Worker never renders HTML.
     prerender: { routes: ['/'] },

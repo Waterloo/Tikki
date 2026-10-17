@@ -12,9 +12,9 @@ import { fieldsToJsonSchema } from './mcp-schema'
 import { NOT_FOUND, PolicyRefusal } from './policy'
 import { db, useAuth } from './services'
 import { getTicketTypeWithFields, listTicketTypes } from './ticket-types'
-import { createTicket, parseTicketReference, TicketValidationError, updateTicket, type Principal } from './tickets'
+import { createTicket, parseTicketReference, TicketValidationError, updateTicket, type UserPrincipal } from './tickets'
 
-function buildServer(principal: Principal) {
+function buildServer(principal: UserPrincipal) {
   const server = new McpServer({ name: 'ticketing', version: '0.1.0' })
 
   const readOnly = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }
@@ -127,7 +127,7 @@ function buildServer(principal: Principal) {
 // Each request builds its own server, so no MCP session state exists (stateless Streamable HTTP).
 // `legacy: 'stateless'` keeps serving the 2025 protocol, because Claude does not list 2026-07-28 yet.
 const handler = createMcpHandler(({ authInfo }) => {
-  const principal = authInfo?.extra?.principal as Principal | undefined
+  const principal = authInfo?.extra?.principal as UserPrincipal | undefined
   if (!principal) throw new Error('MCP request reached the server without a verified principal')
   return buildServer(principal)
 }, { legacy: 'stateless', responseMode: 'json' })
@@ -170,7 +170,7 @@ export async function handleMcpRequest(request: Request): Promise<Response> {
   const [row] = await db.select({ id: user.id, role: user.role }).from(user).where(eq(user.id, claims.sub)).limit(1)
   if (!row) return challenge('user not found')
 
-  const principal: Principal = { userId: row.id, role: row.role as Role, channel: 'ai' }
+  const principal: UserPrincipal = { kind: 'user', userId: row.id, role: row.role as Role, channel: 'ai' }
   return handler.fetch(request, {
     authInfo: {
       token: match[1]!,

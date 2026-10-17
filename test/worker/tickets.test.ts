@@ -47,10 +47,11 @@ describe('tickets REST API', () => {
         { key: 'steps_to_reproduce', label: 'Steps to reproduce', type: 'long_text' },
         { key: 'frequency', label: 'How often does it happen?', type: 'single_select' },
       ],
-      requester: { id: user.id, name: expect.any(String), email: user.email },
+      requester: { kind: 'user', id: user.id, name: expect.any(String), email: user.email },
       assignee: null,
       allowed_actions: [],
       channel: 'web',
+      application: null,
       created_at: expect.any(String),
       updated_at: expect.any(String),
     })

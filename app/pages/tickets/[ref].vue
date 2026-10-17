@@ -265,7 +265,7 @@ onMounted(load)
               <dt class="text-(--ui-text-muted)">
                 Source
               </dt>
-              <dd><SourceChip :channel="ticket.channel" /></dd>
+              <dd><SourceChip :channel="ticket.channel" :application="ticket.application?.name" /></dd>
             </dl>
           </div>
 

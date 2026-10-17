@@ -17,6 +17,11 @@ export interface Person {
   email: string
 }
 
+/** A User, or a Contact of an Application. */
+export type Requester =
+  | (Person & { kind: 'user' })
+  | { kind: 'contact', id: number, external_id: string, name: string, email: string }
+
 export interface TicketSummary {
   number: number
   ref: string
@@ -24,9 +29,10 @@ export interface TicketSummary {
   priority: Priority
   status: Status
   ticket_type: { id: number, name: string, prefix: string, icon: string, color: string }
-  requester: Person
+  requester: Requester
   assignee: Person | null
   channel: Channel
+  application: { id: number, name: string } | null
   created_at: string
   updated_at: string
 }
