@@ -8,13 +8,13 @@ export class UploadError extends Error {
 
 /**
  * Uploads one file as a raw body. Without `ticketRef` it is an upload before the ticket exists (New ticket form).
- * Throws UploadError with a message a person can read.
+ * `endpoint` replaces both URLs (the Upload Link page). Throws UploadError with a message a person can read.
  */
-export async function uploadFile(file: File, ticketRef?: string): Promise<Attachment> {
+export async function uploadFile(file: File, ticketRef?: string, endpoint?: string): Promise<Attachment> {
   if (file.size === 0) throw new UploadError('This file is empty.')
   if (file.size > MAX_UPLOAD_BYTES) throw new UploadError('The file must be 25 MB or smaller.')
   try {
-    return await $fetch<Attachment>(ticketRef ? `/api/v1/tickets/${encodeURIComponent(ticketRef)}/attachments` : '/api/v1/attachments', {
+    return await $fetch<Attachment>(endpoint ?? (ticketRef ? `/api/v1/tickets/${encodeURIComponent(ticketRef)}/attachments` : '/api/v1/attachments'), {
       method: 'PUT',
       body: file,
       headers: { 'x-filename': encodeURIComponent(file.name), 'content-type': file.type || 'application/octet-stream' },

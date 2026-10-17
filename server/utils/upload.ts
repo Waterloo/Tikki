@@ -5,8 +5,10 @@ import { NOT_FOUND, PolicyRefusal } from './policy'
 import { apiError, restPrincipal } from './rest'
 import { db } from './services'
 import { parseTicketReference } from './tickets'
+import { uploadViaLink } from './upload-links'
 
 const TICKET_UPLOAD = /^\/api\/v1\/tickets\/([^/]+)\/attachments$/
+const LINK_UPLOAD = /^\/api\/v1\/upload-links\/([\w-]{1,100})$/
 const UNATTACHED_UPLOAD = '/api/v1/attachments'
 
 /**
@@ -17,12 +19,14 @@ export async function handleUpload(request: Request): Promise<Response | null> {
   if (request.method !== 'PUT') return null
   const path = new URL(request.url).pathname
   const target = TICKET_UPLOAD.exec(path)
-  if (!target && path !== UNATTACHED_UPLOAD) return null
+  const link = LINK_UPLOAD.exec(path)
+  if (!target && !link && path !== UNATTACHED_UPLOAD) return null
 
   // restPrincipal reads only the headers.
   const principal = await restPrincipal({ headers: request.headers } as H3Event)
   if (principal instanceof Response) return principal
   try {
+    if (link) return Response.json(await uploadViaLink(db, env.FILES, principal, link[1]!, request), { status: 201 })
     let ticketNumber: number | null = null
     if (target) {
       ticketNumber = parseTicketReference(decodeURIComponent(target[1]!))

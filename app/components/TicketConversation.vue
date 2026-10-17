@@ -93,6 +93,7 @@ function describe(e: Extract<ActivityItem, { type: 'event' }>): { text: string, 
   if (e.action === 'ticket_cancelled') return [{ text: `${who} cancelled this ticket (cancelled by requester)` }]
   // No values: the Requester reopened it after 14 days, and a new ticket took over.
   if (e.action === 'ticket_reopened') return [{ text: e.after === null ? `${who} reopened this ticket as a new ticket` : `${who} reopened this ticket` }]
+  if (e.action === 'attachment_added') return [{ text: `${who} attached ` }, { text: '', strong: after ?? 'a file' }]
   if (e.erased) return [{ text: `${prefix}changed ${label}` }]
   if (e.action === 'assignee_changed') {
     return after === null ? [{ text: `${prefix}unassigned this ticket` }] : [{ text: `${prefix}assigned this ticket to ` }, { text: '', strong: after }]

@@ -63,7 +63,7 @@ export type ActivityItem =
     type: 'event'
     id: string
     at: string
-    action: 'ticket_created' | 'status_changed' | 'priority_changed' | 'assignee_changed' | 'field_changed' | 'type_changed' | 'description_changed' | 'ticket_cancelled' | 'ticket_reopened'
+    action: 'ticket_created' | 'status_changed' | 'priority_changed' | 'assignee_changed' | 'field_changed' | 'type_changed' | 'description_changed' | 'ticket_cancelled' | 'ticket_reopened' | 'attachment_added'
     principal: Person
     channel: Channel
     field: { key: string, label: string } | null

@@ -7,14 +7,16 @@ import { errors as joseErrors, type JWTPayload } from 'jose'
 import { z } from 'zod'
 import { PRIORITIES, user } from '../db/schema'
 import { createComment, listComments } from './activity'
+import { attachText, AttachmentError } from './attachments'
 import type { Role } from './auth'
-import { config } from './env'
+import { config, env } from './env'
 import { fieldsToJsonSchema } from './mcp-schema'
 import { NOT_FOUND, PolicyRefusal } from './policy'
 import { db, useAuth } from './services'
 import { getTicketTypeWithFields, listTicketTypes } from './ticket-types'
 import { changeTicketType } from './ticket-type-change'
 import { createTicket, FIELD_KEY, getTicket, listTickets, MAX_SEARCH_LENGTH, parseTicketReference, TicketValidationError, updateTicket, type ListFilter, type Principal, type TicketSummary } from './tickets'
+import { createUploadLink } from './upload-links'
 import { UNTRUSTED_NOTICE, untrusted, untrustedDeep } from './untrusted'
 
 // Small pages: the results go into the context of Claude.
@@ -98,6 +100,9 @@ function buildServer(principal: Principal) {
       if (error instanceof PolicyRefusal) {
         const { code, message } = error.refusal
         return { isError: true, content: [{ type: 'text' as const, text: `${code}: ${message}` }], structuredContent: { error: { code, message } } }
+      }
+      if (error instanceof AttachmentError) {
+        return { isError: true, content: [{ type: 'text' as const, text: `${error.code}: ${error.message}` }], structuredContent: { error: { code: error.code, message: error.message } } }
       }
       if (error instanceof TicketValidationError) {
         return { isError: true, content: [{ type: 'text' as const, text: `Nothing changed. Fix these and try again: ${error.message}` }], structuredContent: { problems: error.details } }
@@ -195,6 +200,33 @@ function buildServer(principal: Principal) {
   }, ({ ticket, body, visibility }) => run(async () => {
     const c = await createComment(db, principal, numberOf(ticket), { body, visibility })
     return { text: `Added a ${c.visibility} comment to ${ticket}.`, data: { comment_id: c.id, visibility: c.visibility } }
+  }))
+
+  server.registerTool('attach_text', {
+    title: 'Attach text',
+    description: 'Attach text (a log, CSV, or stack trace, up to 256 KB) to one ticket as a file. Use a name such as "error.log" or "data.csv". For a binary file or a larger one, call request_upload_link instead. Ask the user to confirm before you call it.',
+    inputSchema: z.object({
+      ticket: ticketArg,
+      filename: z.string().describe('The file name, for example "error.log". A name that ends in .csv is stored as CSV, anything else as plain text.'),
+      content: z.string().describe('The text. At most 256 KB in UTF-8.'),
+    }),
+    annotations: { title: 'Attach text', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  }, ({ ticket, filename, content }) => run(async () => {
+    const a = await attachText(db, env.FILES, principal, numberOf(ticket), filename, content)
+    return { text: `Attached ${JSON.stringify(a.filename)} (${a.size} bytes) to ${ticket}.`, data: { attachment_id: a.id, filename: a.filename, size: a.size, content_type: a.content_type } }
+  }))
+
+  server.registerTool('request_upload_link', {
+    title: 'Request upload link',
+    description: 'Get a link that the user opens in the browser to upload a file (an image or any binary file) to one ticket. The link works once, for 15 minutes, and only for the signed-in user. Give the link to the user and tell them to open it. Ask the user to confirm before you call it.',
+    inputSchema: z.object({ ticket: ticketArg }),
+    annotations: { title: 'Request upload link', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  }, ({ ticket }) => run(async () => {
+    const link = await createUploadLink(db, principal, numberOf(ticket))
+    return {
+      text: `Upload link for ${ticket}, valid until ${link.expiresAt}, one use only: ${link.url}`,
+      data: { url: link.url, expires_at: link.expiresAt, single_use: true },
+    }
   }))
 
   server.registerTool('search_tickets', {
