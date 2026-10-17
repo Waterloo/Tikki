@@ -5,6 +5,9 @@ definePageMeta({ roles: ['admin', 'agent'] })
 
 type Filter = 'all' | 'unassigned' | 'mine'
 
+// USelect cannot hold an empty value, so "no filter" is this word.
+const ALL = 'all'
+
 const FILTERS: { value: Filter, label: string }[] = [
   { value: 'all', label: 'All' },
   { value: 'unassigned', label: 'Unassigned' },
@@ -21,11 +24,27 @@ const EMPTY: Record<Filter, { title: string, description: string }> = {
 // One grid for the header and the rows, so the columns line up. Below `xl` each row becomes a card.
 const COLUMNS = 'xl:grid-cols-[88px_minmax(0,2.2fr)_minmax(0,1fr)_84px_minmax(0,1.3fr)_minmax(0,1fr)_88px]'
 
+const PRIORITY_ITEMS = [{ label: 'Any priority', value: ALL }, ...(['urgent', 'high', 'normal', 'low'] as const).map(p => ({ label: p[0]!.toUpperCase() + p.slice(1), value: p }))]
+// Branch is a normal Field (4.12). The filter shows when a type has a Field with this key.
+const BRANCH_KEY = 'branch'
+
 const route = useRoute()
+const one = (v: unknown) => (typeof v === 'string' ? v : undefined)
 const filter = computed<Filter>(() => route.query.filter === 'unassigned' || route.query.filter === 'mine' ? route.query.filter : 'all')
+const search = computed(() => one(route.query.q)?.trim() ?? '')
+const typeId = computed(() => one(route.query.type) ?? ALL)
+const priority = computed(() => one(route.query.priority) ?? ALL)
+const branch = computed(() => one(route.query.branch) ?? ALL)
+const narrowed = computed(() => search.value !== '' || typeId.value !== ALL || priority.value !== ALL || branch.value !== ALL)
+
+const typeItems = ref<{ label: string, value: string }[]>([])
+const branchItems = ref<{ label: string, value: string }[]>([])
+const searchText = ref(search.value)
 
 const statuses = ref<Status[]>([])
-const list = ref<TicketList>({ data: [], counts: {} })
+const list = ref<TicketList>({ data: [], counts: {}, next_cursor: null })
+const loadingMore = ref(false)
+const moreFailed = ref(false)
 const state = ref<'loading' | 'ready' | 'error'>('loading')
 const refreshing = ref(false)
 // Done work is out of the way by default (canvas: Resolved starts collapsed).
@@ -36,6 +55,17 @@ const total = computed(() => groups.value.reduce((sum, g) => sum + g.count, 0))
 
 let latest = 0
 
+function params(cursor?: string) {
+  return {
+    assignee: QUERY[filter.value],
+    q: search.value || undefined,
+    type: typeId.value === ALL ? undefined : typeId.value,
+    priority: priority.value === ALL ? undefined : priority.value,
+    field: branch.value === ALL ? undefined : `${BRANCH_KEY}:${branch.value}`,
+    cursor,
+  }
+}
+
 async function load() {
   const request = ++latest
   if (state.value !== 'ready') state.value = 'loading'
@@ -43,7 +73,7 @@ async function load() {
   try {
     const [s, l] = await Promise.all([
       statuses.value.length ? Promise.resolve({ data: statuses.value }) : $fetch<{ data: Status[] }>('/api/v1/statuses'),
-      $fetch<TicketList>('/api/v1/tickets', { query: { assignee: QUERY[filter.value] } }),
+      $fetch<TicketList>('/api/v1/tickets', { query: params() }),
     ])
     // A newer filter may have finished first.
     if (request !== latest) return
@@ -66,16 +96,69 @@ function toggle(key: string) {
   collapsed.value = next
 }
 
-function pick(value: Filter) {
-  navigateTo({ query: value === 'all' ? {} : { filter: value } }, { replace: true })
+async function loadMore() {
+  const request = latest
+  loadingMore.value = true
+  moreFailed.value = false
+  try {
+    const next = await $fetch<TicketList>('/api/v1/tickets', { query: params(list.value.next_cursor ?? undefined) })
+    if (request !== latest) return
+    list.value = { ...next, data: [...list.value.data, ...next.data] }
+  } catch {
+    moreFailed.value = true
+  } finally {
+    loadingMore.value = false
+  }
+}
+
+/** Changes the filters in the address, so a filtered list can be shared and the back button works. */
+function setQuery(changes: Record<string, string | undefined>) {
+  const next: Record<string, string> = {}
+  for (const [k, v] of Object.entries({ ...route.query, ...changes })) {
+    if (typeof v === 'string' && v !== '' && v !== ALL) next[k] = v
+  }
+  navigateTo({ query: next }, { replace: true })
+}
+
+const pick = (value: Filter) => setQuery({ filter: value === 'all' ? undefined : value })
+const clearFilters = () => navigateTo({ query: filter.value === 'all' ? {} : { filter: filter.value } }, { replace: true })
+
+let typing: ReturnType<typeof setTimeout> | undefined
+let pushed = search.value
+function onSearch(value: string) {
+  searchText.value = value
+  clearTimeout(typing)
+  typing = setTimeout(() => {
+    pushed = value.trim()
+    setQuery({ q: pushed })
+  }, 300)
+}
+
+// The filter menus are a help. If they cannot load, the list still works.
+async function loadFilterChoices() {
+  try {
+    const { data } = await $fetch<{ data: { id: number, name: string }[] }>('/api/v1/ticket-types')
+    typeItems.value = [{ label: 'Any type', value: ALL }, ...data.map(t => ({ label: t.name, value: String(t.id) }))]
+    const details = await Promise.all(data.map(t => $fetch<{ fields: { key: string, options?: string[] }[] }>(`/api/v1/ticket-types/${t.id}`)))
+    const options = new Set(details.flatMap(d => d.fields.find(f => f.key === BRANCH_KEY)?.options ?? []))
+    if (options.size) branchItems.value = [{ label: 'Any branch', value: ALL }, ...[...options].sort().map(o => ({ label: o, value: o }))]
+  } catch { /* the menus stay hidden */ }
 }
 
 function shownIn(groupTickets: TicketSummary[], count: number) {
-  return count > groupTickets.length ? `Showing the ${groupTickets.length} most recently updated of ${count}.` : null
+  return groupTickets.length > 0 && count > groupTickets.length ? `Showing ${groupTickets.length} of ${count}.` : null
 }
 
-watch(filter, load)
-onMounted(load)
+watch(() => route.fullPath, () => {
+  // The box follows the address when something else changed it (back button, Clear filters).
+  if (search.value !== pushed) searchText.value = pushed = search.value
+  load()
+})
+onMounted(() => {
+  load()
+  loadFilterChoices()
+})
+onBeforeUnmount(() => clearTimeout(typing))
 </script>
 
 <template>
@@ -92,25 +175,48 @@ onMounted(load)
       </template>
     </PageHeader>
 
-    <div role="group" aria-label="Filter tickets" class="inline-flex flex-wrap gap-1 p-1 rounded-xl bg-(--app-segment) self-start">
-      <button
-        v-for="f in FILTERS"
-        :key="f.value"
-        type="button"
-        :aria-pressed="filter === f.value"
-        class="min-h-9 px-3.5 rounded-[9px] border text-sm font-medium transition-colors"
-        :class="filter === f.value
-          ? 'border-(--ui-border-accented) bg-(--ui-bg) text-(--ui-text-highlighted) shadow-xs'
-          : 'border-transparent text-(--ui-text-toned) hover:text-(--ui-text-highlighted)'"
-        @click="pick(f.value)"
-      >
-        {{ f.label }}
-      </button>
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <div role="group" aria-label="Filter tickets" class="inline-flex flex-wrap gap-1 p-1 rounded-xl bg-(--app-segment) self-start">
+        <button
+          v-for="f in FILTERS"
+          :key="f.value"
+          type="button"
+          :aria-pressed="filter === f.value"
+          class="min-h-9 px-3.5 rounded-[9px] border text-sm font-medium transition-colors"
+          :class="filter === f.value
+            ? 'border-(--ui-border-accented) bg-(--ui-bg) text-(--ui-text-highlighted) shadow-xs'
+            : 'border-transparent text-(--ui-text-toned) hover:text-(--ui-text-highlighted)'"
+          @click="pick(f.value)"
+        >
+          {{ f.label }}
+        </button>
+      </div>
+      <div class="flex flex-wrap items-center gap-2 min-w-0 w-full sm:w-auto">
+        <UInput
+          :model-value="searchText"
+          type="search"
+          icon="i-lucide-search"
+          placeholder="Search title or number"
+          aria-label="Search tickets"
+          size="lg"
+          class="w-full sm:w-60"
+          @update:model-value="onSearch(String($event ?? ''))"
+        />
+        <USelect v-if="typeItems.length" :model-value="typeId" :items="typeItems" aria-label="Ticket Type" size="lg" class="min-w-32" @update:model-value="setQuery({ type: $event })" />
+        <USelect :model-value="priority" :items="PRIORITY_ITEMS" aria-label="Priority" size="lg" class="min-w-32" @update:model-value="setQuery({ priority: $event })" />
+        <USelect v-if="branchItems.length" :model-value="branch" :items="branchItems" aria-label="Branch" size="lg" class="min-w-32" @update:model-value="setQuery({ branch: $event })" />
+      </div>
     </div>
 
     <ListSkeleton v-if="state === 'loading'" :rows="6" />
 
     <ErrorState v-else-if="state === 'error'" title="The tickets could not be loaded." description="Check your connection, then try again." @retry="load" />
+
+    <EmptyState v-else-if="total === 0 && narrowed" icon="i-lucide-search-x" title="No tickets match" description="Try other words, or remove a filter.">
+      <UButton size="lg" variant="outline" @click="clearFilters">
+        Clear search and filters
+      </UButton>
+    </EmptyState>
 
     <EmptyState v-else-if="total === 0" icon="i-lucide-layers" :title="EMPTY[filter].title" :description="EMPTY[filter].description">
       <UButton v-if="filter === 'mine'" to="/tickets?filter=unassigned" size="lg" variant="outline">
@@ -144,8 +250,11 @@ onMounted(load)
         </h2>
 
         <div v-if="!collapsed.has(g.status.key)" :id="`rows-${g.status.key}`">
-          <p v-if="g.tickets.length === 0" class="px-4 pt-4 pb-2 text-sm text-(--ui-text-muted)">
-            No tickets with this Status{{ filter === 'all' ? '' : ' match this filter' }}.
+          <p v-if="g.tickets.length === 0 && g.count > 0" class="px-4 pt-4 pb-2 text-sm text-(--ui-text-muted)">
+            {{ g.count }} more below. Use Load more.
+          </p>
+          <p v-else-if="g.tickets.length === 0" class="px-4 pt-4 pb-2 text-sm text-(--ui-text-muted)">
+            No tickets with this Status{{ filter === 'all' && !narrowed ? '' : ' match this filter' }}.
           </p>
           <template v-else>
             <div class="hidden xl:grid items-center gap-4 px-4 mt-1.5 min-h-10 text-[13px] text-(--ui-text-muted)" :class="COLUMNS" aria-hidden="true">
@@ -193,6 +302,14 @@ onMounted(load)
           </template>
         </div>
       </section>
+      <div v-if="list.next_cursor" class="flex flex-col items-center gap-2">
+        <UButton variant="outline" size="lg" :loading="loadingMore" @click="loadMore">
+          Load more
+        </UButton>
+        <p v-if="moreFailed" class="text-sm text-(--ui-error)" role="alert">
+          More tickets could not be loaded. Try again.
+        </p>
+      </div>
     </div>
   </AppPage>
 </template>

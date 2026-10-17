@@ -68,7 +68,13 @@ export const ticket = sqliteTable('ticket', {
   assigneeId: text('assignee_id').references(() => user.id),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(() => new Date()),
   updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(() => new Date()),
-}, t => [index('ticket_requester_idx').on(t.requesterId)])
+}, t => [
+  index('ticket_requester_idx').on(t.requesterId),
+  // Issue 10: list filters and the Status-ordered cursor.
+  index('ticket_status_updated_idx').on(t.status, t.updatedAt),
+  index('ticket_type_idx').on(t.ticketTypeId),
+  index('ticket_assignee_idx').on(t.assigneeId),
+])
 
 /** The one row of organization settings. `id` is always 1 (the migration inserts it). */
 export const organization = sqliteTable('organization', {

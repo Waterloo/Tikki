@@ -43,4 +43,5 @@ export interface TicketDetail extends TicketSummary {
 export interface TicketList {
   data: TicketSummary[]
   counts: Record<string, number>
+  next_cursor: string | null
 }

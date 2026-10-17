@@ -24,3 +24,26 @@ test('choose Bug, see Required errors, fill the Fields, and see the new referenc
   await expect(row).toBeVisible()
   await expect(row.getByText(/^BUG-\d+$/)).toBeVisible()
 })
+
+test('typing a title that matches an open bug shows it under the title', async ({ page }) => {
+  // Make the bug through the API, with the shared session.
+  const word = `zebrafish${Date.now()}`
+  const types = await (await page.request.get('/api/v1/ticket-types')).json() as { data: { id: number, prefix: string }[] }
+  const bug = types.data.find(t => t.prefix === 'BUG')!
+  const created = await page.request.post('/api/v1/tickets', {
+    data: { ticket_type_id: bug.id, title: `Exporter ${word} crashes on reports`, fields: { page_or_feature: 'Reports' } },
+  })
+  expect(created.status()).toBe(201)
+  const { ref } = await created.json() as { ref: string }
+
+  await page.goto('/tickets/new')
+  await page.getByRole('button', { name: /^Bug/ }).click()
+  await page.getByLabel('Title').fill(`${word} exporter crashing`)
+
+  const similar = page.getByRole('region', { name: 'Similar tickets' })
+  await expect(similar).toContainText('This may already be reported')
+  await expect(similar.getByRole('link', { name: new RegExp(ref) })).toBeVisible()
+
+  await page.getByLabel('Title').fill('nothing like it qqq')
+  await expect(similar).toBeHidden()
+})

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { Field } from '~/components/FieldInput.vue'
+import type { TicketSummary } from '~/types/tickets'
 
 interface TicketType {
   id: number
@@ -109,6 +110,29 @@ async function submit() {
   }
 }
 
+// Similar open tickets under the title. A help only: when it fails, the form works as before.
+const similar = ref<TicketSummary[]>([])
+let similarTimer: ReturnType<typeof setTimeout> | undefined
+let similarRequest = 0
+
+watch(title, (value) => {
+  clearTimeout(similarTimer)
+  const request = ++similarRequest
+  if (value.trim().length < 3) {
+    similar.value = []
+    return
+  }
+  similarTimer = setTimeout(async () => {
+    try {
+      const res = await $fetch<{ data: TicketSummary[] }>('/api/v1/tickets/similar', { query: { title: value.trim() } })
+      if (request === similarRequest) similar.value = res.data
+    } catch {
+      if (request === similarRequest) similar.value = []
+    }
+  }, 400)
+})
+onBeforeUnmount(() => clearTimeout(similarTimer))
+
 onMounted(loadTypes)
 </script>
 
@@ -157,6 +181,23 @@ onMounted(loadTypes)
           <div class="flex flex-col gap-5 rounded-[14px] border border-(--ui-border) bg-(--ui-bg) p-4 sm:p-[22px]">
             <UFormField label="Title" name="title" required :error="problems.title">
               <UInput v-model="title" placeholder="One line that says what is wrong or what you need" class="w-full" @update:model-value="delete problems.title" />
+              <div v-if="similar.length" class="mt-1.5 flex flex-col gap-2 rounded-[10px] border border-(--app-similar-border) bg-(--app-similar-bg) px-3.5 py-3" role="region" aria-label="Similar tickets">
+                <p class="text-[13px] text-(--app-similar-text)">
+                  This may already be reported. Add a comment there instead?
+                </p>
+                <NuxtLink
+                  v-for="t in similar"
+                  :key="t.number"
+                  :to="`/tickets/${t.ref}`"
+                  target="_blank"
+                  rel="noopener"
+                  class="flex flex-wrap items-center gap-x-2.5 gap-y-1 min-h-9 px-2.5 py-1.5 rounded-lg border border-(--app-similar-border) bg-(--ui-bg) text-sm hover:bg-(--app-row-hover) focus-visible:outline-2 focus-visible:outline-(--ui-primary)"
+                >
+                  <TicketRef :value="t.ref" />
+                  <span class="grow min-w-0 basis-40 font-medium text-(--ui-text-highlighted) truncate" :title="t.title">{{ t.title }}</span>
+                  <StatusBadge :status="t.status" />
+                </NuxtLink>
+              </div>
             </UFormField>
 
             <UFormField label="Description" name="description" :error="problems.description">

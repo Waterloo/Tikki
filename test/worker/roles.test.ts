@@ -225,8 +225,7 @@ describe('the agent queue', () => {
     expect(assignedToMe.counts).toEqual({ in_progress: 1 })
     expect((await list(colleague, '?assignee=me')).data.map(t => t.ref)).toEqual([theirs.ref])
 
-    const bad = await call('/api/v1/tickets?assignee=someone', { headers: { cookie: me.cookie } })
-    expect(bad.status).toBe(422)
-    expect((await bad.json() as ErrorBody).error.details).toEqual([{ key: 'assignee', label: 'Assignee', reason: 'Must be one of the options.', options: ['me', 'none'] }])
+    // Any other value is a User ID (issue 10). An unknown ID matches nothing.
+    expect((await list(me, '?assignee=someone')).data).toEqual([])
   })
 })
