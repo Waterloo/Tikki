@@ -1,4 +1,5 @@
-import { exports } from 'cloudflare:workers'
+import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
+import { env, exports } from 'cloudflare:workers'
 import { capturedMail } from '../../server/utils/mail'
 
 export const BASE = 'http://localhost:8787'
@@ -106,6 +107,41 @@ export async function getMcpToken(cookie: string) {
 }
 
 export { worker }
+
+/** An MCP client on the test Worker with this access token. */
+export async function connectMcp(accessToken: string, mode: 'modern' | 'legacy' = 'legacy') {
+  const client = new Client({ name: 'test-client', version: '1.0.0' })
+  const transport = new StreamableHTTPClientTransport(new URL(MCP_URL), {
+    fetch: (input, init) => worker.fetch(input as string, init),
+    requestInit: { headers: { authorization: `Bearer ${accessToken}` } },
+  })
+  await client.connect(transport, mode === 'legacy' ? { prior: { kind: 'legacy' } } : {})
+  return client
+}
+
+type Role = 'admin' | 'agent' | 'requester'
+
+/** Signs in a new User with this role. Role changes come with issue 20, so the test sets the role in the database. */
+export async function signInAs(role: Role) {
+  const session = await signIn(uniqueEmail())
+  if (role !== 'requester') await env.DB.prepare('UPDATE user SET role = ? WHERE id = ?').bind(role, session.user.id).run()
+  return { ...session, user: { ...session.user, role } }
+}
+
+/**
+ * A new Ticket Type with "visible to all internal Users" and one optional Field. The Admin type editor comes with
+ * issue 07, so the test writes the rows. A new type, not a seeded one, so other tests keep their seed.
+ */
+export async function createVisibleType(): Promise<number> {
+  const prefix = `V${Array.from(crypto.getRandomValues(new Uint8Array(4)), b => String.fromCharCode(65 + (b % 26))).join('')}`
+  const type = await env.DB.prepare(
+    `INSERT INTO ticket_type (name, prefix, description, team_id, visible_to_all, created_at)
+     VALUES (?, ?, 'Company-wide notices.', (SELECT id FROM team WHERE name = 'Support'), 1, ?) RETURNING id`,
+  ).bind(`Shared ${prefix}`, prefix, Date.now()).first<{ id: number }>()
+  await env.DB.prepare('INSERT INTO schema_version (ticket_type_id, version, fields, created_at) VALUES (?, 1, ?, ?)')
+    .bind(type!.id, JSON.stringify([{ key: 'office', label: 'Office', type: 'short_text', required: false, help: 'Which office.' }]), Date.now()).run()
+  return type!.id
+}
 
 /** The ID of a seeded Ticket Type, by its prefix. */
 export async function typeId(cookie: string, prefix: string): Promise<number> {

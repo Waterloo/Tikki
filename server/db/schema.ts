@@ -38,6 +38,18 @@ export const schemaVersion = sqliteTable('schema_version', {
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(() => new Date()),
 }, t => [uniqueIndex('schema_version_type_version_unique').on(t.ticketTypeId, t.version)])
 
+/** Filters and Events use the category, so later Workflows can add Statuses inside these four (4.10). */
+export const STATUS_CATEGORIES = ['open', 'active', 'waiting', 'done'] as const
+export type StatusCategory = typeof STATUS_CATEGORIES[number]
+
+/** Seeded by migration 0002. v1 has no way to edit these rows (4.10). */
+export const status = sqliteTable('status', {
+  key: text('key').primaryKey(),
+  name: text('name').notNull(),
+  category: text('category', { enum: STATUS_CATEGORIES }).notNull(),
+  position: integer('position').notNull(),
+})
+
 export const ticket = sqliteTable('ticket', {
   // AUTOINCREMENT is the global counter: SQLite never reuses a number, even after a delete (4.9).
   number: integer('number').primaryKey({ autoIncrement: true }),
@@ -51,7 +63,11 @@ export const ticket = sqliteTable('ticket', {
   fields: text('fields', { mode: 'json' }).$type<FieldValues>().notNull().default({}),
   requesterId: text('requester_id').notNull().references(() => user.id),
   channel: text('channel', { enum: ['web', 'ai', 'api'] }).notNull(),
+  // Nullable only because SQLite cannot add a NOT NULL column with a foreign key. Every ticket has a Status.
+  status: text('status').references(() => status.key),
+  assigneeId: text('assignee_id').references(() => user.id),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(() => new Date()),
+  updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(() => new Date()),
 }, t => [index('ticket_requester_idx').on(t.requesterId)])
 
 /** One row for each sign-in code request, for the limit of 5 codes an hour for each address. */

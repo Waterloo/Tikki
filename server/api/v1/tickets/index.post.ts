@@ -1,6 +1,6 @@
-import { restPrincipal, validationError } from '../../../utils/rest'
+import { restPrincipal, ticketError } from '../../../utils/rest'
 import { db } from '../../../utils/services'
-import { createTicket, TicketValidationError } from '../../../utils/tickets'
+import { createTicket } from '../../../utils/tickets'
 
 export default defineEventHandler(async (event) => {
   const principal = await restPrincipal(event)
@@ -10,7 +10,6 @@ export default defineEventHandler(async (event) => {
     setResponseStatus(event, 201)
     return created
   } catch (error) {
-    if (error instanceof TicketValidationError) return validationError(error)
-    throw error
+    return ticketError(error)
   }
 })

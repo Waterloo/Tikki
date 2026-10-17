@@ -5,13 +5,14 @@ import { verifyJwsAccessToken } from 'better-auth/oauth2'
 import { eq } from 'drizzle-orm'
 import { errors as joseErrors, type JWTPayload } from 'jose'
 import { z } from 'zod'
-import { user } from '../db/schema'
+import { PRIORITIES, user } from '../db/schema'
 import type { Role } from './auth'
 import { config } from './env'
 import { fieldsToJsonSchema } from './mcp-schema'
+import { NOT_FOUND, PolicyRefusal } from './policy'
 import { db, useAuth } from './services'
 import { getTicketTypeWithFields, listTicketTypes } from './ticket-types'
-import { createTicket, TicketValidationError, type Principal } from './tickets'
+import { createTicket, parseTicketReference, TicketValidationError, updateTicket, type Principal } from './tickets'
 
 function buildServer(principal: Principal) {
   const server = new McpServer({ name: 'ticketing', version: '0.1.0' })
@@ -73,6 +74,52 @@ function buildServer(principal: Principal) {
       throw error
     }
   })
+
+  const ticketArg = z.string().describe('The Ticket Reference, for example BUG-12, or the ticket number.')
+  const writeAnnotations = { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false }
+
+  /** Runs one change through the same module function and policy as REST, and reports the result or the refusal. */
+  async function change(ref: string, input: Record<string, unknown>) {
+    try {
+      const number = parseTicketReference(ref)
+      if (number === null) throw new PolicyRefusal(NOT_FOUND)
+      const t = await updateTicket(db, principal, number, input)
+      return {
+        content: [{ type: 'text' as const, text: `${t.ref}: Status ${t.status.name}, Priority ${t.priority}, ${t.assignee ? `assigned to ${t.assignee.name || t.assignee.email}` : 'unassigned'}.` }],
+        structuredContent: { number: t.number, ref: t.ref, status: t.status.key, priority: t.priority, assignee_id: t.assignee?.id ?? null },
+      }
+    } catch (error) {
+      if (error instanceof PolicyRefusal) {
+        const { code, message } = error.refusal
+        return { isError: true, content: [{ type: 'text' as const, text: `${code}: ${message}` }], structuredContent: { error: { code, message } } }
+      }
+      if (error instanceof TicketValidationError) {
+        return { isError: true, content: [{ type: 'text' as const, text: `Nothing changed. Fix these and try again: ${error.message}` }] }
+      }
+      throw error
+    }
+  }
+
+  server.registerTool('change_status', {
+    title: 'Change ticket Status',
+    description: 'Agents only. Set the Status of one ticket, for example in_progress, waiting, resolved, or closed. Ask the user to confirm before you call it.',
+    inputSchema: z.object({ ticket: ticketArg, status: z.string().describe('The Status key, for example in_progress. An unknown key returns the list of keys.') }),
+    annotations: { title: 'Change ticket Status', ...writeAnnotations },
+  }, ({ ticket, status }) => change(ticket, { status }))
+
+  server.registerTool('change_priority', {
+    title: 'Change ticket Priority',
+    description: 'Agents only. Set the Priority of one ticket. Ask the user to confirm before you call it.',
+    inputSchema: z.object({ ticket: ticketArg, priority: z.enum(PRIORITIES) }),
+    annotations: { title: 'Change ticket Priority', ...writeAnnotations },
+  }, ({ ticket, priority }) => change(ticket, { priority }))
+
+  server.registerTool('assign_ticket', {
+    title: 'Assign ticket',
+    description: 'Agents only. Assign one ticket to the signed-in user ("me"), or remove the assignee ("nobody"). Ask the user to confirm before you call it.',
+    inputSchema: z.object({ ticket: ticketArg, assignee: z.enum(['me', 'nobody']) }),
+    annotations: { title: 'Assign ticket', ...writeAnnotations },
+  }, ({ ticket, assignee }) => change(ticket, { assignee_id: assignee === 'me' ? principal.userId : null }))
 
   return server
 }

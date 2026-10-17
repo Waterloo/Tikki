@@ -17,6 +17,7 @@ Issue 01 (walking skeleton): email-code sign-in, the Claude connector (OAuth 2.1
 | `server/utils/auth.ts` | Better-Auth: email OTP, domain allow list, code limit, bootstrap Admin, OAuth server for MCP |
 | `server/utils/mcp.ts` | Stateless MCP endpoint (`/mcp`) and its token check |
 | `server/utils/tickets.ts` | Tickets module, used by REST and MCP |
+| `server/utils/policy.ts` | The policy function: "may Principal P do action A on ticket T?". Nothing else checks permissions |
 | `server/api/v1/` | REST API |
 | `server/db/` | Drizzle schema. `auth-schema.ts` is generated |
 | `migrations/` | D1 migrations, forward-only |

@@ -1,7 +1,8 @@
-import type { H3Event } from 'h3'
+import { getRouterParam, type H3Event } from 'h3'
 import type { Role } from './auth'
 import { useAuth } from './services'
-import { TicketValidationError, type Principal } from './tickets'
+import { NOT_FOUND, PolicyRefusal } from './policy'
+import { parseTicketReference, TicketValidationError, type Principal } from './tickets'
 
 /** The one error format of the REST API (6.4). */
 export function apiError(status: number, code: string, message: string, details?: unknown): Response {
@@ -17,4 +18,18 @@ export async function restPrincipal(event: H3Event): Promise<Principal | Respons
 
 export function validationError(error: TicketValidationError): Response {
   return apiError(422, 'VALIDATION_FAILED', 'The request has invalid values.', error.details)
+}
+
+/** Maps the errors of the Tickets module to responses. Anything else is a bug and goes on as a 500. */
+export function ticketError(error: unknown): Response {
+  if (error instanceof PolicyRefusal) return apiError(error.refusal.status, error.refusal.code, error.refusal.message)
+  if (error instanceof TicketValidationError) return validationError(error)
+  throw error
+}
+
+/** The ticket number in the route, or the same refusal as for a ticket that does not exist. */
+export function routeTicketNumber(event: H3Event): number {
+  const number = parseTicketReference(getRouterParam(event, 'ref') ?? '')
+  if (number === null) throw new PolicyRefusal(NOT_FOUND)
+  return number
 }

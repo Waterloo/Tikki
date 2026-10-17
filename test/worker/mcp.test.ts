@@ -1,15 +1,5 @@
-import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { describe, expect, it } from 'vitest'
-import { BASE, call, getMcpToken, MCP_URL, signIn, uniqueEmail, worker } from './helpers'
-
-function connect(accessToken: string, mode: 'modern' | 'legacy') {
-  const client = new Client({ name: 'test-client', version: '1.0.0' })
-  const transport = new StreamableHTTPClientTransport(new URL(MCP_URL), {
-    fetch: (input, init) => worker.fetch(input as string, init),
-    requestInit: { headers: { authorization: `Bearer ${accessToken}` } },
-  })
-  return client.connect(transport, mode === 'legacy' ? { prior: { kind: 'legacy' } } : {}).then(() => client)
-}
+import { BASE, call, connectMcp as connect, getMcpToken, MCP_URL, signIn, uniqueEmail } from './helpers'
 
 describe('MCP endpoint', () => {
   it('answers a request without a token with 401 and the protected-resource metadata pointer', async () => {
@@ -59,7 +49,7 @@ describe('MCP endpoint', () => {
     const { client } = await connected()
     const { tools } = await client.listTools()
     const by = Object.fromEntries(tools.map(t => [t.name, t]))
-    expect(Object.keys(by).sort()).toEqual(['create_ticket', 'get_ticket_type', 'list_ticket_types'])
+    expect(Object.keys(by).sort()).toEqual(['assign_ticket', 'change_priority', 'change_status', 'create_ticket', 'get_ticket_type', 'list_ticket_types'])
     expect(by.list_ticket_types!.annotations).toMatchObject({ readOnlyHint: true })
     expect(by.get_ticket_type!.annotations).toMatchObject({ readOnlyHint: true })
     expect(by.create_ticket!.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: false })
@@ -111,6 +101,12 @@ describe('MCP endpoint', () => {
       const client = await connect(access_token, mode)
       const bug = await typeByPrefix(client, 'BUG')
 
+      const { tools } = await client.listTools()
+      // Agent tools are listed for everyone; the policy refuses them for Requesters, as REST does.
+      for (const name of ['change_status', 'change_priority', 'assign_ticket']) {
+        expect(tools.find(t => t.name === name)?.annotations, name).toMatchObject({ readOnlyHint: false, destructiveHint: false })
+      }
+
       const result = await client.callTool({
         name: 'create_ticket',
         arguments: { ticket_type_id: bug.id, title: 'The export button fails', priority: 'high', fields: { page_or_feature: 'Reports', frequency: 'Sometimes' } },
@@ -123,9 +119,12 @@ describe('MCP endpoint', () => {
       const read = await call(`/api/v1/tickets/${ref}`, { headers: { cookie } })
       expect(read.status).toBe(200)
       expect(await read.json()).toMatchObject({
-        number, ref, title: 'The export button fails', priority: 'high', requester_id: user.id, channel: 'ai',
-        schema_version: 1, fields: { page_or_feature: 'Reports', frequency: 'Sometimes' }, ticket_type: { prefix: 'BUG' },
+        number, ref, title: 'The export button fails', priority: 'high', requester: { id: user.id }, channel: 'ai',
+        schema_version: 1, fields: { page_or_feature: 'Reports', frequency: 'Sometimes' }, ticket_type: { prefix: 'BUG' }, status: { key: 'open' },
       })
+
+      const list = await (await call('/api/v1/tickets?requester=me', { headers: { cookie } })).json() as { data: { ref: string }[] }
+      expect(list.data.map(t => t.ref)).toContain(ref)
     })
   }
 
