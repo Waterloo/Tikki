@@ -40,6 +40,9 @@ const values = ref<Record<string, unknown>>({})
 const problems = ref<Record<string, string>>({})
 const formError = ref<string | null>(null)
 const busy = ref(false)
+// Fields with an upload in progress, by Field Key.
+const uploading = ref<Record<string, boolean>>({})
+const uploadRunning = computed(() => Object.values(uploading.value).some(Boolean))
 
 function isUnauthenticated(e: unknown) {
   return (e as { status?: number }).status === 401
@@ -61,6 +64,7 @@ async function pick(id: number) {
   selectedId.value = id
   // Each type has its own Fields, so values of the previous type do not carry over.
   values.value = {}
+  uploading.value = {}
   problems.value = {}
   fieldsState.value = 'loading'
   try {
@@ -217,9 +221,9 @@ onMounted(loadTypes)
                 :description="f.help"
                 :required="f.required"
                 :error="problems[f.key]"
-                :class="f.type === 'long_text' || f.type === 'multi_select' ? 'sm:col-span-2' : ''"
+                :class="f.type === 'long_text' || f.type === 'multi_select' || f.type === 'file' ? 'sm:col-span-2' : ''"
               >
-                <FieldInput v-model="values[f.key]" :field="f" @update:model-value="delete problems[f.key]" />
+                <FieldInput v-model="values[f.key]" v-model:uploading="uploading[f.key]" :field="f" @update:model-value="delete problems[f.key]" />
               </UFormField>
             </div>
 
@@ -256,7 +260,7 @@ onMounted(loadTypes)
             <UButton to="/" size="lg" variant="ghost">
               Cancel
             </UButton>
-            <UButton type="submit" size="lg" :loading="busy" :disabled="fieldsState !== 'idle'">
+            <UButton type="submit" size="lg" :loading="busy" :disabled="fieldsState !== 'idle' || uploadRunning">
               Create ticket
             </UButton>
           </div>

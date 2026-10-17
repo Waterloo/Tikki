@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { comment, PRIORITIES, schemaVersion, status, team, ticket, ticketType, user, type AuditAction, type Priority } from '../db/schema'
 import { auditEntry } from './audit'
 import type { Db, Role } from './auth'
+import { checkFileRefs, claimUploads } from './attachments'
 import { validateFields, type FieldDef, type FieldError, type FieldType, type FieldValues } from './fields'
 import { allowedActions, assertAllowed, canBeAssignee, canSeeInternal, NOT_FOUND, PolicyRefusal, readableTickets, type PolicyTicket, type TicketAction } from './policy'
 import type { StatusView } from './statuses'
@@ -251,17 +252,23 @@ export async function createTicket(db: Db, principal: Principal, input: unknown)
 
   const found = target.success ? await loadTicketType(db, target.data.ticket_type_id) : null
   let values: FieldValues = {}
+  let fileIds: string[] = []
   if (target.success && !found) {
     errors.push({ key: 'ticket_type_id', label: 'Ticket Type', reason: 'No Ticket Type has this ID.' })
   } else if (target.success && found) {
     const result = validateFields(found.version.fields, target.data.fields)
-    if (result.ok) values = result.values
-    else errors.push(...result.errors)
+    if (result.ok) {
+      values = result.values
+      const refs = found.version.fields.filter(f => f.type === 'file' && f.key in values).map(f => ({ key: f.key, label: f.label, id: values[f.key] }))
+      errors.push(...await checkFileRefs(db, principal, null, refs))
+      fileIds = refs.map(r => String(r.id))
+    } else {
+      errors.push(...result.errors)
+    }
   }
   if (errors.length || !core.success || !found) throw new TicketValidationError(errors)
 
   const now = new Date()
-  // last_insert_rowid() is the new ticket: the audit entry is the next statement of the same batch.
   const [created] = await db.batch([db.insert(ticket).values({
     ticketTypeId: found.type.id,
     schemaVersion: found.version.version,
@@ -275,6 +282,8 @@ export async function createTicket(db: Db, principal: Principal, input: unknown)
     createdAt: now,
     updatedAt: now,
   }).returning({ number: ticket.number }),
+  // An update keeps last_insert_rowid(), so the uploads join the new ticket; the audit insert must come last.
+  ...(fileIds.length ? [claimUploads(db, principal, fileIds)] : []),
   auditEntry(db, principal, { ticketNumber: sql`last_insert_rowid()`, action: 'ticket_created' }),
   ])
   return getTicket(db, principal, created[0]!.number)

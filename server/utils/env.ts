@@ -4,6 +4,7 @@ import { readConfig } from './config'
 
 export interface Bindings {
   DB: D1Database
+  FILES: R2Bucket
   EMAIL?: SendEmail
   [name: string]: unknown
 }
