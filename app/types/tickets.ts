@@ -3,7 +3,7 @@
 export type Priority = 'low' | 'normal' | 'high' | 'urgent'
 export type Channel = 'web' | 'ai' | 'api'
 export type StatusCategory = 'open' | 'active' | 'waiting' | 'done'
-export type TicketAction = 'change_status' | 'change_priority' | 'assign'
+export type TicketAction = 'change_status' | 'change_priority' | 'assign' | 'edit_fields' | 'comment' | 'comment_internal'
 
 export interface Status {
   key: string
@@ -37,6 +37,7 @@ export interface TicketDetail extends TicketSummary {
   fields: Record<string, unknown>
   schema_fields: { key: string, label: string, type: string }[]
   team: { id: number, name: string }
+  comment_count: number
   allowed_actions: TicketAction[]
 }
 
@@ -44,3 +45,30 @@ export interface TicketList {
   data: TicketSummary[]
   counts: Record<string, number>
 }
+
+export interface CommentView {
+  id: string
+  visibility: 'public' | 'internal'
+  body: string
+  author: Person
+  channel: Channel
+  created_at: string
+}
+
+export type ActivityItem =
+  | { type: 'comment', id: string, at: string, comment: CommentView }
+  | {
+    type: 'event'
+    id: string
+    at: string
+    action: 'ticket_created' | 'status_changed' | 'priority_changed' | 'assignee_changed' | 'field_changed'
+    principal: Person
+    channel: Channel
+    field: { key: string, label: string } | null
+    before: string | null
+    after: string | null
+    erased: boolean
+    reverts_id: number | null
+    reverted: boolean
+    revertible: boolean
+  }

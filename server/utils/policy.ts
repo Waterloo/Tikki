@@ -7,7 +7,7 @@ import type { Principal } from './tickets'
  * REST, MCP, and the UI (through `allowed_actions`) use it. No other code checks permissions.
  */
 
-export const TICKET_ACTIONS = ['read', 'change_status', 'change_priority', 'assign'] as const
+export const TICKET_ACTIONS = ['read', 'change_status', 'change_priority', 'assign', 'edit_fields', 'comment', 'comment_internal'] as const
 export type TicketAction = typeof TICKET_ACTIONS[number]
 
 /** The facts about a ticket that the rules use. */
@@ -37,6 +37,10 @@ const AGENT_ONLY: Record<Exclude<TicketAction, 'read'>, string> = {
   change_status: 'Only Agents can change the Status of a ticket.',
   change_priority: 'Only Agents can change the Priority of a ticket.',
   assign: 'Only Agents can assign a ticket.',
+  // Issue 09 lets a Requester edit Field values while the ticket is open (4.20).
+  edit_fields: 'Only Agents can edit the Fields of a ticket.',
+  comment: 'You cannot comment on this ticket.',
+  comment_internal: 'Only Agents can write Internal Comments.',
 }
 
 /** Admins can do everything an Agent can (3.17). Agents see all tickets (3.5). */
@@ -58,7 +62,8 @@ function canRead(principal: Principal, t: PolicyTicket) {
 /** Null when the Principal may do the action; otherwise the refusal. */
 export function authorize(principal: Principal, action: TicketAction, t: PolicyTicket): Refusal | null {
   if (!canRead(principal, t)) return NOT_FOUND
-  if (action === 'read' || isStaff(principal)) return null
+  // Everyone who can read a ticket can write a Public Comment (4.18).
+  if (action === 'read' || action === 'comment' || isStaff(principal)) return null
   return { status: 403, code: 'FORBIDDEN', message: AGENT_ONLY[action] }
 }
 
@@ -79,4 +84,9 @@ export function allowedActions(principal: Principal, t: PolicyTicket): TicketAct
 export function readableTickets(principal: Principal): SQL | undefined {
   if (isStaff(principal)) return undefined
   return or(eq(ticket.requesterId, principal.userId), eq(ticketType.visibleToAll, true))
+}
+
+/** Only Users who work on tickets see Internal Comments (4.18). Lists and counts filter with this. */
+export function canSeeInternal(principal: Principal): boolean {
+  return isStaff(principal)
 }
