@@ -14,6 +14,7 @@
     "db:migrate:local": "wrangler d1 migrations apply DB --local",
     "typecheck": "nuxt typecheck",
     "test": "nuxt build && vitest run",
+    "e2e": "playwright test",
     "postinstall": "nuxt prepare",
     "auth:generate": "auth generate --config scripts/auth-schema.config.ts --output server/db/auth-schema.ts --yes"
   },
@@ -46,6 +47,7 @@
     "@cloudflare/workers-types": "^5.20261016.1",
     "@iconify-json/lucide": "^1.2.145",
     "@modelcontextprotocol/client": "2.3.1",
+    "@playwright/test": "^1.64.1",
     "@types/node": "^24.19.2",
     "auth": "1.7.10",
     "drizzle-kit": "0.31.11",

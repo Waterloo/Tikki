@@ -22,8 +22,8 @@ One look for every screen, so later issues reuse parts instead of styling themse
 Checked by hand in the browser against `wrangler dev` on 2026-10-18, unless a test is named.
 
 - [x] Sign-in and My tickets match the canvas style in light mode, and are readable in dark mode (both checked). Consent uses the same layout and card; it was not opened in this check.
-- [x] At 375 px width there is no horizontal scroll (`scrollWidth` 375), and the navigation opens from the menu button.
-- [x] Long ticket titles are cut with an ellipsis in the list, on desktop and on a phone.
+- [x] At 375 px width there is no horizontal scroll (`scrollWidth` 375), and the navigation opens from the menu button. (`e2e/ui-foundation.spec.ts`, "at 375 px there is no horizontal scroll and the menu button opens the navigation")
+- [x] Long ticket titles are cut with an ellipsis in the list, on desktop and on a phone. (`e2e/ui-foundation.spec.ts`, "a long ticket title is cut with an ellipsis", at 375 px; desktop checked by hand.)
 - [x] My tickets has designed empty, loading, and error states, and the error state has "Try again". The empty state was seen in the browser. The loading and error states were not forced in the browser.
 - [x] A Requester sees only the navigation items for Requesters. Today every item is for every role, so this only becomes visible when issue 05 adds Agent items.
 - [x] `pnpm test` (27 tests) and `pnpm typecheck` pass.

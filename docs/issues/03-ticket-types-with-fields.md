@@ -32,8 +32,8 @@ A Requester creates a ticket in the web app by choosing a Ticket Type and fillin
   Evidence: `test/worker/tickets.test.ts`, "gives consecutive numbers from one counter, with the prefix of each type" (`BUG-n`, then `DATA-n+1`).
 - [x] The seed creates the three example types and the Support Team on a fresh database only.
   Evidence: the seed is in `migrations/0001_ticket_types_and_fields.sql`, which runs once for each database. `test/worker/ticket-types.test.ts`: "lists the three seeded types, owned by the Support Team" and "seeds once: applying the migrations again adds no type, Team, or Schema Version". On a database that already has issue 01 tickets, the migration pins them to Bug version 1 with Priority `normal` (checked with sqlite3 and foreign keys on).
-- [ ] Playwright flow: sign in, choose Bug, fill the Fields, submit, see the new reference.
-  Not done: Playwright is not set up in this repository yet. The same flow was done by hand in the browser against `wrangler dev` on 2026-10-18: sign in with a code, choose Bug, submit empty (Title and "Page or feature" show "Required."), fill the Fields, choose High, submit, and the toast and list show `BUG-1`. The API returned `fields: { page_or_feature: "Reports", frequency: "Every time" }`, `priority: "high"`, `schema_version: 1`.
+- [x] Playwright flow: sign in, choose Bug, fill the Fields, submit, see the new reference.
+  Evidence: `e2e/new-ticket.spec.ts`, "choose Bug, see Required errors, fill the Fields, and see the new reference" (signed in by `e2e/auth.setup.ts`; an empty submit shows the required errors on Title and "Page or feature"; then it fills the Fields, chooses High, and finds the new `BUG-n` in the list). The same flow was also done by hand in the browser against `wrangler dev` on 2026-10-18: sign in with a code, choose Bug, submit empty (Title and "Page or feature" show "Required."), fill the Fields, choose High, submit, and the toast and list show `BUG-1`. The API returned `fields: { page_or_feature: "Reports", frequency: "Every time" }`, `priority: "high"`, `schema_version: 1`.
 
 ## Notes for later issues
 

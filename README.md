@@ -75,6 +75,14 @@ This builds the Worker, then runs Vitest in the Workers runtime (`@cloudflare/vi
 pnpm typecheck
 ```
 
+```bash
+pnpm e2e
+```
+
+This runs the Playwright flows (Chromium only, in `e2e/`) against the built app in `wrangler dev`. The first time, run `pnpm exec playwright install chromium`. `playwright.config.ts` builds the app, applies the migrations to an empty database in `.wrangler/e2e`, and starts the Worker on port 8799 with the `console` mail transport. It deletes `.wrangler/e2e` on each run, so it does not touch your `pnpm dev` data.
+
+The tests read the sign-in code from the server output, which the config writes to `e2e/.server.log` (`e2e/mail.ts`). `e2e/sign-in.ts` signs in through the UI, and `e2e/auth.setup.ts` saves that session for the other flows. CI runs `pnpm e2e` on pull requests.
+
 ## Database changes
 
 1. Change `server/db/schema.ts`. If you change Better-Auth plugins or fields, run `pnpm auth:generate` first.

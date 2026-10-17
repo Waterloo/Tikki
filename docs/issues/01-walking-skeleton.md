@@ -25,7 +25,7 @@ The thinnest system that works from start to end on the real platform. A User si
 
 Checked items pass in the automated tests or were checked by hand in local development on 2026-10-18. Unchecked items need the staging setup below and a person.
 
-- [x] In local development, the sign-in code shows in the `wrangler dev` output, and the User can sign in with it. (Checked by hand in the browser; the `console` transport writes the email with its code.)
+- [x] In local development, the sign-in code shows in the `wrangler dev` output, and the User can sign in with it. (`e2e/sign-in.spec.ts`, "sign in with the emailed code and see My tickets", reads the code from the server output. Also checked by hand in the browser.)
 - [x] The Worker fails at startup with a clear error when the transport is `console` and the environment is not development. (`test/startup/startup.test.ts`)
 - [x] The Worker fails at startup with a clear error when the allow list is missing. (`test/startup/startup.test.ts`)
 - [x] A User with an allowed email gets a code and signs in. An email from another domain gets no code. (`test/worker/sign-in.test.ts`)
