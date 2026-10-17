@@ -115,6 +115,33 @@ const EXCERPT = 200
 
 const name = (p: { name: string, email: string }) => p.name.trim() || p.email
 
+/** The columns that the text of a notice is made from. Shared by the Inbox and the email. */
+export interface NoticeSource {
+  kind: NotificationKind
+  data: Record<string, string> | null
+  number: number | null
+  prefix: string | null
+  title: string | null
+  commentBody: string | null
+  actorName: string | null
+  actorEmail: string | null
+}
+
+export function noticeText(r: NoticeSource): { head: string, body: string, href: string } {
+  const who = r.actorName === null ? 'Someone' : name({ name: r.actorName, email: r.actorEmail! })
+  const tref = r.number === null ? '' : `${r.prefix}-${r.number}`
+  const excerpt = (r.commentBody ?? '').slice(0, EXCERPT)
+  const href = `/tickets/${tref}`
+  switch (r.kind) {
+    case 'ticket_created': return { head: `${who} created ${tref}`, body: r.title!, href }
+    case 'assigned': return { head: `${who} assigned ${tref} to you`, body: r.title!, href }
+    case 'public_comment': return { head: `${who} replied on ${tref}`, body: excerpt, href }
+    case 'internal_comment': return { head: `${who} added an internal note on ${tref}`, body: excerpt, href }
+    case 'status_changed': return { head: `${who} changed ${tref} to ${r.data?.status ?? 'a new Status'}`, body: r.title!, href }
+    default: return { head: r.data?.head ?? 'A webhook endpoint needs attention', body: r.data?.body ?? '', href: r.data?.href ?? '/' }
+  }
+}
+
 export async function listNotices(db: Db, principal: Principal, options: { unreadOnly?: boolean, cursor?: number, limit?: number } = {}) {
   const limit = Math.min(options.limit ?? NOTICE_PAGE, 100)
   const where = and(mine(principal), options.unreadOnly ? isNull(notification.readAt) : undefined, options.cursor ? lt(notification.id, options.cursor) : undefined)
@@ -144,20 +171,9 @@ export async function listNotices(db: Db, principal: Principal, options: { unrea
 
   const page = rows.slice(0, limit)
   const data: NoticeView[] = page.map((r) => {
-    const who = r.actorName === null ? 'Someone' : name({ name: r.actorName, email: r.actorEmail! })
-    const tref = r.number === null ? '' : `${r.prefix}-${r.number}`
-    const excerpt = (r.commentBody ?? '').slice(0, EXCERPT)
-    const base = { id: r.id, kind: r.kind, read: r.readAt !== null, created_at: r.createdAt.toISOString() }
-    const ticketView = r.number === null ? null : { ref: tref, ticket_type: { name: r.typeName!, icon: r.typeIcon!, color: r.typeColor! }, priority: r.priority! }
-    const href = `/tickets/${tref}`
-    switch (r.kind) {
-      case 'ticket_created': return { ...base, head: `${who} created ${tref}`, body: r.title!, href, ticket: ticketView }
-      case 'assigned': return { ...base, head: `${who} assigned ${tref} to you`, body: r.title!, href, ticket: ticketView }
-      case 'public_comment': return { ...base, head: `${who} replied on ${tref}`, body: excerpt, href, ticket: ticketView }
-      case 'internal_comment': return { ...base, head: `${who} added an internal note on ${tref}`, body: excerpt, href, ticket: ticketView }
-      case 'status_changed': return { ...base, head: `${who} changed ${tref} to ${r.data?.status ?? 'a new Status'}`, body: r.title!, href, ticket: ticketView }
-      default: return { ...base, head: r.data?.head ?? 'A webhook endpoint needs attention', body: r.data?.body ?? '', href: r.data?.href ?? '/', ticket: null }
-    }
+    const text = noticeText(r)
+    const ticketView = r.number === null ? null : { ref: `${r.prefix}-${r.number}`, ticket_type: { name: r.typeName!, icon: r.typeIcon!, color: r.typeColor! }, priority: r.priority! }
+    return { id: r.id, kind: r.kind, read: r.readAt !== null, created_at: r.createdAt.toISOString(), ...text, ticket: ticketView }
   })
   return { data, nextCursor: rows.length > limit ? page.at(-1)!.id : null, unreadCount: await unreadCount(db, principal) }
 }
@@ -173,10 +189,10 @@ export async function markRead(db: Db, principal: Principal, id: number): Promis
   return !!row
 }
 
-// Preferences. Only email uses them: the Inbox always gets every notice (8.15). Email sending comes with issue 19.
+// Preferences. Only email uses them: the Inbox always gets every notice (8.15). The sender is `notice-mail.ts`.
 
 const STAFF_KEYS: PreferenceKey[] = ['team_ticket', 'assigned', 'public_comment', 'internal_comment']
-const DEFAULTS: Record<PreferenceKey, boolean> = { team_ticket: true, assigned: true, public_comment: true, internal_comment: false, status_changed: true, webhook: true }
+export const DEFAULT_PREFERENCES: Record<PreferenceKey, boolean> = { team_ticket: true, assigned: true, public_comment: true, internal_comment: false, status_changed: true, webhook: true }
 
 /** The preferences that make sense for the role: a Requester gets no internal notes, assignments or Team tickets. */
 export function preferenceKeysFor(role: string): PreferenceKey[] {
@@ -190,7 +206,7 @@ export interface PreferenceView { key: PreferenceKey, enabled: boolean, locked: 
 export async function getPreferences(db: Db, principal: Principal): Promise<PreferenceView[]> {
   const rows = await db.select().from(notificationPreference).where(eq(notificationPreference.userId, principal.userId))
   const stored = new Map(rows.map(r => [r.key, r.enabled]))
-  return preferenceKeysFor(principal.role).map(key => ({ key, enabled: key === 'assigned' ? true : stored.get(key) ?? DEFAULTS[key], locked: key === 'assigned' }))
+  return preferenceKeysFor(principal.role).map(key => ({ key, enabled: key === 'assigned' ? true : stored.get(key) ?? DEFAULT_PREFERENCES[key], locked: key === 'assigned' }))
 }
 
 export class PreferenceError extends Error {

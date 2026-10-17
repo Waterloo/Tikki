@@ -8,6 +8,7 @@ import type { Db, Role } from './auth'
 import { checkFileRefs, claimUploads } from './attachments'
 import { activeOptions, validateFields, type FieldDef, type FieldError, type FieldType, type FieldValues } from './fields'
 import { noticeTicketCreated, noticesForChange } from './notifications'
+import { queueNoticeMail } from './notice-mail'
 import { allowedActions, assertAllowed, canBeAssignee, canSeeInternal, NOT_FOUND, PolicyRefusal, readableTickets, type PolicyTicket, type TicketAction } from './policy'
 import type { StatusView } from './statuses'
 import { loadTicketType } from './ticket-types'
@@ -308,6 +309,7 @@ export async function createTicket(db: Db, principal: Principal, input: unknown)
   auditEntry(db, principal, { ticketNumber: sql`last_insert_rowid()`, action: 'ticket_created' }),
   noticeTicketCreated(db, principal.userId),
   ])
+  queueNoticeMail({ ticket: created[0]!.number })
   return getTicket(db, principal, created[0]!.number)
 }
 
@@ -557,4 +559,5 @@ export async function applyChange(db: Db, principal: Principal, number: number, 
     ...extra,
     ...noticesForChange(db, principal.userId, number, entries),
   ])
+  queueNoticeMail({ ticket: number })
 }

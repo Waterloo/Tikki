@@ -8,3 +8,5 @@ export const env = {
   MAIL_TRANSPORT: 'console',
   DB: {},
 }
+
+export function waitUntil(): void {}
