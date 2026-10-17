@@ -1,7 +1,8 @@
 import { defineConfig, devices } from '@playwright/test'
 
-const PORT = 8799
-const STATE = '.wrangler/e2e'
+// Parallel worktrees set E2E_PORT so their servers do not collide.
+const PORT = Number(process.env.E2E_PORT ?? 8799)
+const STATE = `.wrangler/e2e-${PORT}`
 
 export default defineConfig({
   testDir: 'e2e',
