@@ -71,6 +71,13 @@
       "when": 1792280088488,
       "tag": "0009_issue_08_old_prefix",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1792280152377,
+      "tag": "0010_issue_09_reopened_from",
+      "breakpoints": true
     }
   ]
 }

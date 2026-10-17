@@ -3,7 +3,7 @@
 export type Priority = 'low' | 'normal' | 'high' | 'urgent'
 export type Channel = 'web' | 'ai' | 'api'
 export type StatusCategory = 'open' | 'active' | 'waiting' | 'done'
-export type TicketAction = 'change_status' | 'change_priority' | 'assign' | 'edit_fields' | 'change_type' | 'comment' | 'comment_internal'
+export type TicketAction = 'change_status' | 'change_priority' | 'assign' | 'edit_fields' | 'edit_description' | 'change_type' | 'comment' | 'comment_internal' | 'cancel' | 'reopen'
 
 export interface Status {
   key: string
@@ -35,9 +35,10 @@ export interface TicketDetail extends TicketSummary {
   description: string
   schema_version: number
   fields: Record<string, unknown>
-  schema_fields: { key: string, label: string, type: string }[]
+  schema_fields: { key: string, label: string, type: string, required: boolean, help: string, options?: string[] }[]
   team: { id: number, name: string }
   comment_count: number
+  reopened_from: { number: number, ref: string } | null
   allowed_actions: TicketAction[]
 }
 
@@ -62,7 +63,7 @@ export type ActivityItem =
     type: 'event'
     id: string
     at: string
-    action: 'ticket_created' | 'status_changed' | 'priority_changed' | 'assignee_changed' | 'field_changed' | 'type_changed'
+    action: 'ticket_created' | 'status_changed' | 'priority_changed' | 'assignee_changed' | 'field_changed' | 'type_changed' | 'description_changed' | 'ticket_cancelled' | 'ticket_reopened'
     principal: Person
     channel: Channel
     field: { key: string, label: string } | null

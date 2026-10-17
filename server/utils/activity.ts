@@ -169,6 +169,10 @@ export async function listActivity(db: Db, principal: Principal, number: number)
     const value: unknown = JSON.parse(raw)
     if (value === null) return null
     switch (e.action) {
+      // The text of a description is not repeated in the timeline.
+      case 'description_changed': return null
+      case 'ticket_cancelled':
+      case 'ticket_reopened':
       case 'status_changed': return statusNames.get(String(value)) ?? String(value)
       case 'priority_changed': return String(value)
       case 'assignee_changed': return personNames.get(String(value)) ?? 'unknown User'

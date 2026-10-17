@@ -1,5 +1,5 @@
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm'
-import { attachment, ticket, ticketType } from '../db/schema'
+import { attachment, status, ticket, ticketType, type StatusCategory } from '../db/schema'
 import type { Db } from './auth'
 import type { FieldError } from './fields'
 import { authorizeAttach, authorizeAttachmentRead, NO_ATTACHMENT, NOT_FOUND, PolicyRefusal, type PolicyTicket } from './policy'
@@ -72,11 +72,17 @@ export function parseUploadHeaders(headers: Headers): UploadInfo {
   return { size, filename, contentType: /^[a-z0-9!#$&^_.+-]{1,60}\/[a-z0-9!#$&^_.+-]{1,60}$/.test(type) ? type : 'application/octet-stream' }
 }
 
+function policyTicket(row: { requesterId: string, visibleToAll: boolean, statusKey: string | null, statusCategory: StatusCategory | null }): PolicyTicket {
+  if (row.statusKey === null || row.statusCategory === null) throw new Error('A ticket has no Status. Every ticket must have one (4.10).')
+  return { requesterId: row.requesterId, visibleToAll: row.visibleToAll, statusKey: row.statusKey, statusCategory: row.statusCategory }
+}
+
 async function loadPolicyTicket(db: Db, number: number): Promise<PolicyTicket | null> {
-  const [row] = await db.select({ requesterId: ticket.requesterId, visibleToAll: ticketType.visibleToAll }).from(ticket)
+  const [row] = await db.select({ requesterId: ticket.requesterId, visibleToAll: ticketType.visibleToAll, statusKey: status.key, statusCategory: status.category }).from(ticket)
     .innerJoin(ticketType, eq(ticket.ticketTypeId, ticketType.id))
+    .leftJoin(status, eq(ticket.status, status.key))
     .where(eq(ticket.number, number)).limit(1)
-  return row ?? null
+  return row ? policyTicket(row) : null
 }
 
 /**
@@ -147,14 +153,17 @@ export async function downloadAttachment(db: Db, bucket: R2Bucket, principal: Pr
     file: attachment,
     requesterId: ticket.requesterId,
     visibleToAll: ticketType.visibleToAll,
+    statusKey: status.key,
+    statusCategory: status.category,
   }).from(attachment)
     .leftJoin(ticket, eq(attachment.ticketNumber, ticket.number))
     .leftJoin(ticketType, eq(ticket.ticketTypeId, ticketType.id))
+    .leftJoin(status, eq(ticket.status, status.key))
     .where(eq(attachment.id, id)).limit(1)
   if (!row) throw new PolicyRefusal(NO_ATTACHMENT)
   const refusal = authorizeAttachmentRead(principal, {
     uploaderId: row.file.uploaderId,
-    ticket: row.requesterId === null ? null : { requesterId: row.requesterId, visibleToAll: row.visibleToAll ?? false },
+    ticket: row.requesterId === null ? null : policyTicket({ ...row, requesterId: row.requesterId, visibleToAll: row.visibleToAll ?? false }),
   })
   if (refusal) throw new PolicyRefusal(refusal)
 

@@ -134,12 +134,13 @@ describe('audit log: one entry for each change, with Principal and channel', () 
     ])
   })
 
-  it('refuses a Field edit from a Requester', async () => {
-    const requester = await signInAs('requester')
+  it('refuses a Field edit from a Requester once the ticket is not open (issue 09)', async () => {
+    const [requester, agent] = await Promise.all([signInAs('requester'), signInAs('agent')])
     const t = await create(requester)
+    await patch(agent, t.ref, { status: 'in_progress' })
     const res = await patch(requester, t.ref, { fields: { page_or_feature: 'x' } })
     expect(res.status).toBe(403)
-    expect((await res.json() as { error: { message: string } }).error.message).toBe('Only Agents can edit the Fields of a ticket.')
+    expect((await res.json() as { error: { message: string } }).error.message).toBe('You can edit a ticket only while it is open. Add a comment instead.')
   })
 })
 
