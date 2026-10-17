@@ -19,8 +19,11 @@ export function isCimdUrlAllowed(url: string | URL): boolean {
 
 /** The Workers transport for CIMD: allow-listed HTTPS hosts only, GET/HEAD only, and no redirects. */
 export const fetchClientMetadataResource: ClientMetadataResourceFetch = async (input, init) => {
-  const request = new Request(input, init)
-  if (!isCimdUrlAllowed(request.url)) throw new TypeError(`CIMD fetch refused: ${new URL(request.url).host} is not an allowed metadata host`)
-  if (request.method !== 'GET' && request.method !== 'HEAD') throw new TypeError('CIMD fetch supports only GET and HEAD')
-  return fetch(request.url, { method: request.method, headers: request.headers, signal: request.signal, redirect: 'manual' })
+  // Not `new Request(input, init)`: the plugin passes `redirect: 'error'`, which workerd rejects.
+  // `manual` returns a 3xx as is, and the plugin refuses any non-200 status.
+  const url = input instanceof Request ? input.url : String(input)
+  const method = (init?.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase()
+  if (!isCimdUrlAllowed(url)) throw new TypeError(`CIMD fetch refused: ${new URL(url).host} is not an allowed metadata host`)
+  if (method !== 'GET' && method !== 'HEAD') throw new TypeError('CIMD fetch supports only GET and HEAD')
+  return fetch(url, { method, headers: init?.headers, signal: init?.signal, redirect: 'manual' })
 }

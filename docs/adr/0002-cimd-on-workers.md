@@ -17,4 +17,5 @@ DCR stays on. Other MCP clients register with DCR.
 ## Consequences
 
 - No server-side request can go to a host that we do not trust, so SSRF and DNS rebinding are not possible through CIMD.
+- The transport must not build a `Request` from the plugin's options. The plugin passes `redirect: 'error'`, and workerd rejects that value, so every fetch failed before it reached the network (found with Claude Code on 2026-10-18; `test/worker/cimd.test.ts`).
 - A new CIMD client host needs a code change. If Claude uses a host that is not in the list, the authorization fails with `invalid_client`; add the host to `CIMD_ALLOWED_HOSTS`.
