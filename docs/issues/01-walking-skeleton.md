@@ -94,7 +94,7 @@ Do these steps once. The values in `CAPITALS` go into the GitHub environment in 
 
 ### Manual check results
 
-None yet.
+- **2026-10-18, local (`wrangler dev`), Claude Code as the MCP client:** Claude Code registered through CIMD (`https://claude.ai/oauth/claude-code-client-metadata`) after the fix in commit `0272237`. Sign-in with the email code and consent worked in the browser. `create_ticket` created `BUG-2` with channel `ai`. The claude.ai check (step 6) still waits for staging.
 
 ## Risk notes
 
