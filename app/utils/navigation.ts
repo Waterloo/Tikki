@@ -13,6 +13,7 @@ const EVERYONE = ['admin', 'agent', 'requester'] as const
 const ITEMS: readonly NavItem[] = [
   { label: 'My tickets', icon: 'i-lucide-ticket', to: '/', roles: EVERYONE },
   { label: 'New ticket', icon: 'i-lucide-plus', to: '/tickets/new', roles: EVERYONE },
+  { label: 'Settings', icon: 'i-lucide-settings', to: '/settings', roles: ['admin'] },
 ]
 
 export function navigationFor(role: Role | undefined): NavItem[] {

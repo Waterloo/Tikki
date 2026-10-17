@@ -1,4 +1,4 @@
-import { index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core'
+import { blob, index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core'
 import type { FieldDef, FieldValues } from '../utils/fields'
 import { user } from './auth-schema'
 
@@ -53,6 +53,17 @@ export const ticket = sqliteTable('ticket', {
   channel: text('channel', { enum: ['web', 'ai', 'api'] }).notNull(),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(() => new Date()),
 }, t => [index('ticket_requester_idx').on(t.requesterId)])
+
+/** The one row of organization settings. `id` is always 1 (the migration inserts it). */
+export const organization = sqliteTable('organization', {
+  id: integer('id').primaryKey(),
+  name: text('name').notNull(),
+  subtitle: text('subtitle').notNull().default(''),
+  // PNG bytes. Read and written with raw D1 statements, so no other query loads them. Null: the UI shows the first letter.
+  logo: blob('logo'),
+  // Changes with the logo. It is part of the logo URL, so a new logo is not served from a cache.
+  logoVersion: integer('logo_version').notNull().default(0),
+})
 
 /** One row for each sign-in code request, for the limit of 5 codes an hour for each address. */
 export const otpRequest = sqliteTable('otp_request', {

@@ -10,8 +10,8 @@ export default defineNuxtConfig({
   icon: {
     provider: 'none',
     serverBundle: false,
-    // Ticket Type icons come from the database, so the scan cannot find them. These are the seeded ones.
-    clientBundle: { scan: true, icons: ['lucide:bug', 'lucide:database', 'lucide:life-buoy', 'lucide:ticket'] },
+    // The scan cannot find icons that come from the database (the seeded Ticket Types) or from app/utils (the Settings nav item).
+    clientBundle: { scan: true, icons: ['lucide:bug', 'lucide:database', 'lucide:life-buoy', 'lucide:ticket', 'lucide:settings'] },
   },
   nitro: {
     preset: 'cloudflare-module',

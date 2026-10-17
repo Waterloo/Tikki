@@ -15,6 +15,19 @@ export async function restPrincipal(event: H3Event): Promise<Principal | Respons
   return { userId: session.user.id, role: session.user.role as Role, channel: 'web' }
 }
 
+/** Like an Admin check, but for the REST routes that are only for Admins (12.3a). */
+export async function adminPrincipal(event: H3Event): Promise<Principal | Response> {
+  const principal = await restPrincipal(event)
+  if (principal instanceof Response) return principal
+  if (principal.role !== 'admin') return apiError(403, 'FORBIDDEN', 'Only Admins can do this.')
+  return principal
+}
+
+export function validationFailed(issues: { path: PropertyKey[], message: string }[]): Response {
+  const details = issues.map(i => ({ key: String(i.path[0] ?? 'body'), reason: i.message }))
+  return apiError(422, 'VALIDATION_FAILED', 'The request has invalid values.', details)
+}
+
 export function validationError(error: TicketValidationError): Response {
   return apiError(422, 'VALIDATION_FAILED', 'The request has invalid values.', error.details)
 }
