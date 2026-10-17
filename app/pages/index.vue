@@ -42,6 +42,9 @@ onMounted(load)
       </h1>
       <div class="flex items-center gap-3 text-sm text-(--ui-text-muted)">
         <span v-if="session.data">{{ session.data.user.email }}</span>
+        <UButton size="sm" to="/tickets/new" icon="i-lucide-plus">
+          New ticket
+        </UButton>
         <UButton size="sm" color="neutral" variant="ghost" @click="signOut">
           Sign out
         </UButton>
@@ -63,7 +66,7 @@ onMounted(load)
         You have no tickets yet.
       </p>
       <p class="text-sm text-(--ui-text-muted) mt-1">
-        Add this site to Claude as a custom connector and say, for example, "raise a bug: the export button fails".
+        Select "New ticket", or add this site to Claude as a custom connector and say, for example, "raise a bug: the export button fails".
       </p>
     </UCard>
     <ul v-else class="divide-y divide-(--ui-border) border border-(--ui-border) rounded-lg bg-(--ui-bg)">

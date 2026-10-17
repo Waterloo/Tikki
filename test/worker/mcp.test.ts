@@ -55,12 +55,12 @@ describe('MCP endpoint', () => {
       const result = await client.callTool({ name: 'create_ticket', arguments: { title: 'The export button fails' } })
       expect(result.isError).toBeFalsy()
       const { number, ref } = result.structuredContent as { number: number, ref: string }
-      expect(ref).toBe(`BUG-${number}`)
+      expect(ref).toBe(`GEN-${number}`)
       await client.close()
 
       const read = await call(`/api/v1/tickets/${ref}`, { headers: { cookie } })
       expect(read.status).toBe(200)
-      expect(await read.json()).toMatchObject({ number, ref, title: 'The export button fails', requester_id: user.id, channel: 'ai', ticket_type: { prefix: 'BUG' } })
+      expect(await read.json()).toMatchObject({ number, ref, title: 'The export button fails', requester_id: user.id, channel: 'ai', ticket_type: { prefix: 'GEN' } })
 
       const list = await (await call('/api/v1/tickets?requester=me', { headers: { cookie } })).json() as { data: { ref: string }[] }
       expect(list.data.map(t => t.ref)).toContain(ref)

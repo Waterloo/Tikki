@@ -4,23 +4,26 @@ import { APIError } from 'better-auth/api'
 import { verifyJwsAccessToken } from 'better-auth/oauth2'
 import { eq } from 'drizzle-orm'
 import { errors as joseErrors, type JWTPayload } from 'jose'
-import { user } from '../db/schema'
+import { ticketType, user } from '../db/schema'
 import type { Role } from './auth'
 import { config } from './env'
 import { db, useAuth } from './services'
-import { createTicket, newTicketInput, TicketValidationError, type Principal } from './tickets'
+import { createTicket, ticketTextInput, TicketValidationError, type Principal } from './tickets'
 
 function buildServer(principal: Principal) {
   const server = new McpServer({ name: 'ticketing', version: '0.1.0' })
 
   server.registerTool('create_ticket', {
     title: 'Create ticket',
-    description: 'Create a ticket for the signed-in user. Use it when the user reports a problem or asks for something. Ask the user to confirm before you call it.',
-    inputSchema: newTicketInput,
+    description: 'Create a General request ticket for the signed-in user. Use it when the user reports a problem or asks for something. Ask the user to confirm before you call it.',
+    inputSchema: ticketTextInput,
     annotations: { title: 'Create ticket', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   }, async (input) => {
     try {
-      const created = await createTicket(db, principal, input)
+      // Until issue 04 lets Claude choose the type and fill its Fields, the tool uses the type with no required Fields.
+      const [type] = await db.select({ id: ticketType.id }).from(ticketType).where(eq(ticketType.prefix, 'GEN')).limit(1)
+      if (!type) throw new Error('The General request type (GEN) does not exist. Migration 0001 seeds it.')
+      const created = await createTicket(db, principal, { ...input, ticket_type_id: type.id })
       return {
         content: [{ type: 'text', text: `Created ${created.ref}: ${JSON.stringify(created.title)}` }],
         structuredContent: { number: created.number, ref: created.ref },
