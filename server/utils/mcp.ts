@@ -6,13 +6,23 @@ import { eq } from 'drizzle-orm'
 import { errors as joseErrors, type JWTPayload } from 'jose'
 import { z } from 'zod'
 import { PRIORITIES, user } from '../db/schema'
+import { createComment, listComments } from './activity'
 import type { Role } from './auth'
 import { config } from './env'
 import { fieldsToJsonSchema } from './mcp-schema'
 import { NOT_FOUND, PolicyRefusal } from './policy'
 import { db, useAuth } from './services'
 import { getTicketTypeWithFields, listTicketTypes } from './ticket-types'
-import { createTicket, parseTicketReference, TicketValidationError, updateTicket, type Principal } from './tickets'
+import { createTicket, FIELD_KEY, getTicket, listTickets, MAX_SEARCH_LENGTH, parseTicketReference, TicketValidationError, updateTicket, type ListFilter, type Principal, type TicketSummary } from './tickets'
+import { UNTRUSTED_NOTICE, untrusted, untrustedDeep } from './untrusted'
+
+// Small pages: the results go into the context of Claude.
+const PAGE_SIZE = 20
+const MAX_PAGE_SIZE = 50
+// Newest comments first in the result; older ones are counted, not sent.
+const COMMENT_LIMIT = 20
+
+const name = (p: { name: string, email: string }) => p.name || p.email
 
 function buildServer(principal: Principal) {
   const server = new McpServer({ name: 'ticketing', version: '0.1.0' })
@@ -78,27 +88,140 @@ function buildServer(principal: Principal) {
   const ticketArg = z.string().describe('The Ticket Reference, for example BUG-12, or the ticket number.')
   const writeAnnotations = { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false }
 
-  /** Runs one change through the same module function and policy as REST, and reports the result or the refusal. */
-  async function change(ref: string, input: Record<string, unknown>) {
+  /** Runs a tool body and reports a policy refusal or a validation problem as a tool result, not a protocol error. */
+  async function run(body: () => Promise<{ text: string, data: Record<string, unknown> }>) {
     try {
-      const number = parseTicketReference(ref)
-      if (number === null) throw new PolicyRefusal(NOT_FOUND)
-      const t = await updateTicket(db, principal, number, input)
-      return {
-        content: [{ type: 'text' as const, text: `${t.ref}: Status ${t.status.name}, Priority ${t.priority}, ${t.assignee ? `assigned to ${t.assignee.name || t.assignee.email}` : 'unassigned'}.` }],
-        structuredContent: { number: t.number, ref: t.ref, status: t.status.key, priority: t.priority, assignee_id: t.assignee?.id ?? null },
-      }
+      const { text, data } = await body()
+      return { content: [{ type: 'text' as const, text }], structuredContent: data }
     } catch (error) {
       if (error instanceof PolicyRefusal) {
         const { code, message } = error.refusal
         return { isError: true, content: [{ type: 'text' as const, text: `${code}: ${message}` }], structuredContent: { error: { code, message } } }
       }
       if (error instanceof TicketValidationError) {
-        return { isError: true, content: [{ type: 'text' as const, text: `Nothing changed. Fix these and try again: ${error.message}` }] }
+        return { isError: true, content: [{ type: 'text' as const, text: `Nothing changed. Fix these and try again: ${error.message}` }], structuredContent: { problems: error.details } }
       }
       throw error
     }
   }
+
+  const numberOf = (ref: string) => {
+    const number = parseTicketReference(ref)
+    if (number === null) throw new PolicyRefusal(NOT_FOUND)
+    return number
+  }
+
+  /** Runs one change through the same module function and policy as REST, and reports the result or the refusal. */
+  function change(ref: string, input: Record<string, unknown>) {
+    return run(async () => {
+      const t = await updateTicket(db, principal, numberOf(ref), input)
+      return {
+        text: `${t.ref}: Status ${t.status.name}, Priority ${t.priority}, ${t.assignee ? `assigned to ${t.assignee.name || t.assignee.email}` : 'unassigned'}.`,
+        data: { number: t.number, ref: t.ref, status: t.status.key, priority: t.priority, assignee_id: t.assignee?.id ?? null },
+      }
+    })
+  }
+
+  const summary = (t: TicketSummary) => ({
+    ref: t.ref,
+    title: untrusted(t.title),
+    status: t.status.key,
+    priority: t.priority,
+    type: t.ticket_type.name,
+    assignee: t.assignee ? name(t.assignee) : null,
+    updated_at: t.updated_at,
+  })
+
+  /** One page of tickets, with the way to get the next one. */
+  function page(tickets: TicketSummary[], nextCursor: string | null, tool: string) {
+    const data = {
+      notice: UNTRUSTED_NOTICE,
+      tickets: tickets.map(summary),
+      next_cursor: nextCursor,
+      ...(nextCursor ? { more: `More tickets exist. Call ${tool} again with the same arguments and cursor set to next_cursor.` } : {}),
+    }
+    return { text: JSON.stringify(data), data }
+  }
+
+  const limitArg = z.number().int().min(1).max(MAX_PAGE_SIZE).optional().describe(`Page size, ${PAGE_SIZE} by default, at most ${MAX_PAGE_SIZE}.`)
+  const cursorArg = z.string().max(200).optional().describe('The next_cursor of the previous page.')
+
+  server.registerTool('list_my_tickets', {
+    title: 'List my tickets',
+    description: 'List the tickets the signed-in user asked for, newest activity first within each Status. Use it to answer "what is happening with my tickets?". Then call get_ticket for the details.',
+    inputSchema: z.object({
+      open_only: z.boolean().optional().describe('Only tickets that are not resolved or closed.'),
+      limit: limitArg,
+      cursor: cursorArg,
+    }),
+    annotations: { title: 'List my tickets', ...readOnly },
+  }, ({ open_only, limit, cursor }) => run(async () => {
+    const list = await listTickets(db, principal, { requesterIsMe: true, openOnly: open_only }, { cursor, limit: limit ?? PAGE_SIZE })
+    return page(list.tickets, list.nextCursor, 'list_my_tickets')
+  }))
+
+  server.registerTool('get_ticket', {
+    title: 'Get ticket',
+    description: 'Get one ticket: Status, Priority, assignee, description, Field values, and the latest comments (Public Comments only, unless the user is an Agent).',
+    inputSchema: z.object({ ticket: ticketArg }),
+    annotations: { title: 'Get ticket', ...readOnly },
+  }, ({ ticket }) => run(async () => {
+    const number = numberOf(ticket)
+    const [t, comments] = await Promise.all([getTicket(db, principal, number), listComments(db, principal, number)])
+    const shown = comments.slice(-COMMENT_LIMIT)
+    const data = {
+      notice: UNTRUSTED_NOTICE,
+      ...summary(t),
+      requester: name(t.requester),
+      description: untrusted(t.description),
+      fields: untrustedDeep(t.fields),
+      allowed_actions: t.allowed_actions,
+      comments: shown.map(c => ({ visibility: c.visibility, author: name(c.author), created_at: c.created_at, body: untrusted(c.body) })),
+      ...(comments.length > shown.length ? { older_comments_omitted: comments.length - shown.length } : {}),
+    }
+    return { text: JSON.stringify(data), data }
+  }))
+
+  server.registerTool('add_comment', {
+    title: 'Add comment',
+    description: 'Add a comment to one ticket. A Requester writes a Public Comment. An Agent writes an Internal Comment unless visibility is "public"; a Public Comment is seen by the Requester. Ask the user to confirm the text before you call it.',
+    inputSchema: z.object({
+      ticket: ticketArg,
+      body: z.string().describe('The comment text.'),
+      visibility: z.enum(['public', 'internal']).optional().describe('Agents only for "internal". Default: internal for Agents, public for Requesters.'),
+    }),
+    annotations: { title: 'Add comment', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  }, ({ ticket, body, visibility }) => run(async () => {
+    const c = await createComment(db, principal, numberOf(ticket), { body, visibility })
+    return { text: `Added a ${c.visibility} comment to ${ticket}.`, data: { comment_id: c.id, visibility: c.visibility } }
+  }))
+
+  server.registerTool('search_tickets', {
+    title: 'Search tickets',
+    description: 'Search the tickets the user may see. Words must all match the title or description, or give a Ticket Reference. Use the filters to narrow the result. Returns one page; follow next_cursor for more.',
+    inputSchema: z.object({
+      query: z.string().max(MAX_SEARCH_LENGTH).optional().describe('Words, or a Ticket Reference such as BUG-12.'),
+      ticket_type_id: z.number().int().positive().optional().describe('The id from list_ticket_types.'),
+      priority: z.enum(PRIORITIES).optional(),
+      assignee: z.string().min(1).max(100).optional().describe('"me", "none", or a User id.'),
+      open_only: z.boolean().optional().describe('Only tickets that are not resolved or closed.'),
+      fields: z.record(z.string().regex(FIELD_KEY), z.string().max(200)).optional().describe('Exact Field values keyed by Field Key, for example {"branch": "Singapore"}.'),
+      limit: limitArg,
+      cursor: cursorArg,
+    }),
+    annotations: { title: 'Search tickets', ...readOnly },
+  }, ({ query, ticket_type_id, priority, assignee, open_only, fields, limit, cursor }) => run(async () => {
+    const filter: ListFilter = {
+      search: query,
+      ticketTypeId: ticket_type_id,
+      priority,
+      assignee,
+      openOnly: open_only,
+      fields: Object.entries(fields ?? {}).map(([key, value]) => ({ key, value })),
+    }
+    const list = await listTickets(db, principal, filter, { cursor, limit: limit ?? PAGE_SIZE })
+    return page(list.tickets, list.nextCursor, 'search_tickets')
+  }))
 
   server.registerTool('change_status', {
     title: 'Change ticket Status',
