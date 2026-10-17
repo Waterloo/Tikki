@@ -38,7 +38,7 @@ A Requester creates a ticket in the web app by choosing a Ticket Type and fillin
 ## Notes for later issues
 
 - Validation error entries are `{ key, label, reason, options? }`. Core attributes use their body name as `key` (`title`, `description`, `priority`, `ticket_type_id`, `fields`), so issue 07 must refuse these as Field Keys.
-- Until issue 04, the MCP `create_ticket` tool creates a General request (`GEN`), because Bug has a required Field that the tool cannot fill yet.
+- Until issue 04, the MCP `create_ticket` tool created a General request (`GEN`), because Bug has a required Field that the tool could not fill. Issue 04 replaced this: the tool now takes a Ticket Type and its Field values.
 - The validator checks the format of `user` and `file` values only. Issue 16 (Attachments) and issue 20 (People) must check that the referenced file or User exists.
 - `ticket_type.team_id` is nullable in the database, because SQLite cannot add a NOT NULL column with a foreign key to a table that other tables reference. The code refuses a type without a Team with a clear error.
 - Type icons are bundled into the client (`nuxt.config.ts`, `icon.clientBundle.icons`). An icon that is not in this list does not show. Issue 07 must choose from a fixed icon set and add it there.
