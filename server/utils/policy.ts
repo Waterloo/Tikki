@@ -80,3 +80,27 @@ export function readableTickets(principal: Principal): SQL | undefined {
   if (isStaff(principal)) return undefined
   return or(eq(ticket.requesterId, principal.userId), eq(ticketType.visibleToAll, true))
 }
+
+/** People and Teams: only Admins manage them (issue 20). */
+export function authorizeManagePeople(principal: Principal): Refusal | null {
+  if (principal.role === 'admin') return null
+  return { status: 403, code: 'FORBIDDEN', message: 'Only Admins can manage people and Teams.' }
+}
+
+export function assertCanManagePeople(principal: Principal): void {
+  const refusal = authorizeManagePeople(principal)
+  if (refusal) throw new PolicyRefusal(refusal)
+}
+
+/** An Admin cannot lock themself out. The last-Admin rule needs the database, so it is in `people.ts`. */
+export function assertCanDeactivate(principal: Principal, targetId: string): void {
+  assertCanManagePeople(principal)
+  if (principal.userId === targetId) {
+    throw new PolicyRefusal({ status: 403, code: 'FORBIDDEN', message: 'You cannot deactivate yourself. Ask another Admin.' })
+  }
+}
+
+/** A Team member must be an Agent or an Admin, because a Team is a group of Agents. */
+export function canJoinTeam(role: string) {
+  return STAFF_ROLES.includes(role)
+}

@@ -23,6 +23,7 @@ export const user = sqliteTable("user", {
     .$onUpdate(() => /* @__PURE__ */ new Date())
     .notNull(),
   role: text("role").default("requester").notNull(),
+  deactivatedAt: integer("deactivated_at", { mode: "timestamp_ms" }),
 });
 
 export const session = sqliteTable(

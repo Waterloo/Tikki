@@ -5,7 +5,7 @@ import type { ClientMetadataResourceFetch } from '@better-auth/oauth-provider'
 import { betterAuth } from 'better-auth'
 import { APIError, createAuthMiddleware } from 'better-auth/api'
 import { emailOTP, jwt } from 'better-auth/plugins'
-import { and, eq, gt, lt } from 'drizzle-orm'
+import { and, eq, gt, isNotNull, isNull, lt, or } from 'drizzle-orm'
 import type { DrizzleD1Database } from 'drizzle-orm/d1'
 import * as schema from '../db/schema'
 import { emailDomainAllowed, type Config } from './config'
@@ -30,6 +30,34 @@ function domainNotAllowed() {
     code: 'EMAIL_DOMAIN_NOT_ALLOWED',
     message: 'This email domain is not allowed to sign in.',
   })
+}
+
+function deactivated() {
+  return new APIError('FORBIDDEN', {
+    code: 'ACCOUNT_DEACTIVATED',
+    message: 'This account is deactivated. Ask an Admin to turn it on again.',
+  })
+}
+
+/**
+ * The one place that decides who may sign in (3.15, 3.16): an allowed domain, or an invite that was used
+ * or has not expired. Checking the domain first keeps the common case free of a query.
+ */
+export async function emailMaySignIn(config: Config, db: Db, email: string, now = Date.now()): Promise<boolean> {
+  if (emailDomainAllowed(config, email)) return true
+  const invited = await db.$count(
+    schema.invite,
+    and(
+      eq(schema.invite.email, email.toLowerCase()),
+      or(isNotNull(schema.invite.acceptedAt), gt(schema.invite.expiresAt, new Date(now))),
+    ),
+  )
+  return invited > 0
+}
+
+async function assertNotDeactivated(db: Db, email: string) {
+  const [row] = await db.select({ at: schema.user.deactivatedAt }).from(schema.user).where(eq(schema.user.email, email.toLowerCase())).limit(1)
+  if (row?.at) throw deactivated()
 }
 
 /** Records one code request, or refuses it when the address already had 5 in the last hour. */
@@ -69,6 +97,8 @@ export function createAuth({ config, db, mail, fetchClientMetadataResource, isMe
     user: {
       additionalFields: {
         role: { type: 'string', required: true, input: false, defaultValue: 'requester' },
+        // Set when an Admin deactivates the User (3.18). Null means active.
+        deactivatedAt: { type: 'date', required: false, input: false },
       },
     },
     databaseHooks: {
@@ -76,7 +106,7 @@ export function createAuth({ config, db, mail, fetchClientMetadataResource, isMe
         create: {
           async before(user) {
             const email = user.email.toLowerCase()
-            if (!emailDomainAllowed(config, email)) throw domainNotAllowed()
+            if (!await emailMaySignIn(config, db, email)) throw domainNotAllowed()
             // The variable has no effect once an Admin exists (3.13).
             let role: Role = 'requester'
             if (config.adminEmail === email) {
@@ -84,6 +114,18 @@ export function createAuth({ config, db, mail, fetchClientMetadataResource, isMe
               if (admins === 0) role = 'admin'
             }
             return { data: { ...user, role } }
+          },
+          async after(user) {
+            await db.update(schema.invite).set({ acceptedAt: new Date() }).where(and(eq(schema.invite.email, user.email.toLowerCase()), isNull(schema.invite.acceptedAt)))
+          },
+        },
+      },
+      // Every sign-in method ends here, so a deactivated User gets no new session (3.18).
+      session: {
+        create: {
+          async before(session) {
+            const [row] = await db.select({ at: schema.user.deactivatedAt }).from(schema.user).where(eq(schema.user.id, session.userId)).limit(1)
+            if (row?.at) throw deactivated()
           },
         },
       },
@@ -95,11 +137,14 @@ export function createAuth({ config, db, mail, fetchClientMetadataResource, isMe
           if (ctx.body?.type !== 'sign-in') {
             throw new APIError('BAD_REQUEST', { code: 'UNSUPPORTED_OTP_TYPE', message: 'Only sign-in codes are supported.' })
           }
-          if (!emailDomainAllowed(config, email)) throw domainNotAllowed()
+          if (!await emailMaySignIn(config, db, email)) throw domainNotAllowed()
+          await assertNotDeactivated(db, email)
           await takeOtpSlot(db, email, Date.now())
         }
-        if (ctx.path === '/sign-in/email-otp' && !emailDomainAllowed(config, String(ctx.body?.email ?? ''))) {
-          throw domainNotAllowed()
+        if (ctx.path === '/sign-in/email-otp') {
+          const email = String(ctx.body?.email ?? '')
+          if (!await emailMaySignIn(config, db, email)) throw domainNotAllowed()
+          await assertNotDeactivated(db, email)
         }
       }),
     },

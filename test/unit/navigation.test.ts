@@ -8,4 +8,10 @@ describe('navigationFor', () => {
     expect(navigationFor('requester').map(i => i.to)).not.toContain('/settings')
     expect(navigationFor(undefined)).toEqual([])
   })
+
+  it('lists Teams and users for Admins only', () => {
+    expect(navigationFor('admin').map(i => i.to)).toContain('/people')
+    expect(navigationFor('agent').map(i => i.to)).not.toContain('/people')
+    expect(navigationFor('requester').map(i => i.to)).not.toContain('/people')
+  })
 })

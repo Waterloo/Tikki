@@ -167,8 +167,10 @@ export async function handleMcpRequest(request: Request): Promise<Response> {
   if (claims.cnf) return challenge('DPoP-bound access tokens are not supported')
   if (!claims.sub) return challenge('access token has no subject')
 
-  const [row] = await db.select({ id: user.id, role: user.role }).from(user).where(eq(user.id, claims.sub)).limit(1)
+  const [row] = await db.select({ id: user.id, role: user.role, deactivatedAt: user.deactivatedAt }).from(user).where(eq(user.id, claims.sub)).limit(1)
   if (!row) return challenge('user not found')
+  // The JWT is valid until it expires, so a deactivated User must be stopped here (3.18, ADR 0003).
+  if (row.deactivatedAt) return challenge('user is deactivated')
 
   const principal: Principal = { userId: row.id, role: row.role as Role, channel: 'ai' }
   return handler.fetch(request, {

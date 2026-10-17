@@ -1,4 +1,4 @@
-import { blob, index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core'
+import { blob, index, integer, primaryKey, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core'
 import type { FieldDef, FieldValues } from '../utils/fields'
 import { user } from './auth-schema'
 
@@ -87,3 +87,25 @@ export const otpRequest = sqliteTable('otp_request', {
   email: text('email').notNull(),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
 }, t => [index('otp_request_email_created_idx').on(t.email, t.createdAt)])
+
+// Issue 20: people and teams
+
+/** An Agent (or Admin) in a Team. An Agent can be in several Teams. */
+export const teamMember = sqliteTable('team_member', {
+  teamId: integer('team_id').notNull().references(() => team.id),
+  userId: text('user_id').notNull().references(() => user.id),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(() => new Date()),
+}, t => [primaryKey({ columns: [t.teamId, t.userId] }), index('team_member_user_idx').on(t.userId)])
+
+/**
+ * An email outside the allowed domains that an Admin let in (3.16). The row stays after the first sign-in
+ * (`acceptedAt`), so the User can sign in again. A pending invite expires at `expiresAt`.
+ */
+export const invite = sqliteTable('invite', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  email: text('email').notNull().unique(),
+  invitedBy: text('invited_by').notNull().references(() => user.id),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+  expiresAt: integer('expires_at', { mode: 'timestamp_ms' }).notNull(),
+  acceptedAt: integer('accepted_at', { mode: 'timestamp_ms' }),
+})

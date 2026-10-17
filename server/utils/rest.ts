@@ -1,7 +1,8 @@
 import { getRouterParam, type H3Event } from 'h3'
 import type { Role } from './auth'
 import { useAuth } from './services'
-import { NOT_FOUND, PolicyRefusal } from './policy'
+import { authorizeManagePeople, NOT_FOUND, PolicyRefusal } from './policy'
+import { PeopleError } from './people'
 import { parseTicketReference, TicketValidationError, type Principal } from './tickets'
 
 /** The one error format of the REST API (6.4). */
@@ -45,4 +46,26 @@ export function routeTicketNumber(event: H3Event): number {
   const number = parseTicketReference(getRouterParam(event, 'ref') ?? '')
   if (number === null) throw new PolicyRefusal(NOT_FOUND)
   return number
+}
+
+/** The Principal for the People and Teams routes. The permission rule is in the policy module. */
+export async function peoplePrincipal(event: H3Event): Promise<Principal | Response> {
+  const principal = await restPrincipal(event)
+  if (principal instanceof Response) return principal
+  const refusal = authorizeManagePeople(principal)
+  return refusal ? apiError(refusal.status, refusal.code, refusal.message) : principal
+}
+
+/** Maps the errors of the People module to responses. Anything else is a bug and goes on as a 500. */
+export function peopleError(error: unknown): Response {
+  if (error instanceof PolicyRefusal) return apiError(error.refusal.status, error.refusal.code, error.refusal.message)
+  if (error instanceof PeopleError) return apiError(error.status, error.code, error.message, error.details)
+  throw error
+}
+
+/** The positive integer in a route parameter, or the same 404 as for a row that does not exist. */
+export function routeInt(event: H3Event, name: string, what: 'Team' | 'invite'): number {
+  const value = Number(getRouterParam(event, name))
+  if (!Number.isSafeInteger(value) || value < 1) throw new PeopleError(404, 'NOT_FOUND', `No ${what} with this id.`)
+  return value
 }
