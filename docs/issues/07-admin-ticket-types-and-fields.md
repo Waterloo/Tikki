@@ -36,11 +36,12 @@ Admins manage Ticket Types and their Fields without breaking old tickets. The sc
 
 Other tests: `test/worker/ticket-type-admin.test.ts` also covers the Admin-only rule (401, 403 for Requester and Agent), defaults (prefix, icon, color), validation of each setting, a stale save (409), the list counts, and "no new version when nothing changes". `test/unit/ticket-type-rules.test.ts` covers the suggestions.
 
+Audit: `test/worker/ticket-type-admin.test.ts`, "writes an audit entry with Principal and channel for each change, in the same write": create, settings change (old and new name), a new Schema Version (`added` Field Keys), archive and restore each write one entry with the Admin as Principal and channel `web`. A refused save writes none.
+
 Run: `pnpm test` 14 files, 139 tests pass. `pnpm typecheck` passes. `E2E_PORT=8812 pnpm e2e` 8 tests pass.
 
 ## Not verified
 
-- No audit log entry is written (issue 06 is not merged). See "Notes for later issues".
 - The canvas has a drag handle to reorder Fields. It is not built: no requirement asks for it, and the order of Fields is the order of creation.
 - Seen in a browser on the dev server (port 8802): the list, the new-type page (live duplicate name and prefix errors, suggestions) and the editor with the Field edit form, in light and dark mode. Not seen in a browser: the 375 px layout (checked only by the Playwright scroll-width test), the archived-types section and the toast with "Undo" (the e2e flow clicks Restore in the list).
 - The new-type page was not tried with a screen reader. Labels, `aria-pressed` on the icon and color buttons, and `role="alert"` on errors are in place.
@@ -62,13 +63,15 @@ Run: `pnpm test` 14 files, 139 tests pass. `pnpm typecheck` passes. `E2E_PORT=88
 - **Archive** has an Undo in the toast instead of a confirm dialog. The editor page also shows the Restore button on an archived type. The "Archived in version N" text on the canvas is shortened to "Archived", because the API returns only the newest version.
 - **Navigation:** "Types and fields" (Admin only, `/admin/types`) is a flat item before Settings. The canvas "Admin" group heading is not built, because other issues add Admin items and a shared heading belongs to the lead's merge.
 
+- **Audit entries for type changes (added by the Admin audit change).** `type_created` (after: name, prefix, `team_id`); `type_settings_changed` (one entry, before/after hold only the changed settings); `schema_version_created` (before: version; after: version plus added, renamed, archived, restored Fields and options by key); `type_archived`; `type_restored`.
+
 ## Glossary terms to add
 
 - **Archived (Ticket Type)**: a type that takes no new tickets. Old tickets keep it, its prefix stays reserved, and an Admin can restore it. Not the same as an archived Field or option, which stays in the Schema Version but is not asked for on new tickets.
 
 ## Notes for later issues
 
-- **Audit log (issue 06).** After merge, these type changes must write an audit entry (who, when, what, without ticket values): create type (name, prefix, Team); update settings (each of name, description, prefix, icon, color, Team, visibility, with old and new value); a new Schema Version (version number and the list of added, renamed, archived and restored Fields and options, by Field Key); archive and restore of a type. The write belongs in `createTicketType` and `updateTicketType` in `server/utils/ticket-type-admin.ts`, inside the same `db.batch`. Webhook Events (issue 14) have no type events yet.
+- **Audit log:** done. Type changes write entries with `subject_type = 'ticket_type'` in `createTicketType` and `updateTicketType`, in the same `db.batch`. Webhook Events (issue 14) have no type events yet.
 - **Teams (issue 20).** The "Owning team" select uses `GET /api/v1/admin/ticket-types` → `teams` (id and name from the `team` table). When issue 20 adds a rule that a Team that owns types cannot be removed, it can count `ticket_type.team_id`; archived types count too, because a restore needs a Team.
 - **Type change (issue 08)** must refuse an archived target type (use `loadTicketType(...).archived`), and `listTicketTypes` already leaves archived types out for pickers. Moving a ticket to the newest version of the target type uses `currentSchemaVersion` from `server/utils/ticket-types.ts` (now exported).
 - **Applications (issue 12, 13)** list allowed Ticket Types: use `listAdminTypes` or `selectTypes`, and decide there whether an archived type can stay in the list (it takes no new tickets either way).

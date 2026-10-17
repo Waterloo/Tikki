@@ -1,7 +1,7 @@
 import { env } from 'cloudflare:workers'
 import { describe, expect, it } from 'vitest'
 import { validateFields, type FieldDef } from '../../server/utils/fields'
-import { call, connectMcp, getMcpToken, postJson, signInAs } from './helpers'
+import { adminAuditOf, call, connectMcp, getMcpToken, postJson, signInAs } from './helpers'
 
 interface Detail {
   id: number
@@ -385,5 +385,24 @@ describe('Ticket Type editor: MCP', () => {
     expect(create.isError).toBe(true)
     expect(JSON.stringify(create.content)).toContain('archived')
     await client.close()
+  })
+
+  it('writes an audit entry with Principal and channel for each change, in the same write', async () => {
+    const admin = await signInAs('admin')
+    const type = await created(admin, { fields: [system] })
+    const entry = (a: Awaited<ReturnType<typeof adminAuditOf>>, action: string) => a.filter(e => e.action === action)
+
+    expect((await patch(admin, type.id, { name: `${type.name} 2`, base_version: 1, fields: [...type.fields, { label: 'Needed until', type: 'date' }] })).status).toBe(200)
+    expect((await patch(admin, type.id, { archived: true })).status).toBe(200)
+    expect((await patch(admin, type.id, { archived: false })).status).toBe(200)
+    // A refused change writes nothing.
+    expect((await patch(admin, type.id, { base_version: 1, fields: [] })).status).toBeGreaterThanOrEqual(400)
+
+    const log = await adminAuditOf('ticket_type', type.id)
+    expect(log.map(e => e.action)).toEqual(['type_created', 'type_settings_changed', 'schema_version_created', 'type_archived', 'type_restored'])
+    for (const e of log) expect(e).toMatchObject({ principal_id: admin.user.id, channel: 'web' })
+    expect(entry(log, 'type_created')[0]!.after).toMatchObject({ name: type.name, prefix: type.prefix, team_id: type.team.id })
+    expect(entry(log, 'type_settings_changed')[0]).toMatchObject({ before: { name: type.name }, after: { name: `${type.name} 2` } })
+    expect(entry(log, 'schema_version_created')[0]).toMatchObject({ before: { version: 1 }, after: { version: 2, added: ['needed_until'] } })
   })
 })

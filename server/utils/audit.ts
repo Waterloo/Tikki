@@ -1,5 +1,5 @@
-import type { SQL } from 'drizzle-orm'
-import { auditLog, type AuditAction } from '../db/schema'
+import { sql, type SQL } from 'drizzle-orm'
+import { auditLog, type AuditAction, type AuditSubjectType } from '../db/schema'
 import type { Db } from './auth'
 import type { Principal } from './tickets'
 
@@ -34,6 +34,37 @@ export function auditEntry(db: Db, principal: Principal, e: AuditInput) {
     // `undefined` is not JSON, so no value is written as the text `null`. SQL NULL is only for erased values.
     before: e.values ? JSON.stringify(e.values.before ?? null) : null,
     after: e.values ? JSON.stringify(e.values.after ?? null) : null,
+    createdAt: new Date(),
+  })
+}
+
+export interface AdminAuditInput {
+  subject: {
+    type: AuditSubjectType
+    /** A value, or SQL for an id that an earlier statement of the same batch made (as a text id). */
+    id: string | number | SQL
+  }
+  action: AuditAction
+  /** Values only here, so Erasure can clear them. */
+  values?: { before?: unknown, after?: unknown }
+  /**
+   * A SQL condition. When it is false the insert fails (NOT NULL), so the whole batch is rolled back.
+   * Use it where the change itself is guarded, so no entry stays for a change that did not happen.
+   */
+  onlyIf?: SQL
+}
+
+/** `auditEntry` for an Admin change that has no ticket. Same rules: put it in the `db.batch` of the change. */
+export function adminAuditEntry(db: Db, principal: Principal, e: AdminAuditInput) {
+  return db.insert(auditLog).values({
+    ticketNumber: null,
+    subjectType: e.subject.type,
+    subjectId: typeof e.subject.id === 'object' ? e.subject.id : String(e.subject.id),
+    principalId: e.onlyIf ? sql`(select ${principal.userId} where ${e.onlyIf})` : principal.userId,
+    channel: principal.channel,
+    action: e.action,
+    before: e.values && 'before' in e.values ? JSON.stringify(e.values.before ?? null) : null,
+    after: e.values && 'after' in e.values ? JSON.stringify(e.values.after ?? null) : null,
     createdAt: new Date(),
   })
 }
