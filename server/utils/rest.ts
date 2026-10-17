@@ -2,6 +2,7 @@ import { getRouterParam, type H3Event } from 'h3'
 import type { Role } from './auth'
 import { useAuth } from './services'
 import { NOT_FOUND, PolicyRefusal } from './policy'
+import { RevertRefusal } from './activity'
 import { parseTicketReference, TicketValidationError, type Principal } from './tickets'
 
 /** The one error format of the REST API (6.4). */
@@ -37,6 +38,7 @@ export function validationError(error: TicketValidationError): Response {
 export function ticketError(error: unknown): Response {
   if (error instanceof PolicyRefusal) return apiError(error.refusal.status, error.refusal.code, error.refusal.message)
   if (error instanceof TicketValidationError) return validationError(error)
+  if (error instanceof RevertRefusal) return apiError(409, error.code, error.message)
   throw error
 }
 

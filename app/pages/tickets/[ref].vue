@@ -18,6 +18,8 @@ const ticket = ref<TicketDetail | null>(null)
 const statuses = ref<Status[]>([])
 const state = ref<'loading' | 'ready' | 'not-found' | 'error'>('loading')
 const saving = ref<'status' | 'priority' | 'assignee' | null>(null)
+// Bumped after a save, so the timeline reloads.
+const activityVersion = ref(0)
 
 const isStaff = computed(() => role.value === 'admin' || role.value === 'agent')
 const back = computed(() => isStaff.value ? { label: 'All tickets', to: '/tickets' } : { label: 'My tickets', to: '/' })
@@ -48,6 +50,7 @@ async function save(field: 'status' | 'priority' | 'assignee', body: Record<stri
   saving.value = field
   try {
     ticket.value = await $fetch<TicketDetail>(`/api/v1/tickets/${ticket.value.ref}`, { method: 'PATCH', body })
+    activityVersion.value++
     toast.add({ title: done, color: 'success', duration: 2500 })
   } catch (e) {
     const err = e as { status?: number, data?: { error?: { message?: string } } }
@@ -178,6 +181,8 @@ onMounted(load)
               </div>
             </dl>
           </section>
+
+          <TicketConversation :ticket="ticket" :version="activityVersion" @reverted="ticket = $event" />
         </div>
 
         <aside aria-label="Ticket properties" class="flex-[1_1_300px] min-w-0 flex flex-col gap-4">

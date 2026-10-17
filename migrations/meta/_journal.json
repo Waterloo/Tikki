@@ -36,6 +36,13 @@
       "when": 1792278820359,
       "tag": "0004_issue_10_search_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1792279321905,
+      "tag": "0005_issue_06_comments_and_audit",
+      "breakpoints": true
     }
   ]
 }

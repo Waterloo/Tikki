@@ -1,10 +1,11 @@
 import { and, asc, count, desc, eq, gt, isNull, lt, ne, or, sql, type SQL, type SQLWrapper } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/sqlite-core'
 import { z } from 'zod'
-import { PRIORITIES, schemaVersion, status, team, ticket, ticketType, user, type Priority } from '../db/schema'
+import { comment, PRIORITIES, schemaVersion, status, team, ticket, ticketType, user, type AuditAction, type Priority } from '../db/schema'
+import { auditEntry } from './audit'
 import type { Db, Role } from './auth'
-import { validateFields, type FieldError, type FieldType, type FieldValues } from './fields'
-import { allowedActions, assertAllowed, canBeAssignee, NOT_FOUND, PolicyRefusal, readableTickets, type PolicyTicket, type TicketAction } from './policy'
+import { validateFields, type FieldDef, type FieldError, type FieldType, type FieldValues } from './fields'
+import { allowedActions, assertAllowed, canBeAssignee, canSeeInternal, NOT_FOUND, PolicyRefusal, readableTickets, type PolicyTicket, type TicketAction } from './policy'
 import type { StatusView } from './statuses'
 import { loadTicketType } from './ticket-types'
 
@@ -51,6 +52,8 @@ export interface TicketDetail extends TicketSummary {
   fields: FieldValues
   schema_fields: SchemaFieldView[]
   team: { id: number, name: string }
+  /** The comments the Principal can see. Internal Comments count only for Users who can see them. */
+  comment_count: number
   /** What the Principal who asked may do now, from the policy function. */
   allowed_actions: TicketAction[]
 }
@@ -70,12 +73,14 @@ const typeInput = z.object({
   fields: z.record(z.string(), z.unknown(), { error: 'Must be an object keyed by Field Key.' }).default({}),
 })
 
-const UPDATABLE = { status: 'change_status', priority: 'change_priority', assignee_id: 'assign' } as const satisfies Record<string, TicketAction>
+const UPDATABLE = { status: 'change_status', priority: 'change_priority', assignee_id: 'assign', fields: 'edit_fields' } as const satisfies Record<string, TicketAction>
 
 const updateInput = z.strictObject({
   status: z.string({ error: 'Must be a Status key.' }).min(1, 'Must be a Status key.').optional(),
   priority: z.enum(PRIORITIES, { error: 'Must be one of the options.' }).optional(),
   assignee_id: z.string({ error: 'Must be a User ID, or null to unassign.' }).min(1, 'Must be a User ID, or null to unassign.').nullable().optional(),
+  // Only the Fields that are sent change. An empty value clears the Field.
+  fields: z.record(z.string(), z.unknown(), { error: 'Must be an object keyed by Field Key.' }).optional(),
 }, {
   error: issue => issue.code === 'unrecognized_keys'
     ? `Only ${Object.keys(UPDATABLE).join(', ')} can change here. Unknown: ${issue.keys.join(', ')}.`
@@ -174,7 +179,7 @@ function selectDetail(db: Db, number: number) {
 }
 
 type SummaryRow = Awaited<ReturnType<typeof selectSummaries>>[number]
-type DetailRow = Awaited<ReturnType<typeof selectDetail>>[number]
+export type DetailRow = Awaited<ReturnType<typeof selectDetail>>[number]
 
 function toSummary(row: SummaryRow): TicketSummary {
   if (row.statusKey === null || row.statusName === null || row.statusCategory === null) {
@@ -195,29 +200,40 @@ function toSummary(row: SummaryRow): TicketSummary {
   }
 }
 
-function policyFacts(row: Pick<SummaryRow, 'requesterId' | 'visibleToAll'>): PolicyTicket {
+export function policyFacts(row: Pick<SummaryRow, 'requesterId' | 'visibleToAll'>): PolicyTicket {
   return { requesterId: row.requesterId, visibleToAll: row.visibleToAll }
+}
+
+/** The Fields of the Schema Version that the ticket is pinned to. */
+export async function pinnedFields(db: Db, row: Pick<DetailRow, 'number' | 'typeId' | 'prefix' | 'schemaVersion'>): Promise<FieldDef[]> {
+  const [version] = await db.select({ fields: schemaVersion.fields }).from(schemaVersion)
+    .where(and(eq(schemaVersion.ticketTypeId, row.typeId), eq(schemaVersion.version, row.schemaVersion))).limit(1)
+  if (!version) throw new Error(`Ticket ${row.number} is pinned to Schema Version ${row.schemaVersion} of ${row.prefix}, which does not exist.`)
+  return version.fields
 }
 
 async function toDetail(db: Db, principal: Principal, row: DetailRow): Promise<TicketDetail> {
   if (row.teamId === null || row.teamName === null) throw new Error(`Ticket Type ${row.prefix} has no Team. Every type must have one (4.13).`)
-  const [version] = await db.select({ fields: schemaVersion.fields }).from(schemaVersion)
-    .where(and(eq(schemaVersion.ticketTypeId, row.typeId), eq(schemaVersion.version, row.schemaVersion))).limit(1)
-  if (!version) throw new Error(`Ticket ${row.number} is pinned to Schema Version ${row.schemaVersion} of ${row.prefix}, which does not exist.`)
+  const [fields, [comments]] = await Promise.all([
+    pinnedFields(db, row),
+    db.select({ n: count() }).from(comment)
+      .where(and(eq(comment.ticketNumber, row.number), canSeeInternal(principal) ? undefined : eq(comment.visibility, 'public'))),
+  ])
   return {
     ...toSummary(row),
     description: row.description,
     schema_version: row.schemaVersion,
     fields: row.fields,
     // An archived Field still shows when this ticket has a value for it.
-    schema_fields: version.fields.filter(f => !f.archived || f.key in row.fields).map(f => ({ key: f.key, label: f.label, type: f.type })),
+    schema_fields: fields.filter(f => !f.archived || f.key in row.fields).map(f => ({ key: f.key, label: f.label, type: f.type })),
     team: { id: row.teamId, name: row.teamName },
+    comment_count: comments!.n,
     allowed_actions: allowedActions(principal, policyFacts(row)),
   }
 }
 
 /** The row of a ticket the Principal may do `action` on. Throws PolicyRefusal otherwise. */
-async function loadFor(db: Db, principal: Principal, action: TicketAction, number: number): Promise<DetailRow> {
+export async function loadFor(db: Db, principal: Principal, action: TicketAction, number: number): Promise<DetailRow> {
   const [row] = await selectDetail(db, number)
   if (!row) throw new PolicyRefusal(NOT_FOUND)
   assertAllowed(principal, action, policyFacts(row))
@@ -245,7 +261,8 @@ export async function createTicket(db: Db, principal: Principal, input: unknown)
   if (errors.length || !core.success || !found) throw new TicketValidationError(errors)
 
   const now = new Date()
-  const [created] = await db.insert(ticket).values({
+  // last_insert_rowid() is the new ticket: the audit entry is the next statement of the same batch.
+  const [created] = await db.batch([db.insert(ticket).values({
     ticketTypeId: found.type.id,
     schemaVersion: found.version.version,
     title: core.data.title,
@@ -257,8 +274,10 @@ export async function createTicket(db: Db, principal: Principal, input: unknown)
     status: 'open',
     createdAt: now,
     updatedAt: now,
-  }).returning({ number: ticket.number })
-  return getTicket(db, principal, created!.number)
+  }).returning({ number: ticket.number }),
+  auditEntry(db, principal, { ticketNumber: sql`last_insert_rowid()`, action: 'ticket_created' }),
+  ])
+  return getTicket(db, principal, created[0]!.number)
 }
 
 export interface ListFilter {
@@ -430,14 +449,75 @@ export async function updateTicket(db: Db, principal: Principal, number: number,
     const [target] = await db.select({ role: user.role }).from(user).where(eq(user.id, changes.assignee_id)).limit(1)
     if (!target || !canBeAssignee(target.role)) errors.push({ key: 'assignee_id', label: 'Assignee', reason: 'Must be the ID of an Agent or Admin.' })
   }
+  let nextFields: FieldValues | undefined
+  if (changes.fields !== undefined) {
+    const defs = await pinnedFields(db, row)
+    const sent = changes.fields
+    const unknown = Object.keys(sent).filter(k => !defs.some(f => f.key === k))
+    for (const key of unknown) {
+      errors.push({ key, label: key, reason: `This ticket has no Field with this key. Known keys: ${defs.filter(f => !f.archived).map(f => f.key).join(', ') || 'none'}.` })
+    }
+    // Validate only the sent Fields, so an old value that is no longer valid never blocks another edit.
+    const result = validateFields(defs.filter(f => f.key in sent), Object.fromEntries(Object.entries(sent).filter(([k]) => !unknown.includes(k))))
+    if (result.ok) {
+      nextFields = { ...row.fields }
+      for (const key of Object.keys(sent)) {
+        if (unknown.includes(key)) continue
+        if (key in result.values) nextFields[key] = result.values[key]
+        else delete nextFields[key]
+      }
+    } else {
+      errors.push(...result.errors)
+    }
+  }
   if (errors.length) throw new TicketValidationError(errors)
 
   const set: Partial<typeof ticket.$inferInsert> = {}
-  if (changes.status !== undefined && changes.status !== row.statusKey) set.status = changes.status
-  if (changes.priority !== undefined && changes.priority !== row.priority) set.priority = changes.priority
-  if (changes.assignee_id !== undefined && changes.assignee_id !== row.assigneeId) set.assigneeId = changes.assignee_id
-  if (Object.keys(set).length === 0) return toDetail(db, principal, row)
+  const entries: ChangeEntry[] = []
+  if (changes.status !== undefined && changes.status !== row.statusKey) {
+    set.status = changes.status
+    entries.push({ action: 'status_changed', before: row.statusKey, after: changes.status })
+  }
+  if (changes.priority !== undefined && changes.priority !== row.priority) {
+    set.priority = changes.priority
+    entries.push({ action: 'priority_changed', before: row.priority, after: changes.priority })
+  }
+  if (changes.assignee_id !== undefined && changes.assignee_id !== row.assigneeId) {
+    set.assigneeId = changes.assignee_id
+    entries.push({ action: 'assignee_changed', before: row.assigneeId, after: changes.assignee_id })
+  }
+  if (nextFields) {
+    for (const key of new Set([...Object.keys(row.fields), ...Object.keys(nextFields)])) {
+      const [before, after] = [row.fields[key] ?? null, nextFields[key] ?? null]
+      if (JSON.stringify(before) !== JSON.stringify(after)) entries.push({ action: 'field_changed', fieldKey: key, before, after })
+    }
+    if (entries.some(e => e.action === 'field_changed')) set.fields = nextFields
+  }
+  if (entries.length === 0) return toDetail(db, principal, row)
 
-  await db.update(ticket).set({ ...set, updatedAt: new Date() }).where(eq(ticket.number, number))
+  await applyChange(db, principal, number, set, entries)
   return getTicket(db, principal, number)
+}
+
+/** One change of one value, for the audit log. `before` and `after` are the real values, `null` for none. */
+export interface ChangeEntry {
+  action: Extract<AuditAction, 'status_changed' | 'priority_changed' | 'assignee_changed' | 'field_changed'>
+  fieldKey?: string
+  before: unknown
+  after: unknown
+  revertsId?: number
+}
+
+/** Writes the change and one audit entry for each value in one batch. Every change to a ticket goes through here. */
+export async function applyChange(db: Db, principal: Principal, number: number, set: Partial<typeof ticket.$inferInsert>, entries: ChangeEntry[]) {
+  await db.batch([
+    db.update(ticket).set({ ...set, updatedAt: new Date() }).where(eq(ticket.number, number)),
+    ...entries.map(e => auditEntry(db, principal, {
+      ticketNumber: number,
+      action: e.action,
+      fieldKey: e.fieldKey,
+      revertsId: e.revertsId,
+      values: { before: e.before, after: e.after },
+    })),
+  ])
 }

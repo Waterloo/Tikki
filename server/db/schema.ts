@@ -93,3 +93,45 @@ export const otpRequest = sqliteTable('otp_request', {
   email: text('email').notNull(),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
 }, t => [index('otp_request_email_created_idx').on(t.email, t.createdAt)])
+
+// Issue 06: comments and the audit log
+export const COMMENT_VISIBILITIES = ['public', 'internal'] as const
+export type CommentVisibility = typeof COMMENT_VISIBILITIES[number]
+
+export const comment = sqliteTable('comment', {
+  // A UUID made by the code, so the comment and its audit entry go into one db.batch.
+  id: text('id').primaryKey(),
+  ticketNumber: integer('ticket_number').notNull().references(() => ticket.number),
+  authorId: text('author_id').notNull().references(() => user.id),
+  channel: text('channel', { enum: ['web', 'ai', 'api'] }).notNull(),
+  visibility: text('visibility', { enum: COMMENT_VISIBILITIES }).notNull(),
+  /** Personal data. Erasure clears it. */
+  body: text('body').notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(() => new Date()),
+}, t => [index('comment_ticket_idx').on(t.ticketNumber, t.createdAt)])
+
+export const AUDIT_ACTIONS = ['ticket_created', 'status_changed', 'priority_changed', 'assignee_changed', 'field_changed', 'comment_added'] as const
+export type AuditAction = typeof AUDIT_ACTIONS[number]
+
+/**
+ * Append-only: the code only inserts. The facts (who, channel, action, ticket, field key) stay forever (9.4).
+ * `before` and `after` are JSON text and hold the values. They are the only place that Erasure must clear:
+ * it sets both to SQL NULL, and the row stays. A written value is never SQL NULL (no value is the text `null`),
+ * so NULL means "erased" or "this action has no values".
+ */
+export const auditLog = sqliteTable('audit_log', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  ticketNumber: integer('ticket_number').notNull().references(() => ticket.number),
+  principalId: text('principal_id').notNull().references(() => user.id),
+  channel: text('channel', { enum: ['web', 'ai', 'api'] }).notNull(),
+  action: text('action', { enum: AUDIT_ACTIONS }).notNull(),
+  /** The Field Key, for `field_changed`. */
+  fieldKey: text('field_key'),
+  /** The comment, for `comment_added`. The body stays in `comment`. */
+  commentId: text('comment_id').references(() => comment.id),
+  /** The entry that this one reverts. */
+  revertsId: integer('reverts_id'),
+  before: text('before'),
+  after: text('after'),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(() => new Date()),
+}, t => [index('audit_log_ticket_idx').on(t.ticketNumber, t.id)])

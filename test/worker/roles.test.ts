@@ -65,7 +65,7 @@ describe('policy: who can change a ticket', () => {
   it('refuses Status, Priority, and assignee changes from a Requester, on their own ticket too', async () => {
     const [requester, agent] = await Promise.all([signInAs('requester'), signInAs('agent')])
     const ticket = await create(requester, await typeId(requester.cookie, 'GEN'))
-    expect(ticket.allowed_actions).toEqual([])
+    expect(ticket.allowed_actions).toEqual(['comment'])
 
     for (const [body, message] of [
       [{ status: 'in_progress' }, 'Only Agents can change the Status of a ticket.'],
@@ -100,7 +100,7 @@ describe('policy: who can change a ticket', () => {
     expect(assigned.status).toBe(200)
     const a = await assigned.json() as Ticket
     expect(a.assignee?.id).toBe(agent.user.id)
-    expect(a.allowed_actions).toEqual(['change_status', 'change_priority', 'assign'])
+    expect(a.allowed_actions).toEqual(['change_status', 'change_priority', 'assign', 'edit_fields', 'comment', 'comment_internal'])
     expect(a.updated_at > ticket.updated_at).toBe(true)
 
     const moved = await (await patch(agent, String(ticket.number), { status: 'in_progress', priority: 'high' })).json() as Ticket
@@ -130,10 +130,10 @@ describe('policy: who can change a ticket', () => {
       { key: 'assignee_id', label: 'Assignee', reason: 'Must be the ID of an Agent or Admin.' },
     ])
     expect(await details({ title: 'New title' })).toEqual([
-      { key: 'body', label: 'Request body', reason: 'Only status, priority, assignee_id can change here. Unknown: title.' },
+      { key: 'body', label: 'Request body', reason: 'Only status, priority, assignee_id, fields can change here. Unknown: title.' },
     ])
     expect(await details({})).toEqual([
-      { key: 'body', label: 'Request body', reason: 'Send at least one of status, priority, assignee_id.' },
+      { key: 'body', label: 'Request body', reason: 'Send at least one of status, priority, assignee_id, fields.' },
     ])
   })
 })
