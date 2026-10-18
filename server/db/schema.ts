@@ -340,8 +340,10 @@ export const TEST_EVENT = 'webhook.test'
 
 export const webhookEndpoint = sqliteTable('webhook_endpoint', {
   id: text('id').primaryKey(),
-  /** `admin`: gets every Event. Issue 15 adds `application` and an `application_id` column. */
-  owner: text('owner', { enum: ['admin'] }).notNull().default('admin'),
+  /** `admin`: gets every Event. `application`: only the fixed public events of its own Application's tickets (issue 15). */
+  owner: text('owner', { enum: ['admin', 'application'] }).notNull().default('admin'),
+  /** Set iff `owner` is `application`. At most one endpoint for each Application. */
+  applicationId: integer('application_id').references(() => application.id),
   name: text('name').notNull(),
   url: text('url').notNull(),
   events: text('events', { mode: 'json' }).$type<WebhookEventType[]>().notNull(),
@@ -356,7 +358,10 @@ export const webhookEndpoint = sqliteTable('webhook_endpoint', {
   /** Set when the delivery run turned the endpoint off after 3 days of failure. */
   disabledAt: integer('disabled_at', { mode: 'timestamp_ms' }),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(() => new Date()),
-})
+}, t => [
+  uniqueIndex('webhook_endpoint_application_unique').on(t.applicationId),
+  check('webhook_endpoint_owner_application', sql`(owner = 'application') = (application_id IS NOT NULL)`),
+])
 
 /** One Event. Written in the same batch as the ticket change. `id` is the `event_id` and never changes on retry. */
 export const outboxEvent = sqliteTable('outbox_event', {
@@ -389,6 +394,8 @@ export const webhookDelivery = sqliteTable('webhook_delivery', {
   error: text('error'),
   /** The time of the Event. Retries stop 24 hours after it. */
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+  /** Set for an Application endpoint: the Application's view of the Event. Null: send the Event's own payload. */
+  payload: text('payload'),
 }, t => [
   uniqueIndex('webhook_delivery_event_endpoint_unique').on(t.eventId, t.endpointId),
   index('webhook_delivery_due_idx').on(t.state, t.nextAttemptAt),

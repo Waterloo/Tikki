@@ -167,6 +167,10 @@ export const endpointPatch = z.strictObject({
   enabled: z.boolean({ error: 'Must be true or false.' }).optional(),
 })
 
+/** `undefined`: the Admin endpoints. A number: the one endpoint of that Application (issue 15). The same code serves both. */
+export type Scope = number | undefined
+const inScope = (scope: Scope) => scope === undefined ? eq(webhookEndpoint.owner, 'admin') : eq(webhookEndpoint.applicationId, scope)
+
 const iso = (d: Date | null) => d?.toISOString() ?? null
 const msToIso = (ms: number | null) => ms === null ? null : new Date(ms).toISOString()
 
@@ -203,8 +207,8 @@ export async function listEndpoints(db: Db): Promise<EndpointView[]> {
   return (await selectEndpoints(db).where(eq(webhookEndpoint.owner, 'admin')).orderBy(asc(webhookEndpoint.createdAt))).map(toView)
 }
 
-export async function getEndpoint(db: Db, id: string): Promise<EndpointView | null> {
-  const [row] = await selectEndpoints(db).where(and(eq(webhookEndpoint.id, id), eq(webhookEndpoint.owner, 'admin'))).limit(1)
+export async function getEndpoint(db: Db, id: string, scope?: Scope): Promise<EndpointView | null> {
+  const [row] = await selectEndpoints(db).where(and(eq(webhookEndpoint.id, id), inScope(scope))).limit(1)
   return row ? toView(row) : null
 }
 
@@ -215,8 +219,34 @@ export async function createEndpoint(db: Db, input: z.output<typeof endpointInpu
   return { ...(await getEndpoint(db, id))!, secret }
 }
 
+// --- Application endpoint (issue 15) -------------------------------------------------------------------------------
+
+/** What an Application endpoint sends is fixed (see `fanOut`). A client may repeat the fixed values, nothing else. */
+const fixedEvents = z.array(z.string(), { error: 'Must be a list of event types.' }).refine(
+  events => events.length === WEBHOOK_EVENTS.length && WEBHOOK_EVENTS.every(e => events.includes(e)),
+  `Fixed for an Application: ${WEBHOOK_EVENTS.join(', ')}.`,
+)
+const fixedInternal = z.literal(false, { error: 'Fixed for an Application: internal data is never sent.' })
+
+export const applicationEndpointInput = z.strictObject({ url: urlInput, events: fixedEvents.optional(), include_internal: fixedInternal.optional() })
+export const applicationEndpointPatch = z.strictObject({ url: urlInput.optional(), enabled: z.boolean({ error: 'Must be true or false.' }).optional(), events: fixedEvents.optional(), include_internal: fixedInternal.optional() })
+
+export async function getApplicationEndpoint(db: Db, applicationId: number): Promise<EndpointView | null> {
+  const [row] = await selectEndpoints(db).where(eq(webhookEndpoint.applicationId, applicationId)).limit(1)
+  return row ? toView(row) : null
+}
+
+/** Null when the Application has an endpoint already (the unique index would refuse a second one). */
+export async function createApplicationEndpoint(db: Db, app: { id: number, name: string }, url: string): Promise<EndpointWithSecret | null> {
+  if (await getApplicationEndpoint(db, app.id)) return null
+  const id = crypto.randomUUID()
+  const secret = newSecret()
+  await db.insert(webhookEndpoint).values({ id, owner: 'application', applicationId: app.id, name: `${app.name} webhook`, url, events: [...WEBHOOK_EVENTS], includeInternal: false, secret: await sealSecret(id, secret) })
+  return { ...(await getApplicationEndpoint(db, app.id))!, secret }
+}
+
 /** Turning an endpoint on clears its failure state, so it gets 3 new days. */
-export async function updateEndpoint(db: Db, id: string, input: z.output<typeof endpointPatch>): Promise<EndpointView | null> {
+export async function updateEndpoint(db: Db, id: string, input: z.output<typeof endpointPatch>, scope?: Scope): Promise<EndpointView | null> {
   const set: Partial<typeof webhookEndpoint.$inferInsert> = {}
   if (input.name !== undefined) set.name = input.name
   if (input.url !== undefined) set.url = input.url
@@ -226,13 +256,13 @@ export async function updateEndpoint(db: Db, id: string, input: z.output<typeof 
     set.enabled = input.enabled
     if (input.enabled) Object.assign(set, { failingSince: null, failures: 0, disabledAt: null })
   }
-  if (Object.keys(set).length) await db.update(webhookEndpoint).set(set).where(and(eq(webhookEndpoint.id, id), eq(webhookEndpoint.owner, 'admin')))
-  return getEndpoint(db, id)
+  if (Object.keys(set).length) await db.update(webhookEndpoint).set(set).where(and(eq(webhookEndpoint.id, id), inScope(scope)))
+  return getEndpoint(db, id, scope)
 }
 
 /** Deletes the endpoint and its deliveries. The Events stay for other endpoints until the purge. */
-export async function deleteEndpoint(db: Db, id: string): Promise<boolean> {
-  if (!await getEndpoint(db, id)) return false
+export async function deleteEndpoint(db: Db, id: string, scope?: Scope): Promise<boolean> {
+  if (!await getEndpoint(db, id, scope)) return false
   await db.batch([
     db.delete(webhookDelivery).where(eq(webhookDelivery.endpointId, id)),
     db.delete(webhookEndpoint).where(eq(webhookEndpoint.id, id)),
@@ -241,11 +271,11 @@ export async function deleteEndpoint(db: Db, id: string): Promise<boolean> {
 }
 
 /** The old secret stops at once: the next delivery is signed with the new one. */
-export async function rotateSecret(db: Db, id: string): Promise<EndpointWithSecret | null> {
-  if (!await getEndpoint(db, id)) return null
+export async function rotateSecret(db: Db, id: string, scope?: Scope): Promise<EndpointWithSecret | null> {
+  if (!await getEndpoint(db, id, scope)) return null
   const secret = newSecret()
   await db.update(webhookEndpoint).set({ secret: await sealSecret(id, secret) }).where(eq(webhookEndpoint.id, id))
-  return { ...(await getEndpoint(db, id))!, secret }
+  return { ...(await getEndpoint(db, id, scope))!, secret }
 }
 
 // --- Delivery log --------------------------------------------------------------------------------------------------
@@ -267,6 +297,9 @@ export interface DeliveryView {
 }
 
 const DELIVERY_LOG_LIMIT = 50
+
+/** The text that is signed and sent: an Application delivery has its own view of the Event, the others the Event's. */
+const sentPayload = sql<string>`coalesce(${webhookDelivery.payload}, ${outboxEvent.payload})`
 
 const deliveryColumns = {
   id: webhookDelivery.id,
@@ -313,8 +346,9 @@ export async function listDeliveries(db: Db, endpointId: string): Promise<Delive
 }
 
 /** One delivery with its payload: the exact text that was signed and sent. */
-export async function getDelivery(db: Db, endpointId: string, id: number): Promise<(DeliveryView & { payload: string }) | null> {
-  const [row] = await db.select({ ...deliveryColumns, payload: outboxEvent.payload }).from(webhookDelivery)
+export async function getDelivery(db: Db, endpointId: string, id: number, scope?: Scope): Promise<(DeliveryView & { payload: string }) | null> {
+  if (!await getEndpoint(db, endpointId, scope)) return null
+  const [row] = await db.select({ ...deliveryColumns, payload: sentPayload }).from(webhookDelivery)
     .innerJoin(outboxEvent, eq(webhookDelivery.eventId, outboxEvent.id))
     .where(and(eq(webhookDelivery.endpointId, endpointId), eq(webhookDelivery.id, id))).limit(1)
   return row ? { ...toDelivery(row), payload: row.payload } : null
@@ -363,7 +397,7 @@ async function deliverRound(db: Db, now: Date, only?: { endpointId: string, deli
     attempts: webhookDelivery.attempts,
     eventAt: webhookDelivery.createdAt,
     eventId: outboxEvent.id,
-    payload: outboxEvent.payload,
+    payload: sentPayload,
     endpoint: { id: webhookEndpoint.id, name: webhookEndpoint.name, url: webhookEndpoint.url, secret: webhookEndpoint.secret, failingSince: webhookEndpoint.failingSince },
   }).from(webhookDelivery)
     .innerJoin(outboxEvent, eq(webhookDelivery.eventId, outboxEvent.id))
@@ -469,19 +503,19 @@ export class EndpointOff extends Error {
 }
 
 /** Puts every pending delivery of the endpoint first and sends them now. */
-export async function retryNow(db: Db, id: string): Promise<EndpointView | null> {
-  const endpoint = await getEndpoint(db, id)
+export async function retryNow(db: Db, id: string, scope?: Scope): Promise<EndpointView | null> {
+  const endpoint = await getEndpoint(db, id, scope)
   if (!endpoint) return null
   if (!endpoint.enabled) throw new EndpointOff()
   const now = new Date()
   await db.update(webhookDelivery).set({ nextAttemptAt: now }).where(and(eq(webhookDelivery.endpointId, id), eq(webhookDelivery.state, 'pending')))
   await deliverDue(db, now, { endpointId: id })
-  return getEndpoint(db, id)
+  return getEndpoint(db, id, scope)
 }
 
 /** Sends a `webhook.test` Event to this endpoint only, now, and returns its delivery. It retries like any Event. */
-export async function sendTestEvent(db: Db, id: string): Promise<DeliveryView | null> {
-  const endpoint = await getEndpoint(db, id)
+export async function sendTestEvent(db: Db, id: string, scope?: Scope): Promise<DeliveryView | null> {
+  const endpoint = await getEndpoint(db, id, scope)
   if (!endpoint) return null
   if (!endpoint.enabled) throw new EndpointOff()
   const eventId = crypto.randomUUID()
@@ -492,7 +526,7 @@ export async function sendTestEvent(db: Db, id: string): Promise<DeliveryView | 
     db.insert(webhookDelivery).values({ eventId, endpointId: id, state: 'pending', nextAttemptAt: now, createdAt: now }).returning({ id: webhookDelivery.id }),
   ])
   await deliverDue(db, now, { endpointId: id, deliveryId: delivery!.id })
-  const sent = await getDelivery(db, id, delivery!.id)
+  const sent = await getDelivery(db, id, delivery!.id, scope)
   if (!sent) return null
   const { payload: _, ...view } = sent
   return view

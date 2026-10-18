@@ -170,7 +170,7 @@ onMounted(() => Promise.all([loadList(), loadDetail()]))
   <AppPage id="applications" title="Applications">
     <PageHeader
       title="Applications"
-      subtitle="Your other systems create tickets for their customers with an API key. Each application sees only its own tickets."
+      subtitle="Your other systems create tickets for their customers with an API key. Each application sees only its own tickets and gets updates through its own webhook."
       :breadcrumb="[{ label: 'Admin' }, { label: 'Applications', to: detail ? '/applications' : undefined }, ...(detail ? [{ label: detail.name }] : [])]"
     >
       <template #actions>
@@ -343,6 +343,8 @@ onMounted(() => Promise.all([loadList(), loadDetail()]))
               </div>
             </div>
           </section>
+
+          <ApplicationWebhook :application-id="detail.id" :name="detail.name" />
         </template>
       </div>
     </div>
