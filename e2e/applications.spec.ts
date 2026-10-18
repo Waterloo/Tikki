@@ -17,7 +17,7 @@ test('an Admin creates an Application and a key, the key works, and Revoke stops
   await page.keyboard.press('Escape')
   await dialog.getByRole('button', { name: 'Create application' }).click()
 
-  await expect(page.getByRole('heading', { name, level: 2 })).toBeVisible()
+  await expect(page.getByRole('heading', { name, level: 2, exact: true })).toBeVisible()
   await expect(page.getByText('General request', { exact: true })).toBeVisible()
 
   await expect(page.getByText('60 requests a minute, 10 of them creates')).toBeVisible()

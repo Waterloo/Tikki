@@ -1,6 +1,6 @@
 import { eq, sql, type SQL } from 'drizzle-orm'
 import type { BatchItem } from 'drizzle-orm/batch'
-import { outboxEvent, webhookDelivery, type CommentVisibility, type WebhookEventType } from '../db/schema'
+import { outboxEvent, WEBHOOK_EVENTS, webhookDelivery, type CommentVisibility, type WebhookEventType } from '../db/schema'
 import type { Db } from './auth'
 import type { ChangeEntry, Principal } from './tickets'
 
@@ -90,14 +90,35 @@ function commentJson(id: string): SQL {
 }
 
 /**
- * One delivery for each endpoint that is on, wants this type, and may get this Event. An insert-select with SQL
- * names every column of the table in order; a new column fails here loudly until it is added.
+ * What an Application may see of a stored payload (issue 15). Staff-only data is removed here, in one place: the
+ * assignee's email. Names stay until issue 13 decides what an Application sees of the assignee. Comments in the payload
+ * are Public (an Application endpoint never gets an internal Event) and name their author without an email.
  */
-function fanOut(db: Db, id: string, type: string, internal: boolean, now: Date) {
-  return db.insert(webhookDelivery).select(sql`SELECT NULL, ${id}, e.id, 'pending', 0, ${now.getTime()}, NULL, NULL, NULL, ${now.getTime()}
+function applicationView(payload: SQL): SQL {
+  return sql`json_remove(${payload}, '$.before.assignee.email', '$.after.assignee.email')`
+}
+
+/**
+ * One delivery for each endpoint that is on, wants this type, and may get this Event. The access rule is here and only
+ * here. An Admin endpoint gets internal Events if it has "include internal data". An Application endpoint (issue 15) gets
+ * only `ticket.created`, `ticket.updated` and `comment.created` about a ticket of its own Application, never an internal
+ * Event, whatever is stored in `events` or `include_internal`; it also gets its own view of the payload. An insert-select
+ * with SQL names every column of the table in order; a new column fails here loudly until it is added.
+ */
+function fanOut(db: Db, id: string, type: string, now: Date) {
+  const app = WEBHOOK_EVENTS as readonly string[]
+  return db.insert(webhookDelivery).select(sql`SELECT NULL, ${id}, e.id, 'pending', 0, ${now.getTime()}, NULL, NULL, NULL, ev.created_at,
+      CASE WHEN e.owner = 'application' THEN ${applicationView(sql`ev.payload`)} END
     FROM webhook_endpoint e
-    WHERE e.enabled = 1 AND (e.include_internal = 1 OR ${internal ? 1 : 0} = 0)
-      AND EXISTS (SELECT 1 FROM json_each(e.events) WHERE value = ${type})`)
+    JOIN outbox_event ev ON ev.id = ${id}
+    WHERE e.enabled = 1
+      AND EXISTS (SELECT 1 FROM json_each(e.events) WHERE value = ${type})
+      AND (
+        (e.owner = 'admin' AND (e.include_internal = 1 OR ev.internal = 0))
+        OR (e.owner = 'application' AND ev.internal = 0 AND ${type} IN (${sql.join(app.map(t => sql`${t}`), sql`, `)})
+          AND EXISTS (SELECT 1 FROM ticket t JOIN contact c ON c.id = t.contact_id
+            WHERE t.number = ev.ticket_number AND c.application_id = e.application_id))
+      )`)
 }
 
 type Batch = [BatchItem<'sqlite'>, ...BatchItem<'sqlite'>[]]
@@ -115,7 +136,7 @@ export function withEvent(db: Db, principal: Principal, event: EventInput, chang
   const head = sql`'event_id', ${id}, 'type', ${event.type}, 'created_at', ${now.toISOString()},
     'changed', json(${JSON.stringify(event.changed ?? [])}), 'actor', ${actorJson(principal)}`
   const insert = (payload: SQL) => db.insert(outboxEvent).values({ id, type: event.type, ticketNumber: event.ticketNumber, internal, payload, createdAt: now })
-  const deliveries = fanOut(db, id, event.type, internal, now)
+  const deliveries = fanOut(db, id, event.type, now)
 
   if (event.type === 'ticket.created') {
     return [...change, insert(sql`json_object(${head}, 'before', NULL, 'after', ${ticketJson(event.ticketNumber)})`), deliveries]
