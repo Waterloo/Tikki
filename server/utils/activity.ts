@@ -36,17 +36,25 @@ const actorColumns = { userId: user.id, userName: user.name, userEmail: user.ema
 
 interface ActorRow { userId: string | null, userName: string | null, userEmail: string | null, applicationId: number | null, applicationName: string | null }
 
-/** The row must left join `user` and `application` on its two actor columns; a CHECK sets exactly one. */
-function toActor(r: ActorRow): ActorView {
-  if (r.userId !== null) return { kind: 'user', id: r.userId, name: r.userName!, email: r.userEmail! }
-  if (r.applicationId !== null) return { kind: 'application', id: r.applicationId, name: r.applicationName! }
-  throw new Error('A row has neither a User nor an Application as its actor.')
+/**
+ * The row must left join `user` and `application` on its two actor columns; a CHECK sets exactly one. An Application
+ * acts only on its own Contact's ticket, so its actions show as that Contact through the Application (no schema
+ * change). An Application viewer sees staff as `support`, without name or email.
+ */
+function toActor(r: ActorRow, viewer: Principal, t: DetailRow): ActorView {
+  if (r.applicationId !== null) {
+    if (t.contactId === null || t.applicationId !== r.applicationId) throw new Error(`Application ${r.applicationId} acted on ticket ${t.number}, which is not its Contact's ticket.`)
+    return { kind: 'contact', contact: { id: t.contactId, external_id: t.contactExternalId!, name: t.contactName!, email: t.contactEmail! }, application: { id: r.applicationId, name: r.applicationName! } }
+  }
+  if (r.userId === null) throw new Error('A row has neither a User nor an Application as its actor.')
+  if (viewer.kind === 'application') return { kind: 'support' }
+  return { kind: 'user', id: r.userId, name: r.userName!, email: r.userEmail! }
 }
 
 const commentColumns = { id: comment.id, visibility: comment.visibility, body: comment.body, channel: comment.channel, createdAt: comment.createdAt, ...actorColumns }
 
-function toComment(r: { id: string, visibility: CommentVisibility, body: string, channel: Channel, createdAt: Date } & ActorRow): CommentView {
-  return { id: r.id, visibility: r.visibility, body: r.body, channel: r.channel, created_at: r.createdAt.toISOString(), author: toActor(r) }
+function toComment(r: { id: string, visibility: CommentVisibility, body: string, channel: Channel, createdAt: Date } & ActorRow, viewer: Principal, t: DetailRow): CommentView {
+  return { id: r.id, visibility: r.visibility, body: r.body, channel: r.channel, created_at: r.createdAt.toISOString(), author: toActor(r, viewer, t) }
 }
 
 function selectComments(db: Db, principal: Principal, number: number, id?: string) {
@@ -93,16 +101,16 @@ export async function createComment(db: Db, principal: Principal, number: number
 
 /** Only the comments the Principal may see, oldest first. Internal Comments are not in the result for a Requester. */
 export async function listComments(db: Db, principal: Principal, number: number): Promise<CommentView[]> {
-  await loadFor(db, principal, 'read', number)
+  const t = await loadFor(db, principal, 'read', number)
   const rows = await selectComments(db, principal, number).orderBy(asc(comment.createdAt), asc(comment.id))
-  return rows.map(toComment)
+  return rows.map(r => toComment(r, principal, t))
 }
 
 /** One comment, or null when it does not exist or the Principal may not see it (the same answer for both). */
 export async function getComment(db: Db, principal: Principal, number: number, id: string): Promise<CommentView | null> {
-  await loadFor(db, principal, 'read', number)
+  const t = await loadFor(db, principal, 'read', number)
   const [row] = await selectComments(db, principal, number, id).limit(1)
-  return row ? toComment(row) : null
+  return row ? toComment(row, principal, t) : null
 }
 
 export type ActivityItem =
@@ -176,7 +184,7 @@ export async function listActivity(db: Db, principal: Principal, number: number)
     if (e.action !== 'assignee_changed') continue
     for (const v of [e.before, e.after]) if (v !== null && typeof JSON.parse(v) === 'string') assigneeIds.add(JSON.parse(v))
   }
-  const people = assigneeIds.size
+  const people = assigneeIds.size && principal.kind === 'user'
     ? await db.select({ id: user.id, name: user.name, email: user.email }).from(user).where(inArray(user.id, [...assigneeIds]))
     : []
   const statusNames = new Map(statuses.map(s => [s.key, s.name]))
@@ -201,7 +209,8 @@ export async function listActivity(db: Db, principal: Principal, number: number)
       case 'ticket_reopened':
       case 'status_changed': return statusNames.get(String(value)) ?? String(value)
       case 'priority_changed': return String(value)
-      case 'assignee_changed': return personNames.get(String(value)) ?? 'unknown User'
+      // An Application learns that someone was assigned, not who.
+      case 'assignee_changed': return principal.kind === 'application' ? 'Support' : personNames.get(String(value)) ?? 'unknown User'
       case 'type_changed': {
         const v = value as { type: string, ref: string }
         return `${v.type} (${v.ref})`
@@ -221,7 +230,7 @@ export async function listActivity(db: Db, principal: Principal, number: number)
       id: String(e.id),
       at: e.createdAt.toISOString(),
       action: e.action as Exclude<AuditAction, 'comment_added'>,
-      principal: toActor(e),
+      principal: toActor(e, principal, row),
       channel: e.channel,
       field: e.fieldKey === null ? null : { key: e.fieldKey, label: defByKey.get(e.fieldKey)?.label ?? e.fieldKey },
       before: show(e, e.before),
@@ -233,7 +242,7 @@ export async function listActivity(db: Db, principal: Principal, number: number)
       revertible,
     }
   })
-  for (const c of comments) items.push({ type: 'comment', id: c.id, at: c.createdAt.toISOString(), comment: toComment(c) })
+  for (const c of comments) items.push({ type: 'comment', id: c.id, at: c.createdAt.toISOString(), comment: toComment(c, principal, row) })
   // Array.sort is stable, so entries of the same millisecond keep the order of the log.
   return items.sort((a, b) => a.at.localeCompare(b.at))
 }

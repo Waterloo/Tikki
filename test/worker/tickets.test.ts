@@ -49,6 +49,7 @@ describe('tickets REST API', () => {
       ],
       requester: { kind: 'user', id: user.id, name: expect.any(String), email: user.email },
       assignee: null,
+      assigned: false,
       comment_count: 0,
       reopened_from: null,
       allowed_actions: ['edit_fields', 'edit_description', 'comment', 'cancel'],
