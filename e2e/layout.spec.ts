@@ -65,10 +65,14 @@ function seed(context: BrowserContext): Promise<Seed> {
       data: { name: `Layout app ${stamp}`, description: 'layout', permissions: ['tickets:create', 'tickets:read'], ticket_type_ids: [bug.id] },
     })) as { id: number }
     await ok(await api.post('/api/v1/webhooks', { data: { name: `Layout hook ${stamp}`, url: 'http://localhost/nowhere' } }))
-    // One sidebar app and one tab app (issue 34), on Bug tickets only.
-    const sidebar = await ok(await api.post('/api/v1/admin/ticket-apps', { data: { name: 'Orders', url: appUrl(TIKKI_ORIGIN), position: 'sidebar', ticket_type_ids: [bug.id] } })) as { id: number }
-    const tab = await ok(await api.post('/api/v1/admin/ticket-apps', { data: { name: 'Order history', url: appUrl(TIKKI_ORIGIN), position: 'tab', ticket_type_ids: [bug.id] } })) as { id: number }
-    return { ref: ticket.ref, typeId: bug.id, appId: app.id, ticketAppIds: [sidebar.id, tab.id] }
+    // One app with a sidebar card and a tab (issues 34, 37), on Bug tickets only.
+    const both = await ok(await api.post('/api/v1/admin/ticket-apps', { data: { name: 'Orders', sidebar_url: appUrl(TIKKI_ORIGIN), tab_url: appUrl(TIKKI_ORIGIN), ticket_type_ids: [bug.id] } })) as { id: number }
+    // Light and dark images (issue 38), so the card title, the tab and the list show an image.
+    const icon = (fill: string) => Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="${fill}"/></svg>`)
+    for (const [mode, fill] of [['light', '#e11d48'], ['dark', '#38bdf8']] as const) {
+      await ok(await api.put(`/api/v1/admin/ticket-apps/${both.id}/icon?mode=${mode}`, { data: icon(fill) }))
+    }
+    return { ref: ticket.ref, typeId: bug.id, appId: app.id, ticketAppIds: [both.id] }
   })()
   return seeded
 }
@@ -77,7 +81,7 @@ const PAGES: [string, (s: Seed) => string][] = [
   ['My tickets', () => '/'],
   ['All tickets', () => '/tickets'],
   ['Ticket', s => `/tickets/${s.ref}`],
-  ['Ticket, app tab', s => `/tickets/${s.ref}?tab=app-${s.ticketAppIds[1]}`],
+  ['Ticket, app tab', s => `/tickets/${s.ref}?tab=app-${s.ticketAppIds[0]}`],
   ['New ticket', () => '/tickets/new'],
   ['Inbox', () => '/inbox'],
   ['Types and fields', () => '/admin/types'],

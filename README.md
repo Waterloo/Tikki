@@ -80,9 +80,9 @@ The API is described in OpenAPI at `/api/v1/openapi.json`, and the reference wit
 
 ## Show your own tools inside a ticket
 
-A **Ticket App** is your own web page, shown inside a ticket as a sidebar card or as a tab next to Conversation and Activity. For example: the customer's orders next to a payment ticket, an account lookup next to a bug, or a refund tool.
+A **Ticket App** is your own web page, shown inside a ticket as a sidebar card, as a tab next to Conversation and Activity, or both. For example: the customer's orders next to a payment ticket, an account lookup next to a bug, or a refund tool.
 
-1. An Admin opens **Ticket Apps** and adds a name, the page URL, the position (sidebar or tab), the Ticket Types to show it on, and the access level.
+1. An Admin opens **Ticket Apps** and adds a name, a URL for each placement it needs (sidebar card, tab), the Ticket Types to show it on, and the access level.
 2. When an Agent opens a ticket, Tikki loads the page in a sandboxed iframe and sends it the ticket, the requester and the Agent with `postMessage`, only to the page's own origin.
 3. With the context comes a **context token**: a JWT signed by Tikki that lives 5 minutes. Your backend checks it against Tikki's public keys, so it knows which Agent has which ticket open. It also works as your app's sign-in.
 4. With `comment` or `update` access, your backend can add a comment or change the ticket through the REST API with the same token. It acts as that Agent, on that one ticket only. Activity shows the change as "Sam (via Orders)".
@@ -97,7 +97,7 @@ Requesters never see Ticket Apps. Your page needs no SDK: about 20 lines of Java
 
 - Developer guide: [docs/ticket-apps.md](docs/ticket-apps.md), also at `/docs/ticket-apps` on your Tikki (messages, context, token check, API calls, security checklist).
 - Example app: [time tracking](examples/time-tracking/README.md). Agents log time on a ticket and can add it as an internal note.
-- Minimal example with a backend token check: [examples/ticket-app/server.mjs](examples/ticket-app/server.mjs). Run `node examples/ticket-app/server.mjs` and add `http://localhost:5173/` as a Ticket App on your local Tikki.
+- Minimal example with a backend token check: [examples/ticket-app/server.mjs](examples/ticket-app/server.mjs). Run `node examples/ticket-app/server.mjs` and add `http://localhost:5173/` as the Sidebar URL of a Ticket App on your local Tikki.
 
 ## Developer docs
 

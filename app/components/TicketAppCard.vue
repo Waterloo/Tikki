@@ -12,8 +12,9 @@ const id = useId()
 <template>
   <section :aria-labelledby="`${id}-title`" class="rounded-[14px] border border-(--ui-border) bg-(--ui-bg) p-[18px] flex flex-col gap-3 min-w-0">
     <div class="flex items-center justify-between gap-2">
-      <h2 :id="`${id}-title`" class="text-sm font-semibold text-(--ui-text-highlighted) truncate">
-        {{ app.name }}
+      <h2 :id="`${id}-title`" class="flex items-center gap-2 min-w-0 text-sm font-semibold text-(--ui-text-highlighted)">
+        <TicketAppIcon :app="app" size="xs" />
+        <span class="truncate">{{ app.name }}</span>
       </h2>
       <UButton
         size="xs"
@@ -28,7 +29,7 @@ const id = useId()
     </div>
     <!-- v-show, so a collapsed app keeps its state. -->
     <div v-show="open" :id="`${id}-body`">
-      <TicketAppFrame :app="app" :ticket-ref="ticketRef" :ticket-version="ticketVersion" @refresh="$emit('refresh')" />
+      <TicketAppFrame :app="app" placement="sidebar" :ticket-ref="ticketRef" :ticket-version="ticketVersion" @refresh="$emit('refresh')" />
     </div>
   </section>
 </template>

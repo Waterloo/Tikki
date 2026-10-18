@@ -5,15 +5,15 @@ import { appUrlProblem } from '../../server/utils/ticket-apps'
 import { adminAuditOf, BASE, call, createRestrictedType, getMcpToken, postJson, signInAs, typeId } from './helpers'
 
 type Session = Awaited<ReturnType<typeof signInAs>>
-interface App { id: number, name: string, url: string, position: 'sidebar' | 'tab', ticket_type_ids: number[] | null, enabled: boolean }
+interface App { id: number, name: string, urls: Record<'sidebar' | 'tab' | 'page', string | null>, ticket_type_ids: number[] | null, enabled: boolean }
 interface Ticket { number: number, ref: string }
 interface TokenAnswer { token: string, expires_at: string, data: Record<string, any> }
 
 const APP_ORIGIN = 'http://localhost:9934'
 const h = (s: Session) => ({ cookie: s.cookie })
 const patchApp = (s: Session, id: number, body: unknown) => call(`/api/v1/admin/ticket-apps/${id}`, { method: 'PATCH', body: JSON.stringify(body), headers: h(s) })
-const token = (s: Session | null, ref: string, appId: number, headers: HeadersInit = {}) =>
-  call(`/api/v1/tickets/${ref}/apps/${appId}/token`, { method: 'POST', headers: { ...(s ? h(s) : {}), ...headers } })
+const token = (s: Session | null, ref: string, appId: number, headers: HeadersInit = {}, placement: string = 'sidebar') =>
+  call(`/api/v1/tickets/${ref}/apps/${appId}/token`, { method: 'POST', body: JSON.stringify({ placement }), headers: { ...(s ? h(s) : {}), ...headers } })
 
 let admin: Session
 let agent: Session
@@ -28,7 +28,7 @@ beforeAll(async () => {
 })
 
 async function newApp(body: Record<string, unknown> = {}): Promise<App> {
-  const res = await postJson('/api/v1/admin/ticket-apps', { name: `Orders ${counter++}`, url: `${APP_ORIGIN}/app.html`, position: 'sidebar', ...body }, h(admin))
+  const res = await postJson('/api/v1/admin/ticket-apps', { name: `Orders ${counter++}`, sidebar_url: `${APP_ORIGIN}/app.html`, ...body }, h(admin))
   expect(res.status, await res.clone().text()).toBe(201)
   return res.json() as Promise<App>
 }
@@ -54,7 +54,7 @@ async function jwks() {
 describe('Ticket Apps: admin', () => {
   it('lets an Admin create, change, move, turn off and delete an app, with an audit entry for each', async () => {
     const app = await newApp({ ticket_type_ids: [gen, gen] })
-    expect(app).toMatchObject({ position: 'sidebar', ticket_type_ids: [gen], enabled: true })
+    expect(app).toMatchObject({ urls: { sidebar: `${APP_ORIGIN}/app.html`, tab: null, page: null }, ticket_type_ids: [gen], enabled: true })
 
     const changed = await patchApp(admin, app.id, { name: 'Orders panel', ticket_type_ids: null })
     expect(changed.status).toBe(200)
@@ -82,33 +82,39 @@ describe('Ticket Apps: admin', () => {
     const app = await newApp()
     for (const s of [agent, requester]) {
       expect((await call('/api/v1/admin/ticket-apps', { headers: h(s) })).status).toBe(403)
-      expect((await postJson('/api/v1/admin/ticket-apps', { name: 'X', url: `${APP_ORIGIN}/`, position: 'tab' }, h(s))).status).toBe(403)
+      expect((await postJson('/api/v1/admin/ticket-apps', { name: 'X', tab_url: `${APP_ORIGIN}/` }, h(s))).status).toBe(403)
       expect((await patchApp(s, app.id, { enabled: false })).status).toBe(403)
       expect((await postJson(`/api/v1/admin/ticket-apps/${app.id}/move`, { direction: 'up' }, h(s))).status).toBe(403)
       expect((await call(`/api/v1/admin/ticket-apps/${app.id}`, { method: 'DELETE', headers: h(s) })).status).toBe(403)
     }
     const bearer = { authorization: `Bearer ${await apiKey()}` }
     expect((await call('/api/v1/admin/ticket-apps', { headers: bearer })).status).toBe(403)
-    expect((await postJson('/api/v1/admin/ticket-apps', { name: 'X', url: `${APP_ORIGIN}/`, position: 'tab' }, bearer)).status).toBe(403)
+    expect((await postJson('/api/v1/admin/ticket-apps', { name: 'X', tab_url: `${APP_ORIGIN}/` }, bearer)).status).toBe(403)
     expect((await patchApp(admin, app.id, {})).status).toBe(200)
     expect((await call(`/api/v1/admin/ticket-apps/${app.id}`, { method: 'PATCH', body: JSON.stringify({ enabled: false }), headers: bearer })).status).toBe(403)
     expect((await call(`/api/v1/admin/ticket-apps/${app.id}`, { method: 'DELETE', headers: bearer })).status).toBe(403)
     expect((await adminAuditOf('ticket_app', app.id)).map(e => e.action)).toEqual(['ticket_app_created'])
   })
 
-  it('answers 422 for a bad URL, an empty type list, and an unknown or archived type', async () => {
+  it('answers 422 for a bad URL, no URL, an empty type list, and an unknown or archived type', async () => {
     const bad = async (body: Record<string, unknown>) => {
-      const res = await postJson('/api/v1/admin/ticket-apps', { name: 'Orders', url: 'https://orders.example.com/', position: 'sidebar', ...body }, h(admin))
+      const res = await postJson('/api/v1/admin/ticket-apps', { name: 'Orders', sidebar_url: 'https://orders.example.com/', ...body }, h(admin))
       expect(res.status, JSON.stringify(body)).toBe(422)
       return JSON.stringify(await res.json())
     }
-    expect(await bad({ url: 'http://orders.example.com/' })).toContain('Must use https.')
-    expect(await bad({ url: 'orders' })).toContain('absolute URL')
-    expect(await bad({ url: `${BASE}/evil` })).toContain('another origin')
-    expect(await bad({ url: 'https://user:pw@orders.example.com/' })).toContain('user name')
+    // Each placement's URL has the same rules.
+    for (const key of ['sidebar_url', 'tab_url', 'page_url']) {
+      expect(await bad({ [key]: 'http://orders.example.com/' })).toContain('Must use https.')
+      expect(await bad({ [key]: 'orders' })).toContain('absolute URL')
+      expect(await bad({ [key]: `${BASE}/evil` })).toContain('another origin')
+      expect(await bad({ [key]: 'https://user:pw@orders.example.com/' })).toContain(`"key":"${key}"`)
+    }
+    expect(await bad({ sidebar_url: null })).toContain('at least one URL')
+    expect(await bad({ sidebar_url: '  ' })).toContain('at least one URL')
     expect(await bad({ ticket_type_ids: [] })).toContain('at least one')
     expect(await bad({ ticket_type_ids: [999999] })).toContain('ticket_type_ids')
-    expect(await bad({ position: 'footer' })).toContain('position')
+    // The old fields are gone.
+    expect(await bad({ url: 'https://orders.example.com/', position: 'sidebar' })).toContain('url')
 
     const archived = await createRestrictedType()
     await env.DB.prepare('UPDATE ticket_type SET archived_at = ? WHERE id = ?').bind(Date.now(), archived).run()
@@ -153,7 +159,7 @@ describe('Ticket Apps: the token route', () => {
     const body = await res.json() as TokenAnswer
     expect(body.data).toMatchObject({
       version: 1,
-      app: { id: app.id, name: app.name, position: 'sidebar' },
+      app: { id: app.id, name: app.name, placement: 'sidebar' },
       agent: { id: agent.user.id, role: 'agent' },
       ticket: { ref: t.ref, number: t.number, url: `${BASE}/tickets/${t.ref}`, ticket_type: { id: gen } },
       requester: { kind: 'user', id: requester.user.id },
@@ -194,13 +200,13 @@ describe('Ticket Apps: the token route', () => {
   })
 
   it('signs a token that checks against the JWKS with the right claims, and that /mcp refuses', async () => {
-    const app = await newApp({ url: `${APP_ORIGIN}/orders/index.html?x=1` })
+    const app = await newApp({ sidebar_url: `${APP_ORIGIN}/orders/index.html?x=1` })
     const t = await raise(requester)
     const now = Math.floor(Date.now() / 1000)
     const { token: jwt, expires_at } = await (await token(agent, t.ref, app.id)).json() as TokenAnswer
 
     const { payload } = await jwtVerify(jwt, await jwks(), { issuer: `${BASE}/api/auth`, audience: APP_ORIGIN })
-    expect(payload).toMatchObject({ sub: agent.user.id, tikki_app: app.id, tikki_ticket: t.ref, tikki_scope: 'read' })
+    expect(payload).toMatchObject({ sub: agent.user.id, tikki_app: app.id, tikki_placement: 'sidebar', tikki_ticket: t.ref, tikki_scope: 'read' })
     expect(payload.exp! - payload.iat!).toBe(300)
     expect(Math.abs(payload.iat! - now)).toBeLessThan(10)
     expect(new Date(expires_at).getTime()).toBe(payload.exp! * 1000)
@@ -233,7 +239,7 @@ describe('Ticket Apps: the token route', () => {
 describe('Ticket Apps: the list on a ticket', () => {
   it('shows staff the apps that are on and match the type, in the admin order; Requesters get 403', async () => {
     const t = await raise(requester)
-    const shown = await newApp({ position: 'tab' })
+    const shown = await newApp({ sidebar_url: null, tab_url: `${APP_ORIGIN}/tab.html` })
     const off = await newApp({ enabled: false })
     const bugOnly = await newApp({ ticket_type_ids: [bug] })
     const last = await newApp()

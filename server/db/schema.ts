@@ -490,8 +490,9 @@ export const inviteTeam = sqliteTable('invite_team', {
 
 // Issue 34: Ticket Apps
 
-export const TICKET_APP_POSITIONS = ['sidebar', 'tab'] as const
-export type TicketAppPosition = typeof TICKET_APP_POSITIONS[number]
+/** Issue 37: where an app shows. Each placement has its own URL (ADR 0005). `page` shows from issue 39. */
+export const TICKET_APP_PLACEMENTS = ['sidebar', 'tab', 'page'] as const
+export type TicketAppPlacement = typeof TICKET_APP_PLACEMENTS[number]
 /** Issue 35: what the app's backend may do with a context token. Each level includes the one before. */
 export const TICKET_APP_ACCESS = ['read', 'comment', 'update'] as const
 export type TicketAppAccess = typeof TICKET_APP_ACCESS[number]
@@ -500,8 +501,10 @@ export type TicketAppAccess = typeof TICKET_APP_ACCESS[number]
 export const ticketApp = sqliteTable('ticket_app', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   name: text('name').notNull(),
-  url: text('url').notNull(),
-  position: text('position', { enum: TICKET_APP_POSITIONS }).notNull(),
+  // Issue 37: a placement is on when its URL is set.
+  sidebarUrl: text('sidebar_url'),
+  tabUrl: text('tab_url'),
+  pageUrl: text('page_url'),
   /** Null: all Ticket Types, also later ones. Else the chosen types; an archived type drops out. */
   ticketTypeIds: text('ticket_type_ids', { mode: 'json' }).$type<number[] | null>(),
   /** The order on the admin page and on the ticket. */
@@ -510,4 +513,13 @@ export const ticketApp = sqliteTable('ticket_app', {
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(() => new Date()),
   // Issue 35
   access: text('access', { enum: TICKET_APP_ACCESS }).notNull().default('read'),
-})
+  // Issue 38: a built-in icon and color, or uploaded images in R2 (`ticket-app-icons/{id}/{mode}`). Image types come
+  // from the bytes. No light type: the built-in icon shows. `iconVersion` changes with every icon change.
+  iconName: text('icon_name').notNull().default('i-lucide-app-window'),
+  iconColor: text('icon_color').notNull().default('#4B5563'),
+  iconLightType: text('icon_light_type'),
+  iconDarkType: text('icon_dark_type'),
+  iconVersion: integer('icon_version').notNull().default(0),
+}, () => [
+  check('ticket_app_one_url', sql`sidebar_url IS NOT NULL OR tab_url IS NOT NULL OR page_url IS NOT NULL`),
+])

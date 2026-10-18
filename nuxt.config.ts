@@ -24,8 +24,8 @@ export default defineNuxtConfig({
     clientBundle: {
       // The default scan reads no .ts files, so it would miss the icons in app/utils/navigation.ts.
       scan: { globInclude: ['**/*.{vue,jsx,tsx,md,mdc,mdx,yml,yaml}', '**/utils/**/*.ts'] },
-      // The set an Admin can choose from (shared/ticket-type-rules.ts).
-      icons: ['lucide:bug', 'lucide:credit-card', 'lucide:database', 'lucide:key-round', 'lucide:user', 'lucide:circle-help', 'lucide:life-buoy', 'lucide:ticket'],
+      // The set an Admin can choose from (shared/ticket-type-rules.ts, shared/ticket-app-icons.ts).
+      icons: ['lucide:app-window', 'lucide:bug', 'lucide:credit-card', 'lucide:database', 'lucide:key-round', 'lucide:user', 'lucide:circle-help', 'lucide:life-buoy', 'lucide:ticket'],
     },
   },
   routeRules: {

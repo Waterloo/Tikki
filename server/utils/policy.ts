@@ -204,6 +204,14 @@ export function authorizeTicketApps(principal: Principal): Refusal | null {
   return isStaff(principal) ? null : { status: 403, code: 'FORBIDDEN', message: 'Only Agents and Admins can use Ticket Apps.' }
 }
 
+/**
+ * Null when the Principal may see the icon of a Ticket App. Staff see every app. Requesters see none yet: issue 39
+ * adds the apps with a page that is shown to Requesters. A refused User gets the same 404 as for a missing app.
+ */
+export function authorizeTicketAppIcon(principal: Principal): Refusal | null {
+  return isStaff(principal) ? null : { status: 404, code: 'NOT_FOUND', message: 'No Ticket App has this ID.' }
+}
+
 /** Null when the Principal may list tickets. Which tickets is `readableTickets`. */
 export function authorizeList(principal: Principal): Refusal | null {
   if (viaApp(principal)) return APP_REFUSED
