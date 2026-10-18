@@ -2,7 +2,8 @@
 useWebMcpTools()
 const { role } = useCurrentUser()
 const route = useRoute()
-const settingsArea = computed(() => role.value === 'admin' && isSettingsPath(route.path))
+// `/admin` is the menu itself, so it gets no second copy next to it.
+const settingsArea = computed(() => role.value === 'admin' && route.path !== SETTINGS_HOME && isSettingsPath(route.path))
 </script>
 
 <template>

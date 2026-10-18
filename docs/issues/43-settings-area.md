@@ -36,13 +36,20 @@ The main sidebar shows only daily work. The 6 set-up screens move into one Setti
 
 ## Acceptance criteria
 
-- [ ] Unit: the main navigation has no set-up items. The Settings menu has the 4 groups in order, for Admins only. Each Settings URL (and its sub-pages) is in the Settings area; other URLs are not.
-- [ ] Playwright: the sidebar for each role (Admin, Agent, Requester): the New ticket button, the main items, and the Settings entry for Admins only.
-- [ ] Playwright: on each Settings page, the Settings menu shows with the current item marked, and the main sidebar marks Settings as current.
-- [ ] Playwright: at 375 px, Settings opens the list, an item opens its page, and the back control returns to the list. No horizontal scroll.
-- [ ] Playwright: an Agent and a Requester who open a Settings URL go to My tickets, and see no Settings entry.
-- [ ] The e2e specs that click sidebar items still pass.
-- [ ] The layout spec passes (375, 1100, 1280, 1440 px, light and dark), with the new Settings list page.
+- [x] Unit: the main navigation has no set-up items. The Settings menu has the 4 groups in order, for Admins only. Each Settings URL (and its sub-pages) is in the Settings area; other URLs are not.
+  Evidence: `test/unit/navigation.test.ts` (8 tests): `navigationFor`, `settingsFor`, `isSettingsCurrent`, `isSettingsPath`.
+- [x] Playwright: the sidebar for each role (Admin, Agent, Requester): the New ticket button, the main items, and the Settings entry for Admins only.
+  Evidence: `e2e/settings-area.spec.ts`: one test for each role checks the sidebar New ticket link, the exact list of Main links, and the Settings entry (count 0 for Agent and Requester).
+- [x] Playwright: on each Settings page, the Settings menu shows with the current item marked, and the main sidebar marks Settings as current.
+  Evidence: `e2e/settings-area.spec.ts`: 9 URLs (including `/applications/{id}`, `/admin/types/{id}`, `/admin/types/new`) show the 4 group headings, one `aria-current="page"` item with the right label, Settings current, and no current Main item. Developer docs has `href="/docs/"` and `target="_blank"`. `/tickets` has no menu.
+- [x] Playwright: at 375 px, Settings opens the list, an item opens its page, and the back control returns to the list. No horizontal scroll.
+  Evidence: `e2e/settings-area.spec.ts`: sidebar dialog → Settings → `/admin` list → Webhooks → "Back to Settings" → `/admin`; scroll width ≤ 375 on both pages.
+- [x] Playwright: an Agent and a Requester who open a Settings URL go to My tickets, and see no Settings entry.
+  Evidence: `e2e/settings-area.spec.ts`: `/admin`, `/settings`, `/webhooks`, `/admin/types`, `/applications` end on My tickets with no Settings menu.
+- [x] The e2e specs that click sidebar items still pass.
+  Evidence: `webhooks`, `people`, `applications`, `application-webhook`, `ticket-apps` use `openSettings` / `openApplications` (`e2e/settings.ts`); `docs.spec.ts` uses `exact: true` for the page's "Developer docs" link. Full suite: 125 passed, 3 runs.
+- [x] The layout spec passes (375, 1100, 1280, 1440 px, light and dark), with the new Settings list page.
+  Evidence: `e2e/layout.spec.ts` adds "Settings menu" (`/admin`); it passes in each full run.
 
 ## Blocked by
 

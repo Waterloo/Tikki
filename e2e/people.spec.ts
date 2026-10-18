@@ -79,7 +79,8 @@ test('an Admin invites, creates a Team and deactivates a User', async ({ browser
 test('a Requester does not see Teams and users', async ({ page }) => {
   await page.goto('/')
   await expect(page.getByRole('heading', { name: 'My tickets' }).first()).toBeVisible()
-  await expect(page.getByRole('link', { name: 'Teams and users' })).toHaveCount(0)
+  // Teams and users is in the Settings area (issue 43), which only Admins can open.
+  await expect(page.getByRole('link', { name: 'Settings', exact: true })).toHaveCount(0)
   await page.goto('/people')
   await expect(page.getByRole('heading', { name: 'My tickets' }).first()).toBeVisible()
 })

@@ -5,9 +5,9 @@ import { ADMIN_STATE, signIn } from './sign-in'
 
 // The desktop sidebar has no landmark of its own; the page header has a second New ticket button.
 const newTicket = (page: Page) => page.locator('[id^="dashboard-sidebar"]').getByRole('link', { name: 'New ticket', exact: true })
-const mainLinks = (page: Page) => page.getByRole('navigation', { name: 'Main' }).getByRole('link')
+const mainLinks = (page: Page) => page.getByRole('navigation', { name: 'Main', exact: true }).getByRole('link')
 const settingsEntry = (page: Page) => page.getByRole('link', { name: 'Settings', exact: true })
-const settingsMenu = (page: Page) => page.getByRole('navigation', { name: 'Settings' })
+const settingsMenu = (page: Page) => page.getByRole('navigation', { name: 'Settings', exact: true })
 const scrollWidth = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth)
 
 async function expectMyTickets(page: Page) {
@@ -93,7 +93,7 @@ test.describe('as the Admin', () => {
       await expect(menu.getByRole('heading')).toHaveText(['General', 'People', 'Tickets', 'Integrations'])
       await expect(menu.locator('[aria-current="page"]'), path).toHaveText(item)
       await expect(settingsEntry(page), path).toHaveAttribute('aria-current', 'page')
-      await expect(page.getByRole('navigation', { name: 'Main' }).locator('[aria-current]'), path).toHaveCount(0)
+      await expect(page.getByRole('navigation', { name: 'Main', exact: true }).locator('[aria-current]'), path).toHaveCount(0)
     }
 
     const docs = settingsMenu(page).getByRole('link', { name: /^Developer docs/ })
@@ -102,7 +102,7 @@ test.describe('as the Admin', () => {
 
     // A menu click moves between Settings pages, keeping the frame.
     await settingsMenu(page).getByRole('link', { name: 'Webhooks', exact: true }).click()
-    await expect(page.getByRole('heading', { name: 'Webhooks', level: 1 })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Webhooks', level: 1, exact: true })).toBeVisible()
     await expect(settingsMenu(page).locator('[aria-current="page"]')).toHaveText('Webhooks')
 
     // Daily-work pages have no Settings menu.
@@ -119,14 +119,14 @@ test.describe('as the Admin', () => {
     await page.getByRole('dialog').getByRole('link', { name: 'Settings', exact: true }).click()
 
     await expect(page).toHaveURL(/\/admin$/)
-    await expect(page.getByRole('banner').getByRole('heading', { name: 'Settings', level: 1 })).toBeVisible()
+    await expect(page.getByRole('banner').getByRole('heading', { name: 'Settings', level: 1, exact: true })).toBeVisible()
     await expect(settingsMenu(page)).toHaveCount(1)
     await expect(settingsMenu(page)).toBeVisible()
     expect(await scrollWidth(page)).toBeLessThanOrEqual(375)
 
     await settingsMenu(page).getByRole('link', { name: 'Webhooks', exact: true }).click()
     await expect(page).toHaveURL(/\/webhooks$/)
-    await expect(page.getByRole('banner').getByRole('heading', { name: 'Webhooks', level: 1 })).toBeVisible()
+    await expect(page.getByRole('banner').getByRole('heading', { name: 'Webhooks', level: 1, exact: true })).toBeVisible()
     // The desktop menu panel stays hidden on a phone: only the page shows.
     await expect(settingsMenu(page)).toBeHidden()
     expect(await scrollWidth(page)).toBeLessThanOrEqual(375)
