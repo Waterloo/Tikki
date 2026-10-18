@@ -62,6 +62,12 @@ Open any ticket as an Agent or Admin.
 
 4. Add the Worker's HTTPS address as a Ticket App. An HTTPS Tikki cannot frame an `http://` page.
 
+A deployed copy runs at `https://time.jithinsha.in/` for `https://tikki.jithinsha.in` (`env.production` in `wrangler.jsonc`):
+
+```bash
+pnpm exec wrangler deploy --env production -c examples/time-tracking/wrangler.jsonc
+```
+
 ## Not included
 
 Reports across tickets, editing an entry, and timers. Add a report page with its own sign-in if you need totals per Agent or per month: the context token is only valid inside the ticket.
