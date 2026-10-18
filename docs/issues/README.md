@@ -43,10 +43,10 @@ Vertical slices of [the PRD](../PRD.md). Each slice goes through every layer and
 | 34 | [Ticket Apps: an external page inside the ticket](34-ticket-apps.md) | AFK | 32, 33 | Done |
 | 35 | [Ticket Apps change the ticket through the API](35-ticket-app-writes.md) | AFK | 34 | Done |
 | 36 | [WebMCP tools in the Tikki page](36-webmcp-tools.md) | AFK | 35 | Done |
-| 37 | [One Ticket App, one URL for each placement](37-ticket-app-placements.md) | AFK | — | Planned |
-| 38 | [Ticket App icons, light and dark](38-ticket-app-icons.md) | AFK | 37 | Planned |
-| 39 | [App pages: an Apps menu in the main sidebar](39-app-pages.md) | AFK | 37 | Planned |
-| 40 | [Add a Ticket App from its manifest](40-ticket-app-manifest.md) | AFK | 38, 39 | Planned |
+| 37 | [One Ticket App, one URL for each placement](37-ticket-app-placements.md) | AFK | — | Done |
+| 38 | [Ticket App icons, light and dark](38-ticket-app-icons.md) | AFK | 37 | Done |
+| 39 | [App pages: an Apps menu in the main sidebar](39-app-pages.md) | AFK | 37 | Done |
+| 40 | [Add a Ticket App from its manifest](40-ticket-app-manifest.md) | AFK | 38, 39 | Done |
 | 42 | [Application scopes: own or all tickets, for each permission](42-application-read-scope.md) | AFK | — | Planned |
 
 All AFK issues except 02 are merged into `integration` on 2026-10-18. The cloud setup is deferred (issues 02, 24 and 25, and the staging checks).
