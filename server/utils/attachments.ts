@@ -259,7 +259,7 @@ export interface FileRef {
 export async function checkFileRefs(db: Db, principal: Principal, ticketNumber: number | null, refs: FileRef[]): Promise<FieldError[]> {
   if (refs.length === 0) return []
   const rows = await db.select({ id: attachment.id, ticketNumber: attachment.ticketNumber, uploaderId: attachment.uploaderId })
-    .from(attachment).where(inArray(attachment.id, refs.map(r => String(r.id))))
+    .from(attachment).where(and(inArray(attachment.id, refs.map(r => String(r.id))), isNull(attachment.erasedAt)))
   const byId = new Map(rows.map(r => [r.id, r]))
   return refs.flatMap((ref) => {
     const row = byId.get(String(ref.id))
@@ -272,5 +272,5 @@ export async function checkFileRefs(db: Db, principal: Principal, ticketNumber: 
 /** A batch statement: the new ticket (the last insert in the batch) takes the unattached uploads of this User. */
 export function claimUploads(db: Db, principal: UserPrincipal, ids: string[]) {
   return db.update(attachment).set({ ticketNumber: sql`last_insert_rowid()` })
-    .where(and(inArray(attachment.id, ids), isNull(attachment.ticketNumber), eq(attachment.uploaderId, principal.userId)))
+    .where(and(inArray(attachment.id, ids), isNull(attachment.ticketNumber), isNull(attachment.erasedAt), eq(attachment.uploaderId, principal.userId)))
 }
