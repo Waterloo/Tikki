@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm'
 import { blob, check, index, integer, primaryKey, sqliteTable, text, uniqueIndex, type AnySQLiteColumn } from 'drizzle-orm/sqlite-core'
 import type { FieldDef, FieldValues } from '../utils/fields'
+import type { NormalizedManifest } from '../../shared/ticket-app-manifest'
 import { user } from './auth-schema'
 
 export * from './auth-schema'
@@ -522,6 +523,10 @@ export const ticketApp = sqliteTable('ticket_app', {
   iconVersion: integer('icon_version').notNull().default(0),
   // Issue 39: the page only. Sidebar and tab stay staff only.
   pageForRequesters: integer('page_for_requesters', { mode: 'boolean' }).notNull().default(false),
+  // Issue 40: set when the app was added from a manifest. `manifest` is the approved manifest, the base for "Check for updates".
+  manifestUrl: text('manifest_url'),
+  manifestHash: text('manifest_hash'),
+  manifest: text('manifest', { mode: 'json' }).$type<NormalizedManifest | null>(),
 }, () => [
   check('ticket_app_one_url', sql`sidebar_url IS NOT NULL OR tab_url IS NOT NULL OR page_url IS NOT NULL`),
 ])

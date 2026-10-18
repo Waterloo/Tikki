@@ -25,11 +25,22 @@ export function iconTypeOf(bytes: Uint8Array): AppIconType | null {
 
 const badImage = (reason: string) => invalid([{ key: 'image', reason }])
 
-async function readIcon(request: Request): Promise<{ bytes: Uint8Array, type: AppIconType }> {
-  const bytes = await readLimited(request, APP_ICON_MAX_BYTES, () => badImage('The image must be 256 KB or smaller.'))
+export const ICON_TOO_LARGE = 'The image must be 256 KB or smaller.'
+export const ICON_BAD_TYPE = 'The image must be a PNG, WebP or SVG file.'
+
+export interface IconImage { bytes: Uint8Array, type: AppIconType }
+
+async function readIcon(request: Request): Promise<IconImage> {
+  const bytes = await readLimited(request, APP_ICON_MAX_BYTES, () => badImage(ICON_TOO_LARGE))
   const type = iconTypeOf(bytes)
-  if (!type) throw badImage('The image must be a PNG, WebP or SVG file.')
+  if (!type) throw badImage(ICON_BAD_TYPE)
   return { bytes, type }
+}
+
+/** Puts icon bytes in R2. Call it before the row update that points at them, so a row never points at a missing object. */
+export async function putIconObjects(bucket: R2Bucket, id: number, images: Partial<Record<AppIconMode, IconImage>>): Promise<void> {
+  await Promise.all(Object.entries(images).map(([mode, image]) =>
+    bucket.put(iconKey(id, mode as AppIconMode), image.bytes, { httpMetadata: { contentType: image.type } })))
 }
 
 /** Stores an icon image: R2 first, then the row and its audit entry, so a row never points at a missing object. */
@@ -37,7 +48,7 @@ export async function setTicketAppIcon(db: Db, bucket: R2Bucket, principal: User
   const current = await getRow(db, id)
   const { bytes, type } = await readIcon(request)
   if (mode === 'dark' && !current.iconLightType) throw badImage('Upload the light image first. Without a dark image, the light one shows in dark mode.')
-  await bucket.put(iconKey(id, mode), bytes, { httpMetadata: { contentType: type } })
+  await putIconObjects(bucket, id, { [mode]: { bytes, type } })
   const next = { ...current, ...(mode === 'light' ? { iconLightType: type } : { iconDarkType: type }), iconVersion: current.iconVersion + 1 }
   await writeIcon(db, principal, current, next)
   return viewOf(db, id)
@@ -58,7 +69,7 @@ export async function removeTicketAppIcon(db: Db, principal: UserPrincipal, id: 
 
 type IconRow = typeof ticketApp.$inferSelect
 
-async function writeIcon(db: Db, principal: UserPrincipal, before: IconRow, after: IconRow): Promise<void> {
+export async function writeIcon(db: Db, principal: UserPrincipal, before: IconRow, after: IconRow): Promise<void> {
   await db.batch([
     db.update(ticketApp).set({ iconLightType: after.iconLightType, iconDarkType: after.iconDarkType, iconVersion: after.iconVersion }).where(eq(ticketApp.id, before.id)),
     adminAuditEntry(db, principal, { subject: { type: 'ticket_app', id: before.id }, action: 'ticket_app_changed', values: { before: { icon: iconOf(before) }, after: { icon: iconOf(after) } } }),

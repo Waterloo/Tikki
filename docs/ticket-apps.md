@@ -1,7 +1,5 @@
 # Build a Ticket App
 
-> **Planned (issue 40):** adding an app from a manifest (`tikki-app.json`). See [ADR 0005](adr/0005-ticket-app-placements-pages-manifest.md). This guide changes when it is built.
-
 A **Ticket App** is your own web page in Tikki. Agents see it inside a ticket, as a card in the ticket sidebar or as a tab next to Conversation and Activity. It can also have a full page outside any ticket, in the **Apps** menu of the main sidebar. Each placement has its own URL. Tikki tells your page who is looking at it (and in a ticket, which ticket is open), and gives you a signed token that proves it.
 
 Typical apps:
@@ -18,16 +16,17 @@ You need no SDK. A Ticket App is a normal web page with about 20 lines of JavaSc
 1. [How it works](#how-it-works)
 2. [Quick start](#quick-start)
 3. [Add the app in Tikki](#add-the-app-in-tikki)
-4. [Placements](#placements)
-5. [Messages](#messages)
-6. [The context](#the-context)
-7. [The context token](#the-context-token)
+4. [Manifest](#manifest): describe your app in one JSON file
+5. [Placements](#placements)
+6. [Messages](#messages)
+7. [The context](#the-context)
+8. [The context token](#the-context-token)
    - [App pages](#app-pages): the page context and the page token
-8. [Change the ticket from your backend](#change-the-ticket-from-your-backend)
-9. [Security checklist](#security-checklist)
-10. [Errors and edge cases](#errors-and-edge-cases)
-11. [Test locally](#test-locally)
-12. [FAQ](#faq)
+9. [Change the ticket from your backend](#change-the-ticket-from-your-backend)
+10. [Security checklist](#security-checklist)
+11. [Errors and edge cases](#errors-and-edge-cases)
+12. [Test locally](#test-locally)
+13. [FAQ](#faq)
 
 ## How it works
 
@@ -92,7 +91,12 @@ A complete app as one static HTML file. It shows the ticket and the customer, an
 
 ## Add the app in Tikki
 
-An Admin opens **Ticket Apps** in Tikki and fills in:
+An Admin opens **Ticket Apps** in Tikki. There are two ways to add an app:
+
+- **Add from manifest:** the Admin pastes the address of your [manifest](#manifest). Tikki reads the name, the URLs, the icons and the access from it. The Admin chooses the rest.
+- **Add app:** the Admin fills in the form below.
+
+The form has these settings:
 
 | Setting | Values | Notes |
 |---|---|---|
@@ -121,6 +125,97 @@ Content-Security-Policy: frame-ancestors https://tikki.example.com
 ```
 
 Remove `X-Frame-Options: DENY` or `SAMEORIGIN` from that page, or the browser shows an empty frame.
+
+## Manifest
+
+Publish one JSON file that describes your app, for example at `https://time.example.com/tikki-app.json`. The Admin pastes this address in **Ticket Apps → Add from manifest**, checks a preview, and approves. Later, the Admin can check it again for updates.
+
+```json
+{
+  "tikki_app": 1,
+  "name": "Time tracking",
+  "description": "Log time on tickets. Timesheet for the team.",
+  "urls": {
+    "sidebar": "https://time.example.com/sidebar",
+    "tab": "https://time.example.com/tab",
+    "page": "https://time.example.com/timesheet"
+  },
+  "icons": { "light": "/icon-light.svg", "dark": "/icon-dark.svg" },
+  "access": "comment"
+}
+```
+
+### Keys
+
+| Key | Required | Value |
+|---|---|---|
+| `tikki_app` | Yes | The format version. Only `1` is known. Tikki refuses any other version. |
+| `name` | Yes | Text, at most 40 characters. The card title, the tab name and the page title. |
+| `description` | No | Text, at most 200 characters. The Admin sees it in the preview and in the list of apps. |
+| `urls` | Yes | An object with `sidebar`, `tab` and `page`. Set at least one. Each URL follows the rules of [Add the app in Tikki](#add-the-app-in-tikki). See [Placements](#placements). |
+| `icons` | No | An object with `light` and an optional `dark`. Each is the URL of a PNG, WebP or SVG file, 256 KB at most. Without a dark icon, the light one shows in dark mode. Without `icons`, the built-in app icon shows. |
+| `access` | No | `read`, `comment` or `update`: the access your app asks for. Default `read`. See [scopes](#scopes). |
+
+Rules:
+
+- A relative URL resolves against the manifest URL. With the manifest at `https://time.example.com/tikki-app.json`, `/icon-light.svg` is `https://time.example.com/icon-light.svg`.
+- Tikki ignores keys it does not know, so you can add keys for a later version. A known key with a wrong type is an error that names the key, for example `urls.tab`.
+- Serve the manifest and the icons with `200`, over `https://`. On a development instance, `http://localhost` also works.
+
+### How Tikki reads it
+
+Tikki fetches the manifest and the icons on its own server, never in the Admin's browser:
+
+- Only `https://` addresses. A private, loopback or link-local address is refused (on a development instance, a loopback address is allowed).
+- At most 64 KB for the manifest, and 256 KB for each icon. The manifest must be valid JSON.
+- A redirect is followed only to the same origin. Give the final address.
+- Tikki waits at most 5 seconds for each file.
+- Tikki copies the icons into its own storage. Browsers load the icons from Tikki, never from your site.
+
+Each problem shows to the Admin with its reason, and nothing is saved:
+
+| Problem | The Admin sees |
+|---|---|
+| The server cannot be reached, or does not answer in 5 seconds | Tikki could not reach the server, with the cause |
+| A status other than `200` | The server answered with that status |
+| The manifest is larger than 64 KB | The manifest must be 64 KB or smaller |
+| Not JSON, or not a JSON object | The manifest is not valid JSON |
+| `tikki_app` missing or not `1` | The key `tikki_app`, with the unknown version |
+| `name` or `urls` missing, or no URL in `urls` | The key and "Required" |
+| A bad URL | The key, for example `urls.tab`, and the reason, for example "Must use https." |
+| A bad icon | The key, for example `icons.dark`, and the reason: not found, too large, or not a PNG, WebP or SVG file |
+
+### What the Admin approves
+
+The preview shows the name, the description, both icons on a light and a dark background, each placement with its URL, and the access the app asks for. The Admin then chooses:
+
+- the Ticket Types where the app shows ("Show on"),
+- "Show the page to Requesters", when the app has a page,
+- the access: **the level the app asks for, or lower. Never higher.**
+
+Then the Admin selects **Add app**. Tikki reads the manifest again and saves the app only when it is the same as in the preview. The app keeps the manifest URL. The audit log records the manifest URL with the new app.
+
+The manifest asks; the Admin grants. While the app has a manifest, the Admin cannot grant more than the manifest asks for, also not in the edit form.
+
+### Updates
+
+Tikki never checks for updates by itself, and nothing changes without the Admin. To publish a change, change the manifest. Then the Admin selects **Check for updates** on the app:
+
+1. Tikki fetches the manifest and the icons again, with the same rules.
+2. Tikki shows what changed since the manifest the Admin approved: the name, the description, each URL, each icon (also new bytes at the same URL), and the requested access.
+3. Two changes show as a **warning**, and the Admin must confirm them:
+   - a URL on an origin that no URL of the approved manifest had. Tokens for that placement go to the new origin.
+   - a higher requested access.
+4. The Admin selects **Apply update** or **Ignore**.
+
+When the Admin applies the update:
+
+- Only the keys that changed in the manifest change on the app. A key that the Admin changed in Tikki and the manifest did not change stays as the Admin set it.
+- The granted access never goes up by itself. If the app asks for more, the Admin can raise it in the same step, up to the new requested level.
+- If the app asks for less, the granted access goes down to the new requested level.
+- The audit log records the changed keys, before and after.
+
+A failed check changes nothing and is not recorded.
 
 ## Placements
 
@@ -405,6 +500,7 @@ What Tikki does on its side:
 | The Agent was deactivated or is no longer an Agent | `401` | Show a short message. |
 | A page token sent to the Tikki REST API or `/mcp` | `401` | A page token cannot read tickets. Store the data you need in your app. |
 | `tikki:navigate` with a path that is not `/tickets/...` or `/apps/...` | Nothing | Send a Tikki path, or open your own link with `target="_blank"`. |
+| You changed your manifest | Nothing, until the Admin checks for updates and applies them | Tell the Admin. A new origin or a higher access needs their confirmation. |
 | Too many calls | `429` with `Retry-After` | The limit is the Agent's own web limit. Wait and retry. |
 | The ticket changed in Tikki | You get a new `tikki:context` | Re-render from the new data. |
 
@@ -421,6 +517,7 @@ Errors use the Tikki API error format:
 3. In Tikki, open Ticket Apps and add `http://localhost:5173` as the Sidebar URL, the Tab URL, the Page URL, or more than one (allowed only on a development or test instance).
 4. Open any ticket as the Admin (`admin@example.com`). Your app shows in the sidebar, as a tab, or both. A page shows in the Apps menu of the main sidebar.
 5. In your app, use `TIKKI_ORIGIN = 'http://localhost:8787'` and audience `http://localhost:5173`.
+6. To test your manifest, serve it from the same server, for example `http://localhost:5173/tikki-app.json`, and use **Add from manifest**. On a development instance, Tikki can fetch it from a loopback address.
 
 A real example with a database, writes and dark mode is the time tracking app in [`examples/time-tracking/`](../examples/time-tracking/README.md).
 
