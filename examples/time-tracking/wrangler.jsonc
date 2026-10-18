@@ -7,7 +7,7 @@
   "name": "tikki-time",
   "main": "src/index.js",
   "compatibility_date": "2026-10-01",
-  // src/page.js sends a function to the browser with toString(); kept names would add a server-only `__name` helper.
+  // src/*.js send functions to the browser with toString(); kept names would add a server-only `__name` helper.
   "keep_names": false,
   // The app icons are files, so issue 40's manifest can point to them; the Worker imports them as text.
   "rules": [{ "type": "Text", "globs": ["**/*.svg"], "fallthrough": true }],

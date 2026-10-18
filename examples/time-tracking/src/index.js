@@ -9,6 +9,7 @@ import iconDark from '../icons/icon-dark.svg'
 const MAX_MINUTES = 24 * 60
 const MAX_RANGE_MS = 400 * 86400000
 const TIMESHEET_ROWS = 5000
+const CSV_ROWS = 100000
 let jwks
 
 function json(status, body) {
@@ -172,7 +173,9 @@ async function timesheetCsv(request, env) {
   const r = range(form.get('from'), form.get('to'))
   if (r instanceof Response) return failed(r.status, 'INVALID_RANGE')
   const fmt = zone(form.get('tz'))
-  const rows = await timesheetEntries(env, c, r, 100000)
+  const rows = await timesheetEntries(env, c, r, CSV_ROWS + 1)
+  // A file without its oldest rows looks complete, so refuse it.
+  if (rows.length > CSV_ROWS) return failed(422, 'RANGE_TOO_LARGE')
   const lines = [['Date', 'Time', 'Ticket', 'Title', 'Ticket Type', 'Person', 'Minutes', 'Hours', 'Note']]
   const parts = (ms) => Object.fromEntries(fmt.formatToParts(new Date(ms)).map(x => [x.type, x.value]))
   const day = (ms) => { const p = parts(ms); return `${p.year}-${p.month}-${p.day}` }
@@ -190,6 +193,16 @@ async function timesheetCsv(request, env) {
   })
 }
 
+// For "Add from manifest" in Tikki (docs/ticket-apps.md, Manifest). Relative URLs resolve against this file's URL.
+const MANIFEST = {
+  tikki_app: 1,
+  name: 'Time tracking',
+  description: 'Log time on tickets in a sidebar card or a tab. A timesheet shows the time across tickets.',
+  urls: { sidebar: '/sidebar', tab: '/tab', page: '/timesheet' },
+  icons: { light: '/icon-light.svg', dark: '/icon-dark.svg' },
+  access: 'comment',
+}
+
 const PAGES = { '/': sidebarPage, '/sidebar': sidebarPage, '/tab': tabPage, '/timesheet': timesheetPage }
 const ICON_FILES = { '/icon-light.svg': iconLight, '/icon-dark.svg': iconDark }
 
@@ -205,6 +218,7 @@ export default {
         },
       })
     }
+    if (url.pathname === '/tikki-app.json') return json(200, MANIFEST)
     if (ICON_FILES[url.pathname]) {
       return new Response(ICON_FILES[url.pathname], { headers: { 'content-type': 'image/svg+xml', 'cache-control': 'public, max-age=86400' } })
     }

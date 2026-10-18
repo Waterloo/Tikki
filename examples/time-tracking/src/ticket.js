@@ -219,8 +219,9 @@ function view(lib, MODE, ICONS) {
   const dayKey = (ms) => new Date(ms).toDateString()
   function dayName(ms) {
     const key = dayKey(ms)
-    if (key === dayKey(Date.now())) return 'Today'
-    if (key === dayKey(Date.now() - 86400000)) return 'Yesterday'
+    const now = new Date()
+    if (key === now.toDateString()) return 'Today'
+    if (key === new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1).toDateString()) return 'Yesterday'
     return new Date(ms).toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
   }
 
@@ -298,20 +299,30 @@ function view(lib, MODE, ICONS) {
   }
 
   // Delete waits UNDO_MS, so Undo needs no server call. If the frame closes first, the entry stays: the safe side.
+  // One Undo at a time: a new delete sends the pending one at once.
+  async function commit(id) {
+    const pending = pendingDelete.get(id)
+    if (!pending) return
+    clearTimeout(pending.timer)
+    pendingDelete.delete(id)
+    try {
+      data = await call('/api/entries/' + id, { method: 'DELETE' })
+      if (pending.shown) status('Deleted ' + hm(pending.minutes) + '.')
+    } catch (e) {
+      status(e.message, 'bad')
+    }
+    render()
+  }
+
   function remove(entry) {
-    const timer = setTimeout(async () => {
-      pendingDelete.delete(entry.id)
-      try {
-        data = await call('/api/entries/' + entry.id, { method: 'DELETE' })
-      } catch (e) {
-        status(e.message, 'bad')
-      }
-      render()
-    }, UNDO_MS)
-    pendingDelete.set(entry.id, timer)
+    for (const p of pendingDelete.values()) p.shown = false
+    for (const id of [...pendingDelete.keys()]) commit(id)
+    const pending = { minutes: entry.minutes, shown: true }
+    pending.timer = setTimeout(() => commit(entry.id), UNDO_MS)
+    pendingDelete.set(entry.id, pending)
     render()
     status('Deleted ' + hm(entry.minutes) + '.', null, () => {
-      clearTimeout(pendingDelete.get(entry.id))
+      clearTimeout(pending.timer)
       pendingDelete.delete(entry.id)
       status('')
       render()

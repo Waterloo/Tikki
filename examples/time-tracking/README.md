@@ -16,13 +16,14 @@ It follows the [Ticket App guide](../../docs/ticket-apps.md).
 - All three views are on one origin, so all tokens have the same audience. The Worker checks `tikki_placement` too: `/api/entries` accepts only a sidebar or tab token with `tikki_ticket`; `/api/timesheet` accepts only a page token.
 - The ticket, the User and the role come only from the checked token, never from the request body.
 - An entry stores the ticket reference, the Agent's User id, the minutes and the note. It also stores display text from the context: the Agent's name, the ticket title and the Ticket Type name. A page token cannot read tickets from Tikki, so the timesheet shows this saved text. Each new entry updates the title and type of the older entries of that ticket. This text is never used for a decision.
+- The app keeps its own copy of ticket titles and Agent names. Tikki cannot delete this copy, for example when it erases a person's data. Delete such rows in this database yourself.
 - Only the Agent who logged an entry can delete it. A delete waits 5 seconds with Undo, so Undo needs no server call.
 - **Timesheet rule:** an Admin sees the time of every person. An Agent sees only their own time. Anyone else (a Requester, when the page is shown to Requesters) gets `403`. The role is `tikki_role` from the page token.
 - The ticket reference in the timesheet sends `tikki:navigate` to `/tickets/{ref}`, so the ticket opens in the same Tikki tab.
 - CSV export: the frame sandbox has no `allow-downloads`, so the page posts a form to `/api/timesheet.csv` in a new tab. The token goes in the form body, not in the URL. The file has the entries of the range, with dates in the browser's time zone.
 - The views use Tikki's colors, font and radius (`src/ui.js`), follow Tikki's light or dark mode, and work from 375 px wide. Quick buttons for 15m, 30m, 1h and 2h.
 - The "Note on ticket" switch calls `POST /api/v1/tickets/{ref}/comments` on Tikki with the same token. This needs the app's access to be **Comment** or **Update**. With **Read**, the switch is off.
-- Icons for light and dark mode are in `icons/`. The Worker also serves them at `/icon-light.svg` and `/icon-dark.svg`.
+- Icons for light and dark mode are in `icons/`. The Worker serves them at `/icon-light.svg` and `/icon-dark.svg` for the manifest.
 
 Time formats: `45`, `45m`, `1h`, `1h 30m`, `1.5h`, `1:30`. One entry is at most 24 hours.
 
@@ -40,7 +41,11 @@ pnpm exec wrangler dev -c examples/time-tracking/wrangler.jsonc --port 5174
 
 If Tikki runs on another port, add `--var TIKKI_ORIGIN:http://localhost:<port>`.
 
-In Tikki, open **Ticket Apps** and add:
+In Tikki, open **Ticket Apps**, select **Add from manifest**, and paste `http://localhost:5174/tikki-app.json`. The preview shows the name, both icons, the three URLs and the access the app asks for (**Comment**). Approve it.
+
+The Worker serves the manifest at `/tikki-app.json` (`src/index.js`). Its URLs are relative, so they follow the address of the manifest.
+
+Or add the app by hand:
 
 | Setting | Value |
 |---|---|
@@ -74,7 +79,7 @@ Open any ticket as an Agent or Admin for the card and the tab. Open **Time track
    pnpm exec wrangler deploy -c examples/time-tracking/wrangler.jsonc
    ```
 
-4. Add the Worker's HTTPS URLs to a Ticket App: `/sidebar`, `/tab` and `/timesheet`, as in the table above. An HTTPS Tikki cannot frame an `http://` page.
+4. In Tikki, add the app from `https://<your Worker>/tikki-app.json`, or add the HTTPS URLs `/sidebar`, `/tab` and `/timesheet` by hand, as in the table above. An HTTPS Tikki cannot frame an `http://` page.
 
 A deployed copy runs at `https://time.jithinsha.in/` for `https://tikki.jithinsha.in` (`env.production` in `wrangler.jsonc`):
 
@@ -86,7 +91,7 @@ pnpm exec wrangler deploy --env production -c examples/time-tracking/wrangler.js
 
 1. Apply the migrations again. `0002_ticket_details.sql` adds the ticket title and the Ticket Type name. Old entries get empty text; the timesheet shows their ticket reference.
 2. Deploy.
-3. In the Ticket App, add the Tab URL and the Page URL. The old Sidebar URL `/` keeps working.
+3. In the Ticket App, add the Tab URL and the Page URL. The old Sidebar URL `/` keeps working. Or delete the app and add it again from the manifest.
 
 ## Not included
 

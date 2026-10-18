@@ -126,7 +126,8 @@ function view(lib, TIKKI, ICONS) {
   let group = store.get('tikki-time-group') || 'ticket'
   let user = null
   let data = null
-  let loading = 0
+  let seq = 0
+  let busy = false
   const open = new Set()
 
   const iso = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0')
@@ -202,18 +203,19 @@ function view(lib, TIKKI, ICONS) {
     $('custom').hidden = range !== 'custom'
     const span = bounds()
     $('span').textContent = span ? spanText(span) : 'Pick a start and an end date.'
-    const admin = user?.role === 'admin'
+    // The role of the checked token, when the data has it.
+    const admin = (data?.role ?? user?.role) === 'admin'
     $('who').textContent = admin ? 'Everyone’s time' : 'Your time'
     $('s-people-box').hidden = !admin
 
     const result = $('result')
     const entries = data?.entries ?? []
-    $('export').disabled = !entries.length || loading > 0
+    $('export').disabled = !entries.length || busy
     $('s-total').textContent = hm(entries.reduce((s, e) => s + e.minutes, 0))
     $('s-entries').textContent = String(entries.length)
     $('s-tickets').textContent = String(new Set(entries.map(e => e.ticket_ref)).size)
     $('s-people').textContent = String(new Set(entries.map(e => e.agent_id)).size)
-    $('stats').style.opacity = loading ? '.6' : ''
+    $('stats').style.opacity = busy ? '.6' : ''
 
     if (!data) return
     if (!entries.length) {
@@ -286,14 +288,15 @@ function view(lib, TIKKI, ICONS) {
   async function load() {
     const span = bounds()
     if (!span) { data = { entries: [] }; return render() }
-    const ticket = ++loading
+    const mine = ++seq
+    busy = true
     render()
     try {
       const d = await call('/api/timesheet?from=' + span[0].getTime() + '&to=' + span[1].getTime())
-      if (ticket !== loading) return
+      if (mine !== seq) return
       data = d
     } catch (e) {
-      if (ticket !== loading) return
+      if (mine !== seq) return
       if (e.status === 403) {
         $('loading').hidden = true
         $('app').hidden = true
@@ -307,7 +310,7 @@ function view(lib, TIKKI, ICONS) {
       data = null
       $('result').replaceChildren(panel(ICONS.clock, 'The timesheet did not load', e.message, 'bad', retry))
     } finally {
-      if (ticket === loading) loading = 0
+      if (mine === seq) busy = false
     }
     render()
   }
