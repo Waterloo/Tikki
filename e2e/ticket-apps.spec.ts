@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type Page } from '@playwright/test'
+import { expect, test, type APIRequestContext, type Locator, type Page } from '@playwright/test'
 import { ADMIN_STATE, signInAsAdmin } from './sign-in'
 import { APP_ORIGIN, appFrame, appUrl, contexts } from './ticket-app'
 
@@ -277,5 +277,111 @@ test('the admin page adds, orders, turns off and deletes an app', async ({ brows
   await dialog.getByRole('button', { name: 'Delete' }).click()
   await dialog.getByRole('button', { name: 'Delete app' }).click()
   await expect(row).toHaveCount(0)
+  await context.close()
+})
+
+// Issue 38: icons. Two square SVGs with a size, so `naturalWidth` shows that the image loaded.
+const svg = (fill: string) => Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><rect width="64" height="64" fill="${fill}"/></svg>`)
+const LIGHT_ICON = svg('#e11d48')
+const DARK_ICON = svg('#38bdf8')
+
+async function uploadIcon(id: number, mode: 'light' | 'dark', body: Buffer) {
+  const res = await admin.put(`/api/v1/admin/ticket-apps/${id}/icon?mode=${mode}`, { data: body, headers: { 'content-type': 'image/svg+xml' } })
+  expect(res.status(), await res.text()).toBe(200)
+}
+
+/** The icon inside `scope`: what it is, and for an image which mode it asked for and whether it loaded. */
+async function iconOf(scope: Locator) {
+  const icon = scope.locator('[data-app-icon]').first()
+  await expect(icon).toBeVisible()
+  const kind = await icon.getAttribute('data-app-icon')
+  if (kind === 'builtin') return { kind, color: await icon.evaluate(el => getComputedStyle(el).color) }
+  await expect.poll(() => icon.evaluate((el: HTMLImageElement) => el.complete && el.naturalWidth > 0)).toBe(true)
+  return { kind, mode: new URL(await icon.evaluate((el: HTMLImageElement) => el.currentSrc)).searchParams.get('mode') }
+}
+
+for (const scheme of ['light', 'dark'] as const) {
+  test(`app icons show on the card, the tab and the admin list, ${scheme} mode`, async ({ browser, baseURL }) => {
+    stamp = Date.now()
+    const { Bug: bug } = await types()
+    const plain = await addApp({ name: `Plain ${stamp}`, sidebar_url: appUrl(baseURL!), ticket_type_ids: [bug!.id], icon_name: 'i-lucide-bug', icon_color: '#C2362F' })
+    const both = await addApp({ name: `Both ${stamp}`, sidebar_url: appUrl(baseURL!), tab_url: appUrl(baseURL!), ticket_type_ids: [bug!.id] })
+    const lightOnly = await addApp({ name: `Light ${stamp}`, sidebar_url: appUrl(baseURL!), ticket_type_ids: [bug!.id] })
+    await uploadIcon(both.id, 'light', LIGHT_ICON)
+    await uploadIcon(both.id, 'dark', DARK_ICON)
+    await uploadIcon(lightOnly.id, 'light', LIGHT_ICON)
+    const ref = await raise(admin, bug!, `Icons ${stamp}`)
+
+    const context = await browser.newContext({ storageState: undefined, colorScheme: scheme })
+    const page = await staffPage(await context.newPage())
+    await page.goto(`/tickets/${ref}`)
+    expect(await iconOf(page.getByRole('region', { name: plain.name }))).toEqual({ kind: 'builtin', color: 'rgb(194, 54, 47)' })
+    expect(await iconOf(page.getByRole('region', { name: both.name }))).toEqual({ kind: 'image', mode: scheme })
+    // No dark image: the light one shows in dark mode.
+    expect(await iconOf(page.getByRole('region', { name: lightOnly.name }))).toEqual({ kind: 'image', mode: 'light' })
+    expect(await iconOf(page.getByRole('tab', { name: both.name }))).toEqual({ kind: 'image', mode: scheme })
+
+    await page.goto('/admin/apps')
+    expect(await iconOf(page.getByRole('region', { name: plain.name }))).toEqual({ kind: 'builtin', color: 'rgb(194, 54, 47)' })
+    expect(await iconOf(page.getByRole('region', { name: both.name }))).toEqual({ kind: 'image', mode: scheme })
+    expect(await iconOf(page.getByRole('region', { name: lightOnly.name }))).toEqual({ kind: 'image', mode: 'light' })
+    await context.close()
+  })
+}
+
+test('the admin form uploads a light and a dark image, refuses a wrong file, and removes the dark image', async ({ browser, baseURL }) => {
+  stamp = Date.now()
+  const context = await browser.newContext({ storageState: undefined })
+  const page = await staffPage(await context.newPage())
+  await page.goto('/admin/apps')
+  const name = `Icon form ${stamp}`
+  const dialog = page.getByRole('dialog')
+  await page.getByRole('button', { name: 'Add app' }).first().click()
+  await dialog.getByLabel('Name').fill(name)
+  await dialog.getByLabel('Sidebar URL').fill(appUrl(baseURL!))
+
+  // The built-in picker is the default. Image mode needs a light image to save.
+  await dialog.getByRole('button', { name: 'Upload image' }).click()
+  await expect(dialog.getByLabel('Dark image file')).toBeDisabled()
+  await dialog.getByRole('button', { name: 'Add app' }).click()
+  await expect(dialog.getByText('Add a light image, or choose a built-in icon.', { exact: true })).toBeVisible()
+
+  await dialog.getByLabel('Light image file').setInputFiles({ name: 'anim.gif', mimeType: 'image/gif', buffer: Buffer.from('GIF89a') })
+  await expect(dialog.getByText('The image must be a PNG, WebP or SVG file.', { exact: true })).toBeVisible()
+  await dialog.getByLabel('Light image file').setInputFiles({ name: 'big.svg', mimeType: 'image/svg+xml', buffer: Buffer.concat([svg('#000'), Buffer.alloc(256 * 1024)]) })
+  await expect(dialog.getByText('The image must be 256 KB or smaller.', { exact: true })).toBeVisible()
+
+  await dialog.getByLabel('Light image file').setInputFiles({ name: 'light.svg', mimeType: 'image/svg+xml', buffer: LIGHT_ICON })
+  await dialog.getByLabel('Dark image file').setInputFiles({ name: 'dark.svg', mimeType: 'image/svg+xml', buffer: DARK_ICON })
+  await expect(dialog.getByTestId('icon-preview-light')).toBeVisible()
+  await expect(dialog.getByTestId('icon-tile-dark').locator('img')).toHaveAttribute('src', /^blob:/)
+  await dialog.getByRole('button', { name: 'Add app' }).click()
+  await expect(dialog).toBeHidden()
+
+  const row = page.getByRole('region', { name })
+  const list = (await (await admin.get('/api/v1/admin/ticket-apps')).json()).data as { id: number, name: string, icon: { light: boolean, dark: boolean } }[]
+  const mine = list.find(a => a.name === name)!
+  created.push(mine.id)
+  expect(mine.icon).toMatchObject({ light: true, dark: true })
+  expect(await iconOf(row)).toEqual({ kind: 'image', mode: 'light' })
+
+  // Remove the dark image alone.
+  await row.getByRole('button', { name: 'Edit' }).click()
+  await expect(dialog.getByTestId('icon-preview-dark')).toBeVisible()
+  await dialog.getByRole('button', { name: 'Remove the dark image' }).click()
+  await dialog.getByRole('button', { name: 'Save' }).click()
+  await expect(dialog).toBeHidden()
+  const after = (await (await admin.get('/api/v1/admin/ticket-apps')).json()).data as typeof list
+  expect(after.find(a => a.id === mine.id)!.icon).toMatchObject({ light: true, dark: false })
+
+  // Back to a built-in icon: the images go.
+  await row.getByRole('button', { name: 'Edit' }).click()
+  await dialog.getByRole('button', { name: 'Built-in icon' }).click()
+  await dialog.getByRole('button', { name: 'Bug icon' }).click()
+  await dialog.getByRole('button', { name: 'Save' }).click()
+  await expect(dialog).toBeHidden()
+  const final = (await (await admin.get('/api/v1/admin/ticket-apps')).json()).data as (typeof list[number] & { icon: { name: string, kind: string } })[]
+  expect(final.find(a => a.id === mine.id)!.icon).toMatchObject({ kind: 'builtin', name: 'i-lucide-bug', light: false })
+  expect((await admin.get(`/api/v1/ticket-apps/${mine.id}/icon?mode=light`)).status()).toBe(404)
   await context.close()
 })

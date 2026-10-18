@@ -199,4 +199,17 @@ describe('migrations keep data', () => {
     expect((await sequences()).ticket_app).toBe(5)
     await expect(db.prepare('INSERT INTO ticket_app (name, sort_order, created_at) VALUES (\'No URL\', 9, 0)').run()).rejects.toThrow(/CHECK/)
   })
+  it('issue 38: an existing app keeps its row and gets the built-in app-window icon in neutral', async () => {
+    const migrations = env.TEST_MIGRATIONS
+    const at = migrations.findIndex(m => m.name.includes('issue_38_ticket_app_icons'))
+    expect(at).toBeGreaterThan(0)
+    await dropEverything()
+    await applyD1Migrations(db, migrations.slice(0, at))
+    await db.prepare('INSERT INTO ticket_app (id, name, sidebar_url, sort_order, created_at) VALUES (4, \'Orders\', \'https://orders.example.com/card\', 1, 1000)').run()
+    await applyD1Migrations(db, migrations.slice(at))
+    expect(await q('SELECT id, name, sidebar_url, icon_name, icon_color, icon_light_type, icon_dark_type, icon_version FROM ticket_app')).toEqual([
+      { id: 4, name: 'Orders', sidebar_url: 'https://orders.example.com/card', icon_name: 'i-lucide-app-window', icon_color: '#4B5563', icon_light_type: null, icon_dark_type: null, icon_version: 0 },
+    ])
+    expect((await sequences()).ticket_app).toBe(4)
+  })
 })

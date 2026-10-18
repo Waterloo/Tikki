@@ -1,14 +1,16 @@
 <script setup lang="ts">
 import { TYPE_COLORS, TYPE_ICONS } from '~~/shared/ticket-type-rules'
 
-defineProps<{
+withDefaults(defineProps<{
+  /** The icons to choose from. Ticket Apps pass their own list. */
+  icons?: readonly { icon: string, label: string }[]
   /** Colors that another type uses. They stay choosable and are marked for screen readers. */
   usedColors?: readonly string[]
   iconSuggested?: boolean
   colorSuggested?: boolean
   /** Show only the color (the editor has icon and color in different cards). */
   only?: 'icon' | 'color'
-}>()
+}>(), { icons: () => TYPE_ICONS })
 
 const icon = defineModel<string>('icon', { required: true })
 const color = defineModel<string>('color', { required: true })
@@ -22,7 +24,7 @@ const color = defineModel<string>('color', { required: true })
       </span>
       <div role="group" aria-label="Icon" class="flex flex-wrap gap-1.5">
         <button
-          v-for="ic in TYPE_ICONS"
+          v-for="ic in icons"
           :key="ic.icon"
           type="button"
           :aria-label="ic.label"

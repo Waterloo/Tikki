@@ -513,6 +513,13 @@ export const ticketApp = sqliteTable('ticket_app', {
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(() => new Date()),
   // Issue 35
   access: text('access', { enum: TICKET_APP_ACCESS }).notNull().default('read'),
+  // Issue 38: a built-in icon and color, or uploaded images in R2 (`ticket-app-icons/{id}/{mode}`). Image types come
+  // from the bytes. No light type: the built-in icon shows. `iconVersion` changes with every icon change.
+  iconName: text('icon_name').notNull().default('i-lucide-app-window'),
+  iconColor: text('icon_color').notNull().default('#4B5563'),
+  iconLightType: text('icon_light_type'),
+  iconDarkType: text('icon_dark_type'),
+  iconVersion: integer('icon_version').notNull().default(0),
 }, () => [
   check('ticket_app_one_url', sql`sidebar_url IS NOT NULL OR tab_url IS NOT NULL OR page_url IS NOT NULL`),
 ])
