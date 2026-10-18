@@ -140,6 +140,14 @@ _Avoid_: Private ticket, confidential ticket
 
 ## Change and delivery
 
+**Ticket App**:
+An external web page that an Admin adds to the ticket page, as a sidebar card or a tab. Only Agents and Admins see it. It gets the ticket context and a Context Token.
+_Avoid_: Dashboard app, plugin, integration
+
+**Context Token**:
+A short-lived signed token that says which Agent has which ticket open in which Ticket App. The app's backend uses it to trust the context and, with the right scope, to change that one ticket through the API as that Agent.
+_Avoid_: App key, session token
+
 **Activity**:
 The permanent record of each change to a ticket, with the Principal that made it.
 _Avoid_: History, timeline, audit trail (for a single ticket)
