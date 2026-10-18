@@ -29,22 +29,7 @@ You need no SDK. A Ticket App is a normal web page with about 20 lines of JavaSc
 
 ## How it works
 
-```
- Agent's browser                                             Your servers
-┌──────────────────────────────────────────────┐
-│ Tikki ticket page  (https://tikki.example)   │
-│                                              │
-│   ┌──────────────────────────────────────┐   │
-│   │ iframe: your app (https://app.you)   │   │
-│   │                                      │   │   token    ┌──────────────┐
-│   │  1. sends tikki:fetch-context ─────► │   │ ─────────► │ your backend │
-│   │  2. ◄──── gets tikki:context +token  │   │            │ 3. checks it │
-│   │                                      │   │            │   with JWKS  │
-│   └──────────────────────────────────────┘   │            └──────┬───────┘
-└──────────────────────────────────────────────┘                   │
-                                                 4. optional: REST │ Bearer <token>
-                                         Tikki API  ◄──────────────┘
-```
+![The Tikki ticket page loads your app in an iframe. 1: your app sends tikki:fetch-context. 2: it gets tikki:context and the token. 3: your backend checks the token with Tikki's public keys. 4: optional, your backend calls the Tikki REST API with the token.](assets/ticket-apps-flow.svg)
 
 1. The Agent opens a ticket. Tikki loads the URL of each placement in its own iframe.
 2. Your page asks for the context. Tikki answers with the ticket, the requester, the Agent, and a **context token**.

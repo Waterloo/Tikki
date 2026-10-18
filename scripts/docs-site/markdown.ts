@@ -1,4 +1,5 @@
-import { posix } from 'node:path'
+import { readFileSync } from 'node:fs'
+import { join, posix } from 'node:path'
 import { Marked, type Token, type Tokens } from 'marked'
 import { createHighlighter } from 'shiki'
 
@@ -75,6 +76,8 @@ function groupTabs(hl: Highlighter, tokens: Token[]): Token[] {
 }
 
 export interface RenderOptions {
+  /** The repository root, for images. */
+  root: string
   /** The Markdown file's path from the repository root, for relative links. */
   file: string
   /** Docs file name → docs URL, for links between guides. */
@@ -140,6 +143,18 @@ export function renderMarkdown(hl: Highlighter, source: string, opts: RenderOpti
       html(token) {
         if ((token as Tokens.HTML & { tabs?: true }).tabs) return token.text
         throw new Error(`Docs: ${opts.file} has raw HTML: ${token.raw.trim().slice(0, 60)}`)
+      },
+      // An SVG goes inline: it then takes the page's colors and theme, and the page loads nothing more.
+      image({ href: link, text }) {
+        const target = posix.normalize(posix.join(dir, link))
+        if (!/^docs\/assets\/[\w-]+\.svg$/.test(target)) throw new Error(`Docs: ${opts.file} shows "${link}". Only SVG files in docs/assets are allowed.`)
+        const svg = readFileSync(join(opts.root, target), 'utf8').replace(/<\?xml[^>]*>\s*/, '')
+        return `<figure class="diagram" data-scroll-x>${svg.replace('<svg ', `<svg role="img" aria-label="${escapeHtml(text)}" `)}</figure>`
+      },
+      // A paragraph that holds only an image is the figure, not a <p> around it.
+      paragraph({ tokens }) {
+        const inner = this.parser.parseInline(tokens)
+        return tokens.length === 1 && tokens[0]!.type === 'image' ? `${inner}\n` : `<p>${inner}</p>\n`
       },
       checkbox({ checked }) {
         return `<input type="checkbox" disabled${checked ? ' checked' : ''} aria-hidden="true"> `

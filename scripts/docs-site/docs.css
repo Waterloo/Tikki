@@ -163,6 +163,14 @@ body.wide .content { max-width: 1180px; }
 .table tbody tr:first-child td { border-top: 0; }
 .table td:first-child code { white-space: nowrap; }
 
+.diagram { margin: 0 0 18px; overflow-x: auto; }
+.diagram svg { display: block; width: 100%; min-width: 600px; height: auto; }
+.diagram { margin-bottom: 10px; }
+.diagram-play { margin-bottom: 14px; }
+.diagram-play .play-icon { font-size: 10px; }
+.prose li.step-on { color: var(--ui-text-highlighted); }
+.prose li.step-on::marker { color: var(--docs-link); font-weight: 600; }
+
 .callout { margin: 18px 0; padding: 14px 16px 14px 44px; border: 1px solid var(--docs-note-border); border-radius: 10px; background: var(--docs-note-bg); color: var(--docs-note-text); font-size: 14px; position: relative; }
 .callout::before { content: 'i'; position: absolute; left: 16px; top: 15px; width: 16px; height: 16px; border: 1.75px solid currentColor; border-radius: 99px; font: 700 11px/13px Geist, sans-serif; text-align: center; }
 .callout p:last-child { margin-bottom: 0; }

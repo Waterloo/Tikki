@@ -69,6 +69,24 @@ test('search finds a section on another page and opens it', async ({ page }) => 
   await expect(dialog).toBeHidden()
 })
 
+test('the How it works figure steps through the numbered list', async ({ page }) => {
+  await page.goto('/docs/ticket-apps')
+  const svg = page.locator('figure.diagram svg[data-steps]')
+  const steps = page.locator('figure.diagram + .diagram-play + ol > li')
+  await expect(svg).toHaveAttribute('role', 'img')
+  await expect(svg).not.toHaveAttribute('data-step')
+  await page.getByRole('button', { name: 'Play the steps' }).click()
+  await expect(svg).toHaveAttribute('data-step', '1')
+  await expect(steps.nth(0)).toHaveClass(/step-on/)
+  await expect(svg).toHaveAttribute('data-step', '2', { timeout: 3000 })
+  await page.getByRole('button', { name: 'Stop', exact: true }).click()
+  await expect(svg).not.toHaveAttribute('data-step')
+
+  await steps.nth(2).hover()
+  await expect(svg).toHaveAttribute('data-step', '3')
+  await expect(steps.nth(2)).toHaveClass(/step-on/)
+})
+
 test('the theme switch holds, with the same key as the web app', async ({ page }) => {
   await page.emulateMedia({ colorScheme: 'light' })
   await page.goto('/docs/webhooks')

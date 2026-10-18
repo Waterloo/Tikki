@@ -42,6 +42,8 @@ Each page is also at `/docs/<page>.md`. The sidebar and "On this page" come from
   ```
   ````
 
+- **Diagrams:** draw them as SVG files in `docs/assets/` and show them with `![text for screen readers](assets/name.svg)`. The build puts the SVG inline, so it takes the page colors and the theme switch. Scope its `<style>` rules to one class (see `ticket-apps-flow.svg`), and give each color a fallback for GitHub. No other images: the build fails on them. Do not draw diagrams with box characters; they do not line up in every font.
+  - **Step-through:** give the `<svg>` `data-steps="N"`, put each step in `<g class="step step-1">` … with one `data-path` for the moving dot, and follow the image with a numbered list of the same N steps. The page adds **Play the steps**, and pointing at a list item highlights its step. See `ticket-apps-flow.svg`.
 - **The instance address:** write `https://tikki.example.com`. The page shows the address of the instance that serves it.
 - **Links:** link other guides by file name (`webhooks.md#retries`). The build turns them into docs links. Links to other files in the repository go to GitHub.
 - **API examples** live in the OpenAPI document (`example` on each request and response). A test parses each one with the schema it shows.

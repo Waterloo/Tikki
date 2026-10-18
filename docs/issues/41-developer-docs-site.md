@@ -16,6 +16,7 @@ Owner request, 2026-10-18: a polished HTML docs site for developers, served by T
 - Search over every `##`/`###` section (`/docs/search.json`, ⌘K or `/`), language tabs that hold across blocks and visits, copy buttons, "Copy page as Markdown", light and dark mode with the web app's storage key, a menu at phone width.
 - Examples are written with `https://tikki.example.com`; the page shows the address of the instance that serves it, also in copied code.
 - `/api/docs/ticket-apps.md` answers `301` to `/docs/ticket-apps.md`.
+- "How it works" in the Ticket Apps guide is an SVG (`docs/assets/ticket-apps-flow.svg`) in place of the box-character drawing: a ticket page with the app as a sidebar card, and a step-through (Play, or point at a step of the list) driven by the numbered list under it. On GitHub it is a still image.
 - Links: admin Ticket Apps ("Read the developer guide"), Applications and Webhooks ("Developer docs"), Settings ("Developers" section), README.
 
 ## Acceptance criteria

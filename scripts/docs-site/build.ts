@@ -79,7 +79,7 @@ export async function buildDocsSite(root: string, openapi: OpenApiDocument): Pro
 
   const pageUrl = Object.fromEntries(GUIDES.map(g => [g.file, `/docs/${g.slug}`]))
   const guides = GUIDES.map(g => ({ ...g, md: read(g.file), url: `/docs/${g.slug}` }))
-    .map(g => ({ ...g, ...renderMarkdown(hl, g.md, { file: g.file, pages: pageUrl }) }))
+    .map(g => ({ ...g, ...renderMarkdown(hl, g.md, { root, file: g.file, pages: pageUrl }) }))
   const api = renderApiReference(hl, openapi, apiLimits(root))
   const groups = operations(openapi)
 

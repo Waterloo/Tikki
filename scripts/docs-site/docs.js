@@ -75,6 +75,61 @@
     }
   })
 
+  // Step-through diagrams: an SVG with data-steps, followed by the numbered list that explains the steps.
+  // Pointing at a step, or Play, highlights it, and a dot travels along its wire. The list text is the source.
+  const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)')
+  for (const svg of document.querySelectorAll('figure.diagram svg[data-steps]')) {
+    const figure = svg.closest('figure')
+    const list = figure.nextElementSibling?.tagName === 'OL' ? figure.nextElementSibling : null
+    const items = list ? [...list.children] : []
+    const steps = Number(svg.dataset.steps)
+    const motion = document.createElementNS('http://www.w3.org/2000/svg', 'animateMotion')
+    motion.setAttribute('begin', 'indefinite')
+    motion.setAttribute('fill', 'freeze')
+    svg.querySelector('.packet')?.append(motion)
+    const show = (n) => {
+      items.forEach((li, i) => li.classList.toggle('step-on', i === n - 1))
+      if (!n) return svg.removeAttribute('data-step')
+      svg.dataset.step = n
+      motion.setAttribute('path', svg.querySelector(`.step-${n} [data-path]`).getAttribute('d'))
+      motion.setAttribute('dur', reduceMotion.matches ? '0.01s' : '1.1s')
+      motion.beginElement()
+      // On a phone the figure scrolls sideways: bring the active step into view.
+      const box = figure.getBoundingClientRect()
+      const part = svg.querySelector(`.step-${n}`).getBoundingClientRect()
+      if (part.left < box.left || part.right > box.right) {
+        figure.scrollBy({ left: part.left - box.left - 16, behavior: reduceMotion.matches ? 'auto' : 'smooth' })
+      }
+    }
+    let timer
+    const play = document.createElement('button')
+    play.type = 'button'
+    play.className = 'btn diagram-play'
+    const label = document.createElement('span')
+    play.append(Object.assign(document.createElement('span'), { className: 'play-icon', ariaHidden: 'true', textContent: '▶' }), label)
+    label.textContent = 'Play the steps'
+    const stop = () => {
+      clearTimeout(timer)
+      timer = undefined
+      label.textContent = 'Play the steps'
+    }
+    const run = (n) => {
+      if (n > steps) { stop(); setTimeout(() => { if (!timer) show(0) }, 1200); return }
+      show(n)
+      timer = setTimeout(() => run(n + 1), 1700)
+    }
+    play.addEventListener('click', () => {
+      if (timer) { stop(); return show(0) }
+      label.textContent = 'Stop'
+      run(1)
+    })
+    figure.after(play)
+    items.slice(0, steps).forEach((li, i) => {
+      li.addEventListener('mouseenter', () => { stop(); show(i + 1) })
+      li.addEventListener('mouseleave', () => { if (!timer) show(0) })
+    })
+  }
+
   // Menu on narrow screens.
   const menu = document.querySelector('[data-menu]')
   const setMenu = (open) => {

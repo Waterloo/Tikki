@@ -150,6 +150,18 @@ describe('docs site', () => {
     expect(table('Tools in the page')).toEqual(page)
   })
 
+  it('puts the SVG diagrams inline, with a text for screen readers', () => {
+    const page = html('docs/ticket-apps.html')
+    expect(page).toMatch(/<figure class="diagram" data-scroll-x><svg role="img" aria-label="The Tikki ticket page[^"]*"/)
+    // Inline styles reach the whole page, so each diagram scopes its rules to its own class.
+    for (const [, css] of page.matchAll(/<figure class="diagram"[\s\S]*?<style>([\s\S]*?)<\/style>/g)) {
+      for (const [, selector] of css!.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}@]+)\{/g)) {
+        if (selector!.includes('prefers-color-scheme')) continue
+        expect(selector!.trim(), 'diagram CSS').toMatch(/^\.tkd\b/)
+      }
+    }
+  })
+
   it('gives each guide a table of errors and edge cases', () => {
     for (const g of GUIDES) expect(ids(`docs/${g.slug}.html`).has('errors-and-edge-cases'), g.file).toBe(true)
   })
