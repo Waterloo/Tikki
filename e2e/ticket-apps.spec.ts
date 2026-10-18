@@ -47,9 +47,9 @@ const frameHeight = (page: Page, name: string) => page.locator(`iframe[title="${
 test('a sidebar app gets the context from its own origin only, and resizes within the limits', async ({ browser, baseURL }) => {
   stamp = Date.now()
   const { 'General request': general } = await types()
-  const app = await addApp({ name: `Orders ${stamp}`, url: appUrl(baseURL!), position: 'sidebar' })
+  const app = await addApp({ name: `Orders ${stamp}`, sidebar_url: appUrl(baseURL!) })
   // Same origin as Orders: only the event source tells their messages apart.
-  const twin = await addApp({ name: `Refunds ${stamp}`, url: appUrl(baseURL!, 'normal', '&app=twin'), position: 'sidebar' })
+  const twin = await addApp({ name: `Refunds ${stamp}`, sidebar_url: appUrl(baseURL!, 'normal', '&app=twin') })
   const ref = await raise(admin, general!, `Charged twice ${stamp}`)
 
   const context = await browser.newContext({ storageState: undefined, colorScheme: 'dark' })
@@ -68,10 +68,10 @@ test('a sidebar app gets the context from its own origin only, and resizes withi
   await expect(frame.locator('#ref')).toHaveText(ref)
   const [first] = await contexts(frame)
   expect(first!.theme).toBe('dark')
-  expect(first!.data).toMatchObject({ version: 1, app: { id: app.id, position: 'sidebar' }, ticket: { ref, ticket_type: { id: general!.id } }, requester: { kind: 'user' } })
+  expect(first!.data).toMatchObject({ version: 1, app: { id: app.id }, ticket: { ref, ticket_type: { id: general!.id } }, requester: { kind: 'user' } })
   expect(first!.data).not.toHaveProperty('comments')
   const claims = JSON.parse(Buffer.from(first!.token.split('.')[1]!, 'base64url').toString())
-  expect(claims).toMatchObject({ aud: APP_ORIGIN, tikki_ticket: ref, tikki_scope: 'read', tikki_app: app.id })
+  expect(claims).toMatchObject({ aud: APP_ORIGIN, tikki_ticket: ref, tikki_scope: 'read', tikki_app: app.id, tikki_placement: 'sidebar' })
 
   // Resize, clamped to 120..600.
   const resize = (height: number) => frame.evaluate(([h, origin]) => window.parent.postMessage({ type: 'tikki:resize', height: h }, origin as string), [height, baseURL!] as const)
@@ -107,10 +107,46 @@ test('a sidebar app gets the context from its own origin only, and resizes withi
   await context.close()
 })
 
+test('one app with a sidebar URL and a tab URL shows a card and a tab, each frame with its own placement', async ({ browser, baseURL }) => {
+  stamp = Date.now()
+  const { 'General request': general } = await types()
+  // The tab on another origin, so each token's audience is the origin of its own placement.
+  const tabOrigin = APP_ORIGIN.replace('localhost', '127.0.0.1')
+  const app = await addApp({
+    name: `Orders ${stamp}`,
+    sidebar_url: appUrl(baseURL!, 'normal', '&app=both'),
+    tab_url: appUrl(baseURL!, 'normal', '&app=both').replace(APP_ORIGIN, tabOrigin),
+  })
+  const ref = await raise(admin, general!, `Two views ${stamp}`)
+  const context = await browser.newContext({ storageState: undefined })
+  const page = await staffPage(await context.newPage())
+  await page.goto(`/tickets/${ref}`)
+  await expect(page.getByRole('region', { name: app.name, exact: true })).toBeVisible()
+  const tabButton = page.getByRole('tab', { name: app.name, exact: true })
+  await expect(tabButton).toBeVisible()
+
+  const claims = (token: string) => JSON.parse(Buffer.from(token.split('.')[1]!, 'base64url').toString())
+  const check = async (placement: 'sidebar' | 'tab', origin: string) => {
+    const frame = await appFrame(page, app.name, placement)
+    const url = new URL(frame.url())
+    expect(url.origin).toBe(origin)
+    // The Admin's own query stays.
+    expect(url.searchParams.get('app')).toBe('both')
+    expect(url.searchParams.get('placement')).toBe(placement)
+    const [first] = await contexts(frame)
+    expect(first!.data.app).toEqual({ id: app.id, name: app.name, placement })
+    expect(claims(first!.token)).toMatchObject({ aud: origin, tikki_app: app.id, tikki_placement: placement, tikki_ticket: ref })
+  }
+  await check('sidebar', APP_ORIGIN)
+  await tabButton.click()
+  await check('tab', tabOrigin)
+  await context.close()
+})
+
 test('an app with comment access adds an internal note through its backend, and the ticket reloads', async ({ browser, baseURL }) => {
   stamp = Date.now()
   const { 'General request': general } = await types()
-  const app = await addApp({ name: `Refunds ${stamp}`, url: appUrl(baseURL!, 'writer'), position: 'sidebar', access: 'comment' })
+  const app = await addApp({ name: `Refunds ${stamp}`, sidebar_url: appUrl(baseURL!, 'writer'), access: 'comment' })
   const ref = await raise(admin, general!, `Refund please ${stamp}`)
 
   const context = await browser.newContext({ storageState: undefined })
@@ -132,7 +168,7 @@ test('an app with comment access adds an internal note through its backend, and 
 test('an app that does not answer in 10 s shows a message with Retry', async ({ browser, baseURL }) => {
   test.setTimeout(60_000)
   const { 'General request': general } = await types()
-  const app = await addApp({ name: `Silent ${stamp}`, url: appUrl(baseURL!, 'silent'), position: 'sidebar' })
+  const app = await addApp({ name: `Silent ${stamp}`, sidebar_url: appUrl(baseURL!, 'silent') })
   const ref = await raise(admin, general!, `Silent app ${stamp}`)
   const context = await browser.newContext({ storageState: undefined })
   const page = await staffPage(await context.newPage())
@@ -148,8 +184,8 @@ test('an app that does not answer in 10 s shows a message with Retry', async ({ 
 
 test('a tab app loads only when its tab opens; an app for chosen types shows only on them', async ({ browser, baseURL }) => {
   const { 'General request': general, Bug: bug } = await types()
-  const tab = await addApp({ name: `History ${stamp}`, url: appUrl(baseURL!, 'normal', '&app=tab'), position: 'tab' })
-  const bugOnly = await addApp({ name: `Crash log ${stamp}`, url: appUrl(baseURL!, 'normal', '&app=bug'), position: 'sidebar', ticket_type_ids: [bug!.id] })
+  const tab = await addApp({ name: `History ${stamp}`, tab_url: appUrl(baseURL!, 'normal', '&app=tab') })
+  const bugOnly = await addApp({ name: `Crash log ${stamp}`, sidebar_url: appUrl(baseURL!, 'normal', '&app=bug'), ticket_type_ids: [bug!.id] })
   const generalRef = await raise(admin, general!, `Tab app ${stamp}`)
   const bugRef = await raise(admin, bug!, `Bug app ${stamp}`)
 
@@ -184,8 +220,8 @@ test('a tab app loads only when its tab opens; an app for chosen types shows onl
 
 test('a Requester sees no apps on their own ticket and asks for no token', async ({ page, baseURL }) => {
   const { 'General request': general } = await types()
-  const app = await addApp({ name: `Hidden ${stamp}`, url: appUrl(baseURL!), position: 'sidebar' })
-  await addApp({ name: `Hidden tab ${stamp}`, url: appUrl(baseURL!), position: 'tab' })
+  const app = await addApp({ name: `Hidden ${stamp}`, sidebar_url: appUrl(baseURL!) })
+  await addApp({ name: `Hidden tab ${stamp}`, tab_url: appUrl(baseURL!) })
   // The default context is the shared Requester.
   const ref = await raise(page.request, general!, `Requester ticket ${stamp}`)
   const calls: string[] = []
@@ -197,7 +233,7 @@ test('a Requester sees no apps on their own ticket and asks for no token', async
   await expect(page.getByRole('region', { name: app.name })).toHaveCount(0)
   await expect(page.getByRole('tab')).toHaveCount(2)
   expect(calls).toEqual([])
-  expect((await page.request.post(`/api/v1/tickets/${ref}/apps/${app.id}/token`)).status()).toBe(403)
+  expect((await page.request.post(`/api/v1/tickets/${ref}/apps/${app.id}/token`, { data: { placement: 'sidebar' } })).status()).toBe(403)
 })
 
 test('the admin page adds, orders, turns off and deletes an app', async ({ browser, baseURL }) => {
@@ -212,11 +248,11 @@ test('the admin page adds, orders, turns off and deletes an app', async ({ brows
   const dialog = page.getByRole('dialog')
   await page.getByRole('button', { name: 'Add app' }).first().click()
   await dialog.getByLabel('Name').fill(name)
-  await dialog.getByLabel('URL').fill('http://orders.example.com/')
+  await dialog.getByLabel('Sidebar URL').fill('http://orders.example.com/')
   await dialog.getByRole('radio', { name: 'Only these types' }).check()
   await dialog.getByRole('button', { name: 'Add app' }).click()
   await expect(dialog.getByText('Must use https.')).toBeVisible()
-  await dialog.getByLabel('URL').fill(appUrl(baseURL!))
+  await dialog.getByLabel('Sidebar URL').fill(appUrl(baseURL!))
   await dialog.getByRole('button', { name: 'Add app' }).click()
   await expect(dialog.getByText('at least one', { exact: false })).toBeVisible()
   await dialog.getByRole('checkbox', { name: bug!.name }).check()

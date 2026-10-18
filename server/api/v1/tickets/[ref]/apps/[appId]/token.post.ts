@@ -1,10 +1,10 @@
 import { authorizeTicketApps } from '../../../../../../utils/policy'
-import { apiError, routeId, routeTicketNumber, sessionPrincipal, ticketAppError } from '../../../../../../utils/rest'
+import { apiError, readJson, routeId, routeTicketNumber, sessionPrincipal, ticketAppError, validationFailed } from '../../../../../../utils/rest'
 import { db } from '../../../../../../utils/services'
-import { contextToken } from '../../../../../../utils/ticket-apps'
+import { contextToken, contextTokenInput } from '../../../../../../utils/ticket-apps'
 import { getTicket } from '../../../../../../utils/tickets'
 
-/** A context token and the context for one app on one ticket (ADR 0004). Records nothing. */
+/** `{ placement }`: a context token and the context for one placement of one app on one ticket (ADR 0004, 0005). Records nothing. */
 export default defineEventHandler(async (event) => {
   // Session only. A Bearer header is refused, so no key or token can mint a token.
   if (event.headers.has('authorization')) return apiError(403, 'FORBIDDEN', 'A context token needs a web session. An API key cannot get one.')
@@ -13,10 +13,14 @@ export default defineEventHandler(async (event) => {
   const refusal = authorizeTicketApps(principal)
   if (refusal) return apiError(refusal.status, refusal.code, refusal.message)
   const appId = routeId(event, 'appId')
+  const body = await readJson(event)
+  if (body instanceof Response) return body
+  const parsed = contextTokenInput.safeParse(body.value)
+  if (!parsed.success) return validationFailed(parsed.error.issues)
   try {
     const ticket = await getTicket(db, principal, routeTicketNumber(event))
     if (appId === null) return apiError(404, 'NOT_FOUND', 'No Ticket App has this ID.')
-    return await contextToken(db, principal, appId, ticket)
+    return await contextToken(db, principal, appId, parsed.data.placement, ticket)
   } catch (error) {
     return ticketAppError(error)
   }

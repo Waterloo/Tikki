@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import type { ContextToken, TicketAppFrame } from '~/types/ticket-apps'
+import type { ContextToken, FramePlacement, TicketAppFrame } from '~/types/ticket-apps'
 
-/** One Ticket App in a sandboxed iframe, and the messages of docs/ticket-apps.md. */
+/** One placement of a Ticket App in a sandboxed iframe, and the messages of docs/ticket-apps.md. */
 const props = defineProps<{
   app: TicketAppFrame
+  /** The app has a URL for it. */
+  placement: FramePlacement
   ticketRef: string
   /** Changes when the ticket changed, so the app gets a new context. */
   ticketVersion: string
@@ -18,7 +20,14 @@ const MAX_HEIGHT = 600
 const RENEW_BEFORE_MS = 60_000
 
 const colorMode = useColorMode()
-const origin = computed(() => new URL(props.app.url).origin)
+const appUrl = computed(() => new URL(props.app.urls[props.placement]!))
+const origin = computed(() => appUrl.value.origin)
+// The Admin's own query stays.
+const src = computed(() => {
+  const url = new URL(appUrl.value)
+  url.searchParams.set('placement', props.placement)
+  return url.href
+})
 const frame = ref<HTMLIFrameElement>()
 const state = ref<'loading' | 'ready' | 'failed'>('loading')
 const problem = ref('')
@@ -43,7 +52,7 @@ function getContext(): Promise<ContextToken> {
   if (context && Date.now() < renewAt) return Promise.resolve(context)
   if (inflight) return inflight
   const gen = generation
-  const request = $fetch<ContextToken>(`/api/v1/tickets/${encodeURIComponent(props.ticketRef)}/apps/${props.app.id}/token`, { method: 'POST' })
+  const request = $fetch<ContextToken>(`/api/v1/tickets/${encodeURIComponent(props.ticketRef)}/apps/${props.app.id}/token`, { method: 'POST', body: { placement: props.placement } })
     .then((c) => {
       if (gen === generation) {
         context = c
@@ -99,7 +108,7 @@ function onMessage(event: MessageEvent) {
   }
   if (msg.type === 'tikki:fetch-context') {
     sendContext()
-  } else if (msg.type === 'tikki:resize' && props.app.position === 'sidebar' && typeof msg.height === 'number' && Number.isFinite(msg.height)) {
+  } else if (msg.type === 'tikki:resize' && props.placement === 'sidebar' && typeof msg.height === 'number' && Number.isFinite(msg.height)) {
     height.value = Math.min(MAX_HEIGHT, Math.max(MIN_HEIGHT, Math.round(msg.height)))
   } else if (msg.type === 'tikki:refresh') {
     emit('refresh')
@@ -141,14 +150,15 @@ onBeforeUnmount(() => {
       v-else
       ref="frame"
       :key="attempt"
-      :src="app.url"
+      :src="src"
       :title="app.name"
       :data-app-id="app.id"
       sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
       referrerpolicy="no-referrer"
       class="block w-full border-0 rounded-[10px] bg-(--ui-bg)"
-      :class="app.position === 'tab' ? 'h-[70vh] min-h-[420px]' : ''"
-      :style="app.position === 'sidebar' ? { height: `${height}px` } : undefined"
+      :data-placement="placement"
+      :class="placement === 'tab' ? 'h-[70vh] min-h-[420px]' : ''"
+      :style="placement === 'sidebar' ? { height: `${height}px` } : undefined"
       @load="sendContext"
     />
   </div>

@@ -33,3 +33,17 @@ Today a Ticket App has one `url` and one `position`. To show one tool in the sid
 ## Blocked by
 
 None. Builds on issues 34 and 35.
+
+## Decisions made here
+
+- **Request and answer shapes.** Admin requests send `sidebar_url`, `tab_url`, `page_url` (the spec's names). Answers have `urls: { sidebar, tab, page }`. Null or an empty string turns a placement off. A PATCH that leaves no URL gets 422 with key `urls`. The old `url` and `position` fields get 422 (strict object).
+- **CHECK in the database**: `ticket_app_one_url` (at least one URL is set). The API refuses it first; the CHECK makes a bad write fail visibly.
+- **Placements**: `TICKET_APP_PLACEMENTS = ['sidebar', 'tab', 'page']` in `schema.ts`. `FRAME_PLACEMENTS = ['sidebar', 'tab']` in `server/utils/ticket-apps.ts` are the ones in a ticket. The token route takes only these; `page` gets 422 until issue 39.
+- **Token route** `POST /api/v1/tickets/{ref}/apps/{appId}/token` takes `{ placement }` (422 when missing or unknown). 404 when the app has no URL for it, like an app that is off.
+- **Context**: `app.placement` replaces `app.position`. The context version stays 1: no app outside this repository used `position` yet.
+- **Token check**: `principalForContextToken` needs `tikki_placement` (`sidebar` or `tab`) and compares `aud` with the origin of that one URL. A token without the claim (made before this version) gets 401. It lives 5 minutes, so no grace rule.
+- **Frame URL**: `URL.searchParams.set('placement', …)`: the Admin's query and hash stay; a `placement` the Admin wrote is replaced.
+- **Ticket page**: one app with both URLs is one entry in `GET /api/v1/tickets/{ref}/apps`. The page shows a card for `urls.sidebar` and a tab for `urls.tab`. Both frames have the app name as `title`; `data-placement` tells them apart.
+- **Audit**: `ticket_app_changed` names `sidebar_url`, `tab_url`, `page_url`. Old entries keep `url` and `position`.
+- **Migration** `0025_issue_37_ticket_app_placements.sql`: a table rebuild with `__new_ticket_app` (no foreign key points at `ticket_app`). A `position` other than `tab` goes to `sidebar_url`, so a row with an unexpected value keeps its URL. The AUTOINCREMENT counter is kept, as in 0014, so the id of a deleted app in the audit log is never used again.
+- **Admin form**: a "Where it shows" group with one URL field for each placement, from the `PLACEMENTS` list in `apps.vue`. Each row shows a chip and the URL for each placement that is on.

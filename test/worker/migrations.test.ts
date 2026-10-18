@@ -31,6 +31,7 @@ const OVERRIDES: Record<string, Record<string, string | null>> = {
   attachment: { uploader_id: '@fk', application_id: null },
   audit_log: { principal_id: '@fk', application_id: null, ticket_number: '@fk', subject_type: null, subject_id: null },
   webhook_endpoint: { owner: 'admin', application_id: null },
+  ticket_app: { sidebar_url: 'https://app.example.com/' },
 }
 
 const db = env.DB
@@ -175,4 +176,27 @@ describe('migrations keep data', () => {
     const final = await counts()
     expect(seeded.filter(t => final[t] === 0), 'tables without rows at the end').toEqual([])
   }, 60_000)
+
+  it('issue 37: maps each app\'s url to the column of its position, and keeps the ids and the counter', async () => {
+    const migrations = env.TEST_MIGRATIONS
+    const at = migrations.findIndex(m => m.name.includes('issue_37_ticket_app_placements'))
+    expect(at).toBeGreaterThan(0)
+    await dropEverything()
+    await applyD1Migrations(db, migrations.slice(0, at))
+    const insert = 'INSERT INTO ticket_app (id, name, url, position, ticket_type_ids, sort_order, enabled, created_at, access) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    await db.batch([
+      db.prepare(insert).bind(1, 'Orders', 'https://orders.example.com/card', 'sidebar', null, 1, 1, 1000, 'comment'),
+      db.prepare(insert).bind(2, 'Orders', 'https://orders.example.com/tab', 'tab', '[3]', 2, 0, 2000, 'read'),
+      db.prepare(insert).bind(5, 'Gone', 'https://gone.example.com/', 'sidebar', null, 3, 1, 3000, 'read'),
+      db.prepare('DELETE FROM ticket_app WHERE id = 5'),
+    ])
+    await applyD1Migrations(db, migrations.slice(at))
+    // Two apps that differ only in position stay two apps.
+    expect(await q('SELECT id, name, sidebar_url, tab_url, page_url, ticket_type_ids, sort_order, enabled, created_at, access FROM ticket_app ORDER BY id')).toEqual([
+      { id: 1, name: 'Orders', sidebar_url: 'https://orders.example.com/card', tab_url: null, page_url: null, ticket_type_ids: null, sort_order: 1, enabled: 1, created_at: 1000, access: 'comment' },
+      { id: 2, name: 'Orders', sidebar_url: null, tab_url: 'https://orders.example.com/tab', page_url: null, ticket_type_ids: '[3]', sort_order: 2, enabled: 0, created_at: 2000, access: 'read' },
+    ])
+    expect((await sequences()).ticket_app).toBe(5)
+    await expect(db.prepare('INSERT INTO ticket_app (name, sort_order, created_at) VALUES (\'No URL\', 9, 0)').run()).rejects.toThrow(/CHECK/)
+  })
 })

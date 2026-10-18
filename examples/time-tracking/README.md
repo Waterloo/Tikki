@@ -34,8 +34,7 @@ In Tikki, open **Ticket Apps** and add:
 | Setting | Value |
 |---|---|
 | Name | Time tracking |
-| URL | `http://localhost:5174/` |
-| Position | Sidebar |
+| Sidebar URL | `http://localhost:5174/` |
 | Access | Comment |
 
 Open any ticket as an Agent or Admin.
@@ -60,7 +59,7 @@ Open any ticket as an Agent or Admin.
    pnpm exec wrangler deploy -c examples/time-tracking/wrangler.jsonc
    ```
 
-4. Add the Worker's HTTPS address as a Ticket App. An HTTPS Tikki cannot frame an `http://` page.
+4. Add the Worker's HTTPS address as the Sidebar URL of a Ticket App. An HTTPS Tikki cannot frame an `http://` page.
 
 A deployed copy runs at `https://time.jithinsha.in/` for `https://tikki.jithinsha.in` (`env.production` in `wrangler.jsonc`):
 

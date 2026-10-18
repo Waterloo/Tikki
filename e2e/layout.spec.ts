@@ -65,10 +65,9 @@ function seed(context: BrowserContext): Promise<Seed> {
       data: { name: `Layout app ${stamp}`, description: 'layout', permissions: ['tickets:create', 'tickets:read'], ticket_type_ids: [bug.id] },
     })) as { id: number }
     await ok(await api.post('/api/v1/webhooks', { data: { name: `Layout hook ${stamp}`, url: 'http://localhost/nowhere' } }))
-    // One sidebar app and one tab app (issue 34), on Bug tickets only.
-    const sidebar = await ok(await api.post('/api/v1/admin/ticket-apps', { data: { name: 'Orders', url: appUrl(TIKKI_ORIGIN), position: 'sidebar', ticket_type_ids: [bug.id] } })) as { id: number }
-    const tab = await ok(await api.post('/api/v1/admin/ticket-apps', { data: { name: 'Order history', url: appUrl(TIKKI_ORIGIN), position: 'tab', ticket_type_ids: [bug.id] } })) as { id: number }
-    return { ref: ticket.ref, typeId: bug.id, appId: app.id, ticketAppIds: [sidebar.id, tab.id] }
+    // One app with a sidebar card and a tab (issues 34, 37), on Bug tickets only.
+    const both = await ok(await api.post('/api/v1/admin/ticket-apps', { data: { name: 'Orders', sidebar_url: appUrl(TIKKI_ORIGIN), tab_url: appUrl(TIKKI_ORIGIN), ticket_type_ids: [bug.id] } })) as { id: number }
+    return { ref: ticket.ref, typeId: bug.id, appId: app.id, ticketAppIds: [both.id] }
   })()
   return seeded
 }
@@ -77,7 +76,7 @@ const PAGES: [string, (s: Seed) => string][] = [
   ['My tickets', () => '/'],
   ['All tickets', () => '/tickets'],
   ['Ticket', s => `/tickets/${s.ref}`],
-  ['Ticket, app tab', s => `/tickets/${s.ref}?tab=app-${s.ticketAppIds[1]}`],
+  ['Ticket, app tab', s => `/tickets/${s.ref}?tab=app-${s.ticketAppIds[0]}`],
   ['New ticket', () => '/tickets/new'],
   ['Inbox', () => '/inbox'],
   ['Types and fields', () => '/admin/types'],
