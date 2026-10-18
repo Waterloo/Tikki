@@ -20,10 +20,11 @@ export interface Person {
   email: string
 }
 
-/** Who did something: a User, a Contact through its Application, or `support` (staff, as an Application sees them). */
+/** Who did something: a User, a Contact through its Application, an Application itself (on a ticket it did not create), or `support`. */
 export type Actor =
   | (Person & { kind: 'user' })
   | { kind: 'contact', contact: { id: number, external_id: string, name: string, email: string }, application: { id: number, name: string } }
+  | { kind: 'application', application: { id: number, name: string } }
   | { kind: 'support' }
 
 /** A User, or a Contact of an Application. */

@@ -1,7 +1,7 @@
 import { createExecutionContext, createScheduledController, waitOnExecutionContext } from 'cloudflare:test'
 import { env } from 'cloudflare:workers'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { call, postJson, signInAs, typeId } from './helpers'
+import { call, createRestrictedType, postJson, signInAs, typeId } from './helpers'
 // @ts-expect-error The build output has no types.
 import builtWorker from '../../.output/server/index.mjs'
 
@@ -152,6 +152,108 @@ describe('Application Webhook Endpoint: what it receives', () => {
     expect(await verify(hook.secret, update)).toBe(true)
     const full = receiver.requests.filter(toHook(adminHook)).find(r => r.payload.type === 'ticket.updated' && r.payload.after.number === t.number)!
     expect(full.payload.after.assignee.email).toBe(agent.user.email)
+  })
+})
+
+// Issue 42: the endpoint follows the Application's read scope.
+describe('Application Webhook Endpoint: read scope all', () => {
+  async function readAll(admin: Session, app: App, extra: Record<string, unknown> = {}) {
+    const res = await call(`/api/v1/applications/${app.id}`, { method: 'PATCH', body: JSON.stringify({ ticket_scopes: { read: 'all', update: 'own', comment: 'all' }, ...extra }), headers: headers(admin) })
+    expect(res.status, await res.clone().text()).toBe(200)
+  }
+  const userTicket = async (s: Session, type: number, fields: Record<string, string> = {}) => await (await postJson('/api/v1/tickets', { ticket_type_id: type, title: 'Export fails', fields }, headers(s))).json() as Ticket
+
+  it('gets Events of other tickets in the Application view; an own Application does not', async () => {
+    const [admin, agent, requester] = await Promise.all([signInAs('admin'), signInAs('agent'), signInAs('requester')])
+    const [all, own] = [await newApplication(admin), await newApplication(admin)]
+    await readAll(admin, all)
+    const [hookAll, hookOwn] = [await addHook(admin, all), await addHook(admin, own)]
+    const adminHook = (await (await postJson('/api/v1/webhooks', { name: 'Team', url: `https://hooks.test-receiver.com/${crypto.randomUUID()}` }, headers(admin))).json()) as Hook
+    const t = await userTicket(requester, await typeId(requester.cookie, 'BUG'), { page_or_feature: 'Reports' })
+    const other = await appTicket(own)
+    expect((await call(`/api/v1/tickets/${t.ref}`, { method: 'PATCH', body: JSON.stringify({ assignee_id: agent.user.id }), headers: headers(agent) })).status).toBe(200)
+    expect((await postJson(`/api/v1/tickets/${t.ref}/comments`, { body: 'Logged 2 hours.' }, all.auth)).status).toBe(201)
+    await runCron(Date.now())
+
+    const got = receiver.requests.filter(toHook(hookAll))
+    expect(got.filter(r => r.payload.after?.number === t.number).map(r => r.payload.type)).toEqual(['ticket.created', 'ticket.updated', 'comment.created'])
+    expect(got.some(r => r.payload.after?.number === other.number)).toBe(true)
+    for (const r of got.filter(r => r.payload.after?.number === t.number)) {
+      expect(r.payload.after).toMatchObject({ assignee: null, requester: { kind: 'support' } })
+      expect(r.payload.after).not.toHaveProperty('team')
+      for (const secret of [agent.user.email, agent.user.id, requester.user.email, requester.user.id]) expect(r.body).not.toContain(secret)
+    }
+    const posted = got.find(r => r.payload.type === 'comment.created')!.payload
+    // Not its Contact's ticket: the author is the Application itself.
+    expect(posted.comment.author).toMatchObject({ kind: 'application', application: { id: all.id } })
+    expect(posted.actor).toMatchObject({ kind: 'application', id: all.id })
+    // The Admin endpoint names the Application as the actor too.
+    const forTeam = receiver.requests.filter(toHook(adminHook)).find(r => r.payload.type === 'comment.created' && r.payload.after.number === t.number)!
+    expect(forTeam.payload.actor).toMatchObject({ kind: 'application', id: all.id })
+
+    expect(receiver.requests.filter(toHook(hookOwn)).map(r => r.payload.after.number)).toEqual([other.number])
+  })
+
+  it('gets no Event of a Restricted ticket until "Include Restricted tickets" is on', async () => {
+    const [admin, requester] = await Promise.all([signInAs('admin'), signInAs('requester')])
+    const app = await newApplication(admin)
+    await readAll(admin, app)
+    const hook = await addHook(admin, app)
+    const restricted = await createRestrictedType()
+    const before = await userTicket(requester, restricted)
+    await runCron(Date.now())
+    expect(receiver.requests.filter(toHook(hook)).some(r => r.payload.after?.number === before.number)).toBe(false)
+
+    await readAll(admin, app, { include_restricted: true })
+    const after = await userTicket(requester, restricted)
+    await runCron(Date.now())
+    expect(receiver.requests.filter(toHook(hook)).map(r => r.payload.after?.number)).toEqual([after.number])
+  })
+
+  it('fails closed: no Events of other tickets for a stored `all` without tickets:read, or a Restricted ticket for an own Application with the flag', async () => {
+    const [admin, requester] = await Promise.all([signInAs('admin'), signInAs('requester')])
+    const [noRead, own] = [await newApplication(admin), await newApplication(admin)]
+    await readAll(admin, noRead)
+    await env.DB.prepare('UPDATE application SET permissions = ? WHERE id = ?').bind(JSON.stringify(['tickets:create']), noRead.id).run()
+    await env.DB.prepare('UPDATE application SET include_restricted = 1 WHERE id = ?').bind(own.id).run()
+    const [hookNoRead, hookOwn] = [await addHook(admin, noRead), await addHook(admin, own)]
+    await userTicket(requester, await typeId(requester.cookie, 'BUG'), { page_or_feature: 'Reports' })
+    await userTicket(requester, await createRestrictedType())
+    await runCron(Date.now())
+    expect(receiver.requests.filter(toHook(hookNoRead))).toEqual([])
+    expect(receiver.requests.filter(toHook(hookOwn))).toEqual([])
+  })
+
+  it('shows another Application\'s comment on its own ticket as that Application, not as its Contact', async () => {
+    const admin = await signInAs('admin')
+    const [all, owner] = [await newApplication(admin), await newApplication(admin)]
+    await readAll(admin, all)
+    const hookOwner = await addHook(admin, owner)
+    const t = await appTicket(owner)
+    expect((await postJson(`/api/v1/tickets/${t.ref}/comments`, { body: 'From the other system.' }, all.auth)).status).toBe(201)
+    await runCron(Date.now())
+    const posted = receiver.requests.filter(toHook(hookOwner)).find(r => r.payload.type === 'comment.created')!.payload
+    expect(posted.comment.author).toEqual({ kind: 'application', application: { id: all.id, name: expect.any(String) } })
+  })
+
+  it('removes `user` Field values from the payload', async () => {
+    const [admin, agent] = await Promise.all([signInAs('admin'), signInAs('agent')])
+    const app = await newApplication(admin)
+    await readAll(admin, app)
+    const hook = await addHook(admin, app)
+    const type = await env.DB.prepare(`INSERT INTO ticket_type (name, prefix, description, team_id, visibility, created_at)
+      VALUES (?, ?, 'Staff work.', (SELECT id FROM team WHERE name = 'Support'), 'requester', ?) RETURNING id`).bind(`Owned ${crypto.randomUUID()}`, `W${Array.from(crypto.getRandomValues(new Uint8Array(4)), b => String.fromCharCode(65 + (b % 26))).join('')}`, Date.now()).first<{ id: number }>()
+    await env.DB.prepare('INSERT INTO schema_version (ticket_type_id, version, fields, created_at) VALUES (?, 1, ?, ?)')
+      .bind(type!.id, JSON.stringify([{ key: 'owner', label: 'Owner', type: 'user', required: false, help: '' }, { key: 'note', label: 'Note', type: 'short_text', required: false, help: '' }]), Date.now()).run()
+    const t = await (await postJson('/api/v1/tickets', { ticket_type_id: type!.id, title: 'Staff task', fields: { owner: agent.user.id, note: 'hi' } }, headers(agent))).json() as Ticket
+    expect((await call(`/api/v1/tickets/${t.ref}`, { method: 'PATCH', body: JSON.stringify({ fields: { note: 'ho' } }), headers: headers(agent) })).status).toBe(200)
+    await runCron(Date.now())
+    const got = receiver.requests.filter(toHook(hook)).filter(r => r.payload.after?.number === t.number)
+    expect(got.map(r => r.payload.type)).toEqual(['ticket.created', 'ticket.updated'])
+    expect(got[0]!.payload.after.fields).toEqual({ note: 'hi' })
+    expect(got[1]!.payload.before.fields).toEqual({ note: 'hi' })
+    expect(got[1]!.payload.after.fields).toEqual({ note: 'ho' })
+    for (const r of got) expect(r.body).not.toContain(agent.user.id)
   })
 })
 

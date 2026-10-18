@@ -45,9 +45,9 @@ Typical uses:
 | Where | The **Webhooks** page | The page of one Application |
 | How many | Any number | At most one for each Application |
 | Events | The ones you choose | Always `ticket.created`, `ticket.updated`, `comment.created` |
-| Tickets | All tickets | Only the tickets of that Application's Contacts |
+| Tickets | All tickets | The tickets the Application can read: its own Contacts' tickets, or all tickets when the Admin sets **Read tickets** to **All tickets** |
 | Internal data | Internal Comments and Restricted tickets only with **Include internal data** | Never |
-| Staff | Names and emails | Every Agent and Admin shows as `{ "kind": "support" }`. No assignee and no Team. |
+| Staff | Names and emails | Every person in your organization shows as `{ "kind": "support" }`. No assignee and no Team. |
 
 Use an Admin endpoint for your own team's tools. Use an Application endpoint when the receiver belongs to the system that created the tickets, for example your shop.
 
@@ -62,7 +62,7 @@ Use an Admin endpoint for your own team's tools. Use an Application endpoint whe
 
 `changed` has `status`, `priority`, `ticket_type`, `assignee`, `team`, `description`, or the Field Key of a changed Field. An Application endpoint gets no Event when only the Team changed.
 
-A Restricted ticket (a "Participants only" type) makes no Event for an Admin endpoint without **Include internal data**, and never for an Application endpoint.
+A Restricted ticket (a "Participants only" type) makes no Event for an Admin endpoint without **Include internal data**. An Application endpoint gets it only when the Application reads all tickets and the Admin turned on **Include Restricted tickets**.
 
 ## Payload
 
@@ -137,7 +137,10 @@ An Application endpoint gets the same Events with staff data removed:
 | `assignee` in `before` and `after` | The assignee, or `null` | Always `null`. `assigned` is `true` or `false`. |
 | `team` in `before` and `after` | The Team | Left out |
 | `comment.author`, staff | `{ "kind": "user", "id", "name" }` | `{ "kind": "support" }` |
-| `comment.author`, the Application | `{ "kind": "application", "id", "name" }` | `{ "kind": "contact", "contact": { "id", "external_id", "name", "email" }, "application": { "id", "name" } }` |
+| `requester`, a person in your organization | `{ "kind": "user", "id", "name", "email" }` | `{ "kind": "support" }` |
+| A Field of type User in `fields` | The User ID | Left out |
+| `comment.author`, an Application on its own ticket | `{ "kind": "application", "id", "name" }` | `{ "kind": "contact", "contact": { "id", "external_id", "name", "email" }, "application": { "id", "name" } }` |
+| `comment.author`, an Application on another ticket | `{ "kind": "application", "id", "name" }` | `{ "kind": "application", "application": { "id", "name" } }` |
 
 ### The test event
 
@@ -224,4 +227,4 @@ On the endpoint, click **Rotate secret**. Tikki shows the new secret once. **The
 | The signature does not match | — | Check that you use the raw body and the current secret. Did someone rotate it? |
 | The same `webhook-id` arrives twice | A retry after a lost answer | Handle it once. |
 | The endpoint shows "Off" | 3 days of failures, or an Admin turned it off | Fix the receiver, then turn it on again. |
-| You see no Events for a ticket | Restricted ticket, or Internal Comment, or an Application endpoint for another Application's ticket | See [Two kinds of endpoint](#two-kinds-of-endpoint). |
+| You see no Events for a ticket | Restricted ticket, or Internal Comment, or an Application endpoint for a ticket outside the Application's read scope | See [Two kinds of endpoint](#two-kinds-of-endpoint). |

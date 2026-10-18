@@ -205,11 +205,11 @@ function buildServer(principal: UserPrincipal) {
     const data = {
       notice: UNTRUSTED_NOTICE,
       ...summary(t),
-      requester: name(t.requester),
+      requester: t.requester.kind === 'support' ? 'Support' : name(t.requester),
       description: untrusted(t.description),
       fields: untrustedDeep(t.fields),
       allowed_actions: t.allowed_actions,
-      comments: shown.map(c => ({ visibility: c.visibility, author: c.author.kind === 'user' ? name(c.author) : c.author.kind === 'contact' ? `${c.author.contact.name} (Contact · ${c.author.application.name})` : 'Support', created_at: c.created_at, body: untrusted(c.body) })),
+      comments: shown.map(c => ({ visibility: c.visibility, author: c.author.kind === 'user' ? name(c.author) : c.author.kind === 'contact' ? `${c.author.contact.name} (Contact · ${c.author.application.name})` : c.author.kind === 'application' ? `${c.author.application.name} (Application)` : 'Support', created_at: c.created_at, body: untrusted(c.body) })),
       ...(comments.length > shown.length ? { older_comments_omitted: comments.length - shown.length } : {}),
     }
     return { text: JSON.stringify(data), data }

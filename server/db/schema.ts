@@ -159,10 +159,12 @@ export const AUDIT_ACTIONS = ['ticket_created', 'status_changed', 'priority_chan
   'team_changed',
   // Issue 34: Ticket Apps
   'ticket_app_created', 'ticket_app_changed', 'ticket_app_moved', 'ticket_app_enabled', 'ticket_app_disabled', 'ticket_app_deleted',
+  // Issue 42: an Admin change of an Application
+  'application_changed',
 ] as const
 
 /** What an Admin change without a ticket is about. A ticket entry has `ticketNumber` and no subject. */
-export const AUDIT_SUBJECT_TYPES = ['ticket_type', 'user', 'invite', 'team', 'ticket_app'] as const
+export const AUDIT_SUBJECT_TYPES = ['ticket_type', 'user', 'invite', 'team', 'ticket_app', 'application'] as const
 export type AuditSubjectType = typeof AUDIT_SUBJECT_TYPES[number]
 export type AuditAction = typeof AUDIT_ACTIONS[number]
 
@@ -277,6 +279,8 @@ export const notification = sqliteTable('notification', {
   data: text('data', { mode: 'json' }).$type<Record<string, string>>(),
   readAt: integer('read_at', { mode: 'timestamp_ms' }),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(() => new Date()),
+  /** Issue 42: the Application that acted, when no User did. It can act on tickets of other sources. */
+  applicationId: integer('application_id').references(() => application.id),
 }, t => [
   // The unread count and the Unread filter.
   index('notification_user_read_idx').on(t.userId, t.readAt),
@@ -312,6 +316,11 @@ export const uploadLink = sqliteTable('upload_link', {
 export const APPLICATION_PERMISSIONS = ['tickets:create', 'tickets:read', 'tickets:update', 'comments:create'] as const
 export type ApplicationPermission = typeof APPLICATION_PERMISSIONS[number]
 
+// Issue 42: which tickets each permission reaches. `tickets:create` always makes the Application's own tickets.
+export const TICKET_SCOPES = ['own', 'all'] as const
+export type TicketScope = typeof TICKET_SCOPES[number]
+export interface TicketScopes { read: TicketScope, update: TicketScope, comment: TicketScope }
+
 /** Another system that uses the REST API with its own keys. It sees only the tickets it created (3.11). */
 export const application = sqliteTable('application', {
   id: integer('id').primaryKey({ autoIncrement: true }),
@@ -326,6 +335,9 @@ export const application = sqliteTable('application', {
   rateLimit: integer('rate_limit').notNull().default(60),
   createLimit: integer('create_limit').notNull().default(10),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(() => new Date()),
+  // Issue 42. The Admin routes keep the rules (applications.ts `checkScopes`); the policy also fails closed.
+  ticketScopes: text('ticket_scopes', { mode: 'json' }).$type<TicketScopes>().notNull().default({ read: 'own', update: 'own', comment: 'own' }),
+  includeRestricted: integer('include_restricted', { mode: 'boolean' }).notNull().default(false),
 })
 
 /** Only the SHA-256 of the key is kept. The full key is shown once, when it is created (3.9). */

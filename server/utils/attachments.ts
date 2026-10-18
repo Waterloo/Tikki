@@ -3,7 +3,7 @@ import { attachment, contact, status, ticket, ticketParticipant, ticketType, typ
 import { auditEntry } from './audit'
 import type { Db } from './auth'
 import type { FieldError } from './fields'
-import { authorizeAttach, authorizeAttachmentRead, authorizeUnattachedUpload, NO_ATTACHMENT, NOT_FOUND, PolicyRefusal, type PolicyTicket } from './policy'
+import { authorizeAttach, authorizeAttachmentRead, authorizeListAttachments, authorizeUnattachedUpload, NO_ATTACHMENT, NOT_FOUND, PolicyRefusal, type PolicyTicket } from './policy'
 import type { Principal, UserPrincipal } from './tickets'
 
 /** 25 MB (7.4). */
@@ -22,7 +22,7 @@ export interface AttachmentView {
   filename: string
   content_type: string
   size: number
-  /** The User who uploaded it, or null when an Application did (`application_id`). */
+  /** The User who uploaded it, or null when an Application did (`application_id`). Always null for an Application viewer: a User is `support` to it. */
   uploader_id: string | null
   application_id: number | null
   created_at: string
@@ -31,14 +31,14 @@ export interface AttachmentView {
 
 type Row = typeof attachment.$inferSelect
 
-function toView(row: Row): AttachmentView {
+function toView(row: Row, viewer: Principal): AttachmentView {
   return {
     id: row.id,
     ticket_number: row.ticketNumber,
     filename: row.filename,
     content_type: row.contentType,
     size: row.size,
-    uploader_id: row.uploaderId,
+    uploader_id: viewer.kind === 'application' ? null : row.uploaderId,
     application_id: row.applicationId,
     created_at: row.createdAt.toISOString(),
     url: `/api/v1/attachments/${row.id}`,
@@ -165,7 +165,7 @@ export async function putObject(db: Db, bucket: R2Bucket, principal: Principal, 
     const [row] = ticketNumber === null
       ? await insert
       : (await db.batch([insert, auditEntry(db, principal, { ticketNumber, action: 'attachment_added', values: { before: null, after: info.filename } })]))[0]
-    return toView(row!)
+    return toView(row!, principal)
   } catch (error) {
     await bucket.delete(id)
     throw error
@@ -192,13 +192,13 @@ export async function attachText(db: Db, bucket: R2Bucket, principal: Principal,
   return putObject(db, bucket, principal, ticketNumber, { size, filename: name, contentType }, content)
 }
 
-/** The attachments of a ticket the Principal may read (seeing a ticket and adding to it need the same right). */
+/** The attachments of a ticket the Principal may read. A file is as visible as its ticket (7.1). */
 export async function listAttachments(db: Db, principal: Principal, ticketNumber: number): Promise<AttachmentView[]> {
   const facts = await loadPolicyTicket(db, ticketNumber)
-  const refusal = facts ? authorizeAttach(principal, facts) : NOT_FOUND
+  const refusal = facts ? authorizeListAttachments(principal, facts) : NOT_FOUND
   if (refusal) throw new PolicyRefusal(refusal)
   const rows = await db.select().from(attachment).where(and(eq(attachment.ticketNumber, ticketNumber), isNull(attachment.erasedAt))).orderBy(asc(attachment.createdAt), asc(attachment.id))
-  return rows.map(toView)
+  return rows.map(r => toView(r, principal))
 }
 
 // Served as sent only for types that cannot run script. Anything else, HTML and SVG included, is a plain download.

@@ -204,6 +204,13 @@
       "when": 1792342895459,
       "tag": "0028_issue_40_ticket_app_manifest",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "6",
+      "when": 1792345403949,
+      "tag": "0029_issue_42_application_scopes",
+      "breakpoints": true
     }
   ]
 }

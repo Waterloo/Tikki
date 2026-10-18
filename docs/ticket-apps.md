@@ -526,7 +526,7 @@ No. The page token has no ticket, and the API answers `401`. Store what you need
 No. Writes go only through the REST API with the token. If a message could change the ticket, one script bug on your page could change any ticket the Agent can reach.
 
 **Can I use my Application API key instead?**
-An API key reaches only the tickets that the Application created for its own customers. The context token reaches the ticket the Agent has open, whoever created it.
+Yes, for work that is not about the ticket the Agent has open, for example a timesheet that shows live titles and Statuses. By default an API key reaches only the tickets that the Application created. The Admin can set **Read tickets** (and **Update tickets**, **Add comments**) to **All tickets** on the Application's page. Then the key reads every ticket that is not deleted, but never staff data: no assignee, no Team, no Internal Comments, and people show as `support`. The API reference (`/docs/api`) lists what each scope reaches. The context token reaches the ticket the Agent has open, whoever created it, with the Agent's view.
 
 **Do I get comments in the context?**
 No. Call `GET /api/v1/tickets/{ref}/comments` with the token. The answer has the comments the Agent can see, internal ones included.
