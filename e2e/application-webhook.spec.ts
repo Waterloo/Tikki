@@ -25,7 +25,7 @@ test('an Admin adds the webhook of an Application, sees the secret once, and a f
   await expect(hook.getByText('ticket.created', { exact: true })).toBeVisible()
   await expect(hook.getByText('comment.created', { exact: true })).toBeVisible()
   await hook.getByRole('button', { name: 'Send test event' }).click()
-  await expect(page.getByText('Test event failed')).toBeVisible()
+  await expect(page.getByText('Test event failed', { exact: true })).toBeVisible()
   await expect(hook.getByText('Failing', { exact: true })).toBeVisible()
   await expect(hook.getByRole('button', { name: 'Retry now' })).toBeVisible()
   await expect(hook.getByText('Test event', { exact: true })).toBeVisible()

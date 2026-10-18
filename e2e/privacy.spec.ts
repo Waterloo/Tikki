@@ -26,7 +26,7 @@ test('an Admin deletes a ticket, finds it in Settings › Privacy, and restores 
   const row = page.getByRole('list', { name: 'Deleted tickets' }).getByRole('listitem').filter({ hasText: ref })
   await expect(row).toContainText(title)
   await row.getByRole('button', { name: 'Restore' }).click()
-  await expect(page.getByText(`${ref} restored`)).toBeVisible()
+  await expect(page.getByText(`${ref} restored`, { exact: true })).toBeVisible()
   await expect(row).toHaveCount(0)
   await page.goto(`/tickets/${ref}`)
   await expect(page.getByRole('heading', { name: title })).toBeVisible()
@@ -53,7 +53,7 @@ test('an Admin erases a Contact found by email in Settings › Privacy', async (
   await expect(row).toContainText('1 ticket')
   await row.getByRole('button', { name: 'Erase' }).click()
   await page.getByRole('dialog').getByRole('button', { name: 'Erase', exact: true }).click()
-  await expect(page.getByText('Personal data erased')).toBeVisible()
+  await expect(page.getByText('Personal data erased', { exact: true })).toBeVisible()
 
   const ticket = await (await page.request.get(`/api/v1/tickets/${ref}`)).json() as { title: string, requester: { name: string, email: string } }
   expect(ticket).toMatchObject({ title: '[erased]', requester: { name: '[erased]', email: '[erased]' } })

@@ -22,7 +22,7 @@ test('an Admin adds an endpoint, sees the secret once, and a failed test event s
   const card = admin.getByRole('region', { name })
   await expect(card.getByText('Healthy', { exact: true })).toBeVisible()
   await card.getByRole('button', { name: 'Send test event' }).click()
-  await expect(admin.getByText('Test event failed')).toBeVisible()
+  await expect(admin.getByText('Test event failed', { exact: true })).toBeVisible()
   await expect(card.getByText('Failing', { exact: true })).toBeVisible()
   await expect(card.getByRole('button', { name: 'Retry now' })).toBeVisible()
 
