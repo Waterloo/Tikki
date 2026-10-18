@@ -1,6 +1,6 @@
 # Build a Ticket App
 
-> **Planned (issues 38–40):** app pages in an Apps menu with a page token that proves identity only, `tikki:navigate`, light and dark icons, and adding an app from a manifest (`tikki-app.json`). See [ADR 0005](adr/0005-ticket-app-placements-pages-manifest.md). This guide changes when they are built.
+> **Planned (issues 38–40):** app pages in an Apps menu with a page token that proves identity only, `tikki:navigate`, and adding an app from a manifest (`tikki-app.json`). See [ADR 0005](adr/0005-ticket-app-placements-pages-manifest.md). This guide changes when they are built.
 
 A **Ticket App** is your own web page, shown inside a Tikki ticket. Agents see it as a card in the ticket sidebar, as a tab next to Conversation and Activity, or both. Each placement has its own URL. Tikki tells your page which ticket is open and who is looking at it, and gives you a signed token that proves it.
 
@@ -95,6 +95,7 @@ An Admin opens **Ticket Apps** in Tikki and fills in:
 | Setting | Values | Notes |
 |---|---|---|
 | Name | Text | Shown as the card title or the tab name. Keep it short: "Orders". |
+| Icon | A built-in icon and color, or an uploaded image | Shown on the card title, the tab and the admin list. Built-in: the Lucide icons and colors of Ticket Types (default: app window, neutral). Image: a light image and an optional dark image. PNG, WebP or SVG, 256 KB at most each, square is best (shown in a square box). Without a dark image, the light one shows in dark mode. Tikki stores the files and serves them to signed-in Agents and Admins. It never loads an icon from your site, so your site cannot see who uses Tikki and when. |
 | Sidebar URL | `https://...` or empty | A card in the ticket sidebar. |
 | Tab URL | `https://...` or empty | A tab next to Conversation and Activity. |
 | Page URL | `https://...` or empty | A page in the Apps menu. Tikki stores it now and shows it from a later version. |

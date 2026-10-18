@@ -23,10 +23,10 @@ const mode = ref<'internal' | 'public'>('internal')
 
 // Each tab needs a `slot` name equal to its `value`.
 const appTab = (app: TicketAppFrame) => `app-${app.id}`
-const tabs = computed(() => [
+const tabs = computed<{ label: string, value: string, slot: string, app?: TicketAppFrame }[]>(() => [
   { label: 'Conversation', value: 'conversation', slot: 'conversation' },
   { label: 'Activity', value: 'activity', slot: 'activity' },
-  ...(props.apps ?? []).map(a => ({ label: a.name, value: appTab(a), slot: appTab(a) })),
+  ...(props.apps ?? []).map(a => ({ label: a.name, value: appTab(a), slot: appTab(a), app: a })),
 ])
 const tab = computed({
   get: () => {
@@ -154,6 +154,9 @@ onMounted(() => load())
   <section aria-labelledby="conversation-heading" class="flex flex-col gap-3.5">
     <h2 id="conversation-heading" class="sr-only">Conversation and activity</h2>
     <UTabs v-model="tab" :items="tabs" variant="link" :unmount-on-hide="false" :ui="{ root: 'gap-3.5', content: 'flex flex-col gap-3.5' }">
+      <template #leading="{ item }">
+        <TicketAppIcon v-if="item.app" :app="item.app" size="xs" />
+      </template>
       <template #conversation>
         <template v-if="state === 'ready'">
           <button

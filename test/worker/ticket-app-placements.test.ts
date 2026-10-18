@@ -84,7 +84,7 @@ describe('Ticket App placements: admin', () => {
     const app = await bothApp()
     const t = await raise()
     const list = (await (await call(`/api/v1/tickets/${t.ref}/apps`, { headers: h(agent) })).json() as { data: App[] }).data
-    expect(list.filter(a => a.id === app.id)).toEqual([{ id: app.id, name: app.name, urls: app.urls }])
+    expect(list.filter(a => a.id === app.id)).toEqual([{ id: app.id, name: app.name, urls: app.urls, icon: expect.objectContaining({ kind: 'builtin' }) }])
   })
 })
 

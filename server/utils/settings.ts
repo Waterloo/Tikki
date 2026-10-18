@@ -47,16 +47,16 @@ export function checkLogo(contentType: string | null, bytes: Uint8Array): void {
   if (contentType?.split(';')[0]?.trim().toLowerCase() !== 'image/png') {
     throw new LogoError(415, 'LOGO_NOT_PNG', 'The logo must be a PNG file.')
   }
-  if (bytes.length > LOGO_MAX_BYTES) throw new LogoError(413, 'LOGO_TOO_LARGE', 'The logo must be 1 MB or smaller.')
+  if (bytes.length > LOGO_MAX_BYTES) throw logoTooLarge()
   if (bytes.length < PNG_SIGNATURE.length || !PNG_SIGNATURE.every((b, i) => bytes[i] === b)) {
     throw new LogoError(415, 'LOGO_NOT_PNG', 'The file is not a PNG image.')
   }
 }
 
-/** Reads a body and stops as soon as it is larger than the logo limit, so a huge upload costs no CPU. */
-export async function readLimited(request: Request): Promise<Uint8Array> {
+/** Reads a body and stops as soon as it is larger than `max`, so a huge upload costs no CPU. `tooLarge` makes the error. */
+export async function readLimited(request: Request, max: number, tooLarge: () => Error): Promise<Uint8Array> {
   const declared = Number(request.headers.get('content-length'))
-  if (declared > LOGO_MAX_BYTES) throw new LogoError(413, 'LOGO_TOO_LARGE', 'The logo must be 1 MB or smaller.')
+  if (declared > max) throw tooLarge()
   const chunks: Uint8Array[] = []
   let total = 0
   const reader = request.body?.getReader()
@@ -64,9 +64,9 @@ export async function readLimited(request: Request): Promise<Uint8Array> {
     const { done, value } = await reader.read()
     if (done) break
     total += value.length
-    if (total > LOGO_MAX_BYTES) {
+    if (total > max) {
       await reader.cancel()
-      throw new LogoError(413, 'LOGO_TOO_LARGE', 'The logo must be 1 MB or smaller.')
+      throw tooLarge()
     }
     chunks.push(value)
   }
@@ -78,6 +78,9 @@ export async function readLimited(request: Request): Promise<Uint8Array> {
   }
   return bytes
 }
+
+const logoTooLarge = () => new LogoError(413, 'LOGO_TOO_LARGE', 'The logo must be 1 MB or smaller.')
+export const readLogoBody = (request: Request) => readLimited(request, LOGO_MAX_BYTES, logoTooLarge)
 
 export async function setLogo(d1: D1Database, bytes: Uint8Array): Promise<void> {
   await d1.prepare('UPDATE organization SET logo = ?, logo_version = ? WHERE id = 1').bind(bytes, Date.now()).run()

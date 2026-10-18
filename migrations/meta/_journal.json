@@ -183,6 +183,13 @@
       "when": 1792337617418,
       "tag": "0025_issue_37_ticket_app_placements",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "6",
+      "when": 1792339788804,
+      "tag": "0026_issue_38_ticket_app_icons",
+      "breakpoints": true
     }
   ]
 }

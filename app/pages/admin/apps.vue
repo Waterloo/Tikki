@@ -11,6 +11,9 @@ const PLACEMENTS: { value: TicketAppPlacement, label: string, chip: string, help
   { value: 'tab', label: 'Tab URL', chip: 'Tab', help: 'A tab next to Conversation and Activity.', placeholder: 'https://orders.example.com/history' },
   { value: 'page', label: 'Page URL', chip: 'Page', help: 'A page in the Apps menu (coming soon).', placeholder: 'https://orders.example.com/page' },
 ]
+// Issue 38: the icon part of the form is TicketAppIconField. `commit` uploads after the app is saved.
+const iconField = ref<{ validate: () => boolean, commit: (id: number) => Promise<TicketApp | null> } | null>(null)
+const iconForm = reactive({ name: 'i-lucide-app-window', color: '#4B5563', key: 0 })
 const ACCESS: { value: TicketAppAccess, label: string, description: string }[] = [
   { value: 'read', label: 'Read', description: 'The app\'s backend can read the ticket, its comments and its Activity.' },
   { value: 'comment', label: 'Comment', description: 'Also add Public Comments and Internal Comments.' },
@@ -90,6 +93,7 @@ function openForm(app: TicketApp | null) {
   Object.assign(form, app
     ? { name: app.name, urls: { sidebar: app.urls.sidebar ?? '', tab: app.urls.tab ?? '', page: app.urls.page ?? '' }, access: app.access, showOn: app.ticket_type_ids === null ? 'all' : 'only', typeIds: (app.ticket_type_ids ?? []).map(String), enabled: app.enabled }
     : { name: '', urls: emptyUrls(), access: 'read', showOn: 'all', typeIds: [], enabled: true })
+  Object.assign(iconForm, { name: app?.icon.name ?? 'i-lucide-app-window', color: app?.icon.color ?? '#4B5563', key: iconForm.key + 1 })
   problems.value = {}
   formError.value = null
   confirmDelete.value = false
@@ -103,6 +107,7 @@ function failed(e: unknown) {
 }
 
 async function save() {
+  if (iconField.value && !iconField.value.validate()) return
   saving.value = true
   problems.value = {}
   formError.value = null
@@ -111,14 +116,20 @@ async function save() {
   const sameTypes = editing.value && JSON.stringify(editing.value.ticket_type_ids) === JSON.stringify(typeIds)
   // An empty field turns its placement off.
   const urls = Object.fromEntries(PLACEMENTS.map(p => [`${p.value}_url`, form.urls[p.value].trim() || null]))
-  const body = { name: form.name, ...urls, access: form.access, ...(sameTypes ? {} : { ticket_type_ids: typeIds }), enabled: form.enabled }
+  const body = { name: form.name, ...urls, access: form.access, icon_name: iconForm.name, icon_color: iconForm.color, ...(sameTypes ? {} : { ticket_type_ids: typeIds }), enabled: form.enabled }
   try {
+    let saved: TicketApp
     if (editing.value) {
-      const saved = await $fetch<TicketApp>(`/api/v1/admin/ticket-apps/${editing.value.id}`, { method: 'PATCH', body })
+      saved = await $fetch<TicketApp>(`/api/v1/admin/ticket-apps/${editing.value.id}`, { method: 'PATCH', body })
       apps.value = apps.value.map(a => a.id === saved.id ? saved : a)
     } else {
-      apps.value.push(await $fetch<TicketApp>('/api/v1/admin/ticket-apps', { method: 'POST', body }))
+      saved = await $fetch<TicketApp>('/api/v1/admin/ticket-apps', { method: 'POST', body })
+      apps.value.push(saved)
+      // A failed upload below keeps the form open. A second save must edit this app, not add another.
+      editing.value = saved
     }
+    const withIcon = await iconField.value?.commit(saved.id)
+    if (withIcon) apps.value = apps.value.map(a => a.id === withIcon.id ? withIcon : a)
     formOpen.value = false
   } catch (e) {
     failed(e)
@@ -172,6 +183,7 @@ async function remove() {
             <UButton size="xs" color="neutral" variant="outline" icon="i-lucide-arrow-up" :aria-label="`Move ${app.name} up`" :disabled="i === 0 || busy !== null" :loading="busy === `${app.id}:up`" @click="move(app, 'up')" />
             <UButton size="xs" color="neutral" variant="outline" icon="i-lucide-arrow-down" :aria-label="`Move ${app.name} down`" :disabled="i === apps.length - 1 || busy !== null" :loading="busy === `${app.id}:down`" @click="move(app, 'down')" />
           </div>
+          <TicketAppIcon :app="app" size="lg" />
           <div class="flex flex-col gap-1 min-w-0 flex-[1_1_240px]">
             <div class="flex flex-wrap items-center gap-2">
               <h2 class="text-base font-semibold text-(--ui-text-highlighted) truncate">
@@ -231,6 +243,7 @@ async function remove() {
               {{ problems.urls }}
             </p>
           </fieldset>
+          <TicketAppIconField :key="iconForm.key" ref="iconField" v-model:name="iconForm.name" v-model:color="iconForm.color" :app="editing" />
           <UFormField label="Access" :error="problems.access" help="What the app's backend can do with the token, as the Agent who has the ticket open.">
             <URadioGroup v-model="form.access" :items="ACCESS" />
           </UFormField>
