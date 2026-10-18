@@ -1,0 +1,113 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 840 380" class="tkd" data-steps="4" font-family="Geist, ui-sans-serif, system-ui, sans-serif">
+  <style>
+    /* The docs site puts this SVG inline: the page tokens (--ui-*) apply and it follows the theme switch, and docs.js
+       highlights one step at a time (data-step on the svg). As an image on GitHub the fallback colors apply. */
+    .tkd { --t-bg: var(--ui-bg, #ffffff); --t-panel: var(--ui-bg-elevated, #f7f8fa); --t-skel: var(--ui-bg-accented, #e9ebee); --t-line: var(--ui-border-accented, #dadde2);
+      --t-hi: var(--ui-text-highlighted, #17181c); --t-muted: var(--ui-text-muted, #5b606b); --t-pri: var(--docs-link, #2563eb); --t-soft: var(--docs-link-soft, #eff4ff); }
+    @media (prefers-color-scheme: dark) {
+      .tkd { --t-bg: var(--ui-bg, #17181c); --t-panel: var(--ui-bg-elevated, #1e2025); --t-skel: var(--ui-bg-accented, #26282e); --t-line: var(--ui-border-accented, #34373e);
+        --t-hi: var(--ui-text-highlighted, #f4f5f7); --t-muted: var(--ui-text-muted, #9ea3ad); --t-pri: var(--docs-link, #60a5fa); --t-soft: var(--docs-link-soft, #172036); }
+    }
+    .tkd .window { fill: var(--t-bg); stroke: var(--t-line); }
+    .tkd .bar { fill: var(--t-panel); }
+    .tkd .rule { stroke: var(--t-line); }
+    .tkd .tabline { stroke: var(--t-hi); stroke-width: 2; }
+    .tkd .box { fill: var(--t-bg); stroke: var(--t-line); }
+    .tkd .skel { fill: var(--t-skel); }
+    .tkd .app { fill: var(--t-soft); stroke: var(--t-pri); stroke-dasharray: 5 4; }
+    .tkd .title { fill: var(--t-hi); font-size: 14px; font-weight: 600; }
+    .tkd .small { fill: var(--t-hi); font-size: 12.5px; font-weight: 600; }
+    .tkd .note { fill: var(--t-muted); font-size: 12px; }
+    .tkd .mono { fill: var(--t-hi); font-family: 'Geist Mono', ui-monospace, monospace; font-size: 12px; }
+    .tkd .host { fill: var(--t-muted); font-family: 'Geist Mono', ui-monospace, monospace; font-size: 11.5px; }
+    .tkd .wire { stroke: var(--t-muted); stroke-width: 1.5; fill: none; }
+    .tkd .wire-optional { stroke-dasharray: 4 4; }
+    .tkd .head { fill: var(--t-muted); }
+    .tkd .icon { stroke: var(--t-muted); stroke-width: 1.6; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+    .tkd .dot { fill: var(--t-pri); }
+    .tkd .dot-n { fill: var(--t-bg); font-size: 11px; font-weight: 700; }
+    .tkd .packet { fill: var(--t-pri); opacity: 0; }
+    /* One step at a time: the others fade, the active wire turns blue, and the packet travels on it. */
+    .tkd .step { transition: opacity 0.2s; }
+    .tkd[data-step] .step { opacity: 0.28; }
+    .tkd[data-step="1"] .step-1, .tkd[data-step="2"] .step-2, .tkd[data-step="3"] .step-3, .tkd[data-step="4"] .step-4 { opacity: 1; }
+    .tkd[data-step="1"] .step-1 .wire, .tkd[data-step="2"] .step-2 .wire, .tkd[data-step="3"] .step-3 .wire, .tkd[data-step="4"] .step-4 .wire { stroke: var(--t-pri); stroke-width: 2; }
+    .tkd[data-step] .packet { opacity: 1; }
+  </style>
+  <defs>
+    <marker id="tkd-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path class="head" d="M0 0 10 5 0 10z"/>
+    </marker>
+  </defs>
+
+  <!-- The Agent's browser: a ticket page with the app as a sidebar card. -->
+  <rect class="window" x="1" y="1" width="500" height="378" rx="14"/>
+  <path class="bar" d="M15 1.5h472a13.5 13.5 0 0 1 13.5 13.5v26.5h-499V15A13.5 13.5 0 0 1 15 1.5z"/>
+  <line class="rule" x1="1" y1="41.5" x2="501" y2="41.5"/>
+  <circle cx="22" cy="21" r="5" fill="#FF6B6B"/><circle cx="38" cy="21" r="5" fill="#FFC94D"/><circle cx="54" cy="21" r="5" fill="#2EC4B6"/>
+  <rect class="box" x="76" y="10" width="300" height="22" rx="11"/>
+  <text class="host" x="92" y="25">tikki.example.com/tickets/PAY-1048</text>
+
+  <text class="host" x="20" y="68">PAY-1048</text>
+  <text class="title" x="20" y="88">Charged twice for order 5521</text>
+  <text class="note" x="20" y="116">Conversation</text><text class="note" x="104" y="116">Activity</text>
+  <line class="rule" x1="20" y1="125.5" x2="310" y2="125.5"/>
+  <line class="tabline" x1="20" y1="125" x2="94" y2="125"/>
+  <rect class="skel" x="20" y="138" width="250" height="40" rx="8"/>
+  <rect class="skel" x="20" y="288" width="270" height="34" rx="8"/>
+  <rect class="box" x="20" y="334" width="290" height="32" rx="8"/>
+  <text class="note" x="32" y="354">Reply…</text>
+
+  <line class="rule" x1="330.5" y1="42" x2="330.5" y2="379"/>
+  <text class="note" x="346" y="68">Requester</text>
+  <rect class="skel" x="346" y="76" width="140" height="44" rx="8"/>
+  <!-- 1: the ticket opens, and Tikki loads the URL of the placement in an iframe. -->
+  <g class="step step-1">
+    <path class="wire wire-optional" data-path="" d="M376 21C440 21 452 84 430 132" marker-end="url(#tkd-arrow)"/>
+    <circle class="dot" cx="462" cy="70" r="10"/><text class="dot-n" x="462" y="74" text-anchor="middle">1</text>
+    <rect class="app" x="346" y="136" width="140" height="170" rx="10"/>
+    <text class="small" x="360" y="160">Orders</text>
+    <text class="note" x="360" y="177">your app, in an iframe</text>
+    <text class="host" x="360" y="193">app.you.com</text>
+    <rect class="skel" x="360" y="208" width="112" height="8" rx="4"/>
+    <rect class="skel" x="360" y="224" width="88" height="8" rx="4"/>
+    <rect class="skel" x="360" y="240" width="100" height="8" rx="4"/>
+    <text class="note" x="360" y="290">Sidebar card</text>
+  </g>
+
+  <!-- 2: your page asks for the context, and Tikki answers with it and the token. -->
+  <g class="step step-2">
+    <path class="wire" d="M344 212H160" marker-end="url(#tkd-arrow)"/>
+    <path class="wire" d="M160 258H344" marker-end="url(#tkd-arrow)"/>
+    <path data-path="" d="M344 212H160M160 258H344" fill="none"/>
+    <circle class="dot" cx="38" cy="235" r="10"/><text class="dot-n" x="38" y="239" text-anchor="middle">2</text>
+    <text class="mono" x="56" y="203">tikki:fetch-context</text>
+    <text class="mono" x="56" y="249">tikki:context + token</text>
+  </g>
+
+  <!-- 3: the token goes to your backend. -->
+  <g class="step step-3">
+    <path class="wire" data-path="" d="M486 190C540 190 548 134 586 134" marker-end="url(#tkd-arrow)"/>
+    <circle class="dot" cx="530" cy="196" r="10"/><text class="dot-n" x="530" y="200" text-anchor="middle">3</text>
+    <text class="note" x="546" y="200">token</text>
+    <rect class="box" x="590" y="86" width="240" height="96" rx="12"/>
+    <rect class="icon" x="608" y="108" width="22" height="9" rx="2"/><rect class="icon" x="608" y="121" width="22" height="9" rx="2"/><path class="icon" d="M612 112.5h1M612 125.5h1"/>
+    <text class="title" x="644" y="118">Your backend</text>
+    <text class="note" x="644" y="140">Checks the token with</text>
+    <text class="note" x="644" y="157">Tikki's public keys (JWKS)</text>
+  </g>
+
+  <!-- 4: optional, your backend calls the REST API with the same token. -->
+  <g class="step step-4">
+    <path class="wire wire-optional" data-path="" d="M710 182V236" marker-end="url(#tkd-arrow)"/>
+    <circle class="dot" cx="732" cy="209" r="10"/><text class="dot-n" x="732" y="213" text-anchor="middle">4</text>
+    <text class="note" x="748" y="213">optional</text>
+    <rect class="box" x="590" y="240" width="240" height="96" rx="12"/>
+    <path class="icon" d="M614 262h-2a3 3 0 0 0-3 3v4a2 2 0 0 1-2 2 2 2 0 0 1 2 2v4a3 3 0 0 0 3 3h2M624 262h2a3 3 0 0 1 3 3v4a2 2 0 0 0 2 2 2 2 0 0 0-2 2v4a3 3 0 0 1-3 3h-2"/>
+    <text class="title" x="644" y="272">Tikki REST API</text>
+    <text class="mono" x="644" y="294">Bearer &lt;token&gt;</text>
+    <text class="note" x="644" y="313">Comment or update, if allowed</text>
+  </g>
+
+  <circle class="packet" r="5"/>
+</svg>

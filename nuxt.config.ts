@@ -1,4 +1,5 @@
-import { readFileSync } from 'node:fs'
+import { mkdirSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createJiti } from 'jiti'
 
@@ -49,12 +50,24 @@ export default defineNuxtConfig({
         const { buildOpenApiDocument } = await createJiti(import.meta.url).import<typeof import('./server/utils/openapi')>('./server/utils/openapi')
         return `export default ${JSON.stringify(JSON.stringify(buildOpenApiDocument()))}`
       },
-      // The Ticket Apps guide, served by server/api/docs/ticket-apps.md.get.ts.
-      '#ticket-apps-guide': () => `export default ${JSON.stringify(readFileSync(new URL('./docs/ticket-apps.md', import.meta.url), 'utf8'))}`,
     },
     // Workers static assets serve the SPA shell, so the Worker never renders HTML.
     prerender: { routes: ['/'] },
     hooks: {
+      // The developer docs at /docs: static files made from docs/*.md and the OpenAPI document (docs/writing-docs.md).
+      async 'compiled'(nitro) {
+        // The prerender build copies these hooks; its output is the same public folder, so once is enough.
+        if (nitro.options.preset === 'nitro-prerender' || nitro.options.dev) return
+        const jiti = createJiti(import.meta.url)
+        const { buildOpenApiDocument } = await jiti.import<typeof import('./server/utils/openapi')>('./server/utils/openapi')
+        const { buildDocsSite } = await jiti.import<typeof import('./scripts/docs-site/build')>('./scripts/docs-site/build')
+        const files = await buildDocsSite(fileURLToPath(new URL('.', import.meta.url)), buildOpenApiDocument())
+        for (const [path, content] of files) {
+          const target = join(nitro.options.output.publicDir, path)
+          mkdirSync(dirname(target), { recursive: true })
+          writeFileSync(target, content)
+        }
+      },
       'prerender:config'(prerenderConfig) {
         // The prerenderer runs on Node, where the Cloudflare entry does not load.
         delete prerenderConfig.entry

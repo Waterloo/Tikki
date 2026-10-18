@@ -176,6 +176,14 @@ onMounted(load)
         </div>
       </SettingsSection>
 
+      <SettingsSection title="Developers" description="Build on Tikki: Ticket Apps, the REST API, webhooks and AI assistants (MCP). The docs are public and match this version.">
+        <ul class="flex flex-col gap-2 text-sm">
+          <li><a href="/docs/" target="_blank" rel="noopener" class="text-(--ui-primary) hover:underline">Developer docs</a></li>
+          <li><a href="/docs/api" target="_blank" rel="noopener" class="text-(--ui-primary) hover:underline">REST API reference</a></li>
+          <li><a href="/api/v1/openapi.json" target="_blank" rel="noopener" class="text-(--ui-primary) hover:underline">OpenAPI document</a> <span class="text-(--ui-text-muted)">for Postman or a code generator</span></li>
+        </ul>
+      </SettingsSection>
+
       <SettingsSection title="Ticket numbers" description="Every ticket gets a number from one counter that all Ticket Types share. Each Ticket Type has its own prefix, so a reference reads BUG-1047 or PAY-1048. When a ticket changes type, the number stays and only the prefix changes. Set the prefix on the Ticket Type." />
 
       <SettingsSection title="Deployment" description="These values come from the environment of the Worker. Change them in the deployment, not here.">

@@ -16,7 +16,7 @@ const iconField = ref<{ validate: () => boolean, commit: (id: number) => Promise
 const iconForm = reactive({ name: 'i-lucide-app-window', color: '#4B5563', key: 0 })
 // Issue 40: a manifest app grants at most the access in its manifest.
 const formAccessItems = computed(() => accessItems(editing.value?.manifest?.access ?? null))
-const GUIDE = '/api/docs/ticket-apps.md'
+const GUIDE = '/docs/ticket-apps'
 
 const toast = useToast()
 const apps = ref<TicketApp[]>([])
