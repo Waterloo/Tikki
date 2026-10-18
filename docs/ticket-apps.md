@@ -1,14 +1,15 @@
 # Build a Ticket App
 
-> **Planned (issues 38–40):** app pages in an Apps menu with a page token that proves identity only, `tikki:navigate`, light and dark icons, and adding an app from a manifest (`tikki-app.json`). See [ADR 0005](adr/0005-ticket-app-placements-pages-manifest.md). This guide changes when they are built.
+> **Planned (issues 38 and 40):** light and dark icons, and adding an app from a manifest (`tikki-app.json`). See [ADR 0005](adr/0005-ticket-app-placements-pages-manifest.md). This guide changes when they are built.
 
-A **Ticket App** is your own web page, shown inside a Tikki ticket. Agents see it as a card in the ticket sidebar, as a tab next to Conversation and Activity, or both. Each placement has its own URL. Tikki tells your page which ticket is open and who is looking at it, and gives you a signed token that proves it.
+A **Ticket App** is your own web page in Tikki. Agents see it inside a ticket, as a card in the ticket sidebar or as a tab next to Conversation and Activity. It can also have a full page outside any ticket, in the **Apps** menu of the main sidebar. Each placement has its own URL. Tikki tells your page who is looking at it (and in a ticket, which ticket is open), and gives you a signed token that proves it.
 
 Typical apps:
 
 - An orders panel that shows the customer's last orders next to a payment ticket.
 - A user lookup that shows the account plan, sign-up date and feature flags.
 - A refund tool that issues a refund and adds "Refund issued" to the ticket.
+- A timesheet page with the time of every ticket, by ticket or by person.
 
 You need no SDK. A Ticket App is a normal web page with about 20 lines of JavaScript.
 
@@ -21,6 +22,7 @@ You need no SDK. A Ticket App is a normal web page with about 20 lines of JavaSc
 5. [Messages](#messages)
 6. [The context](#the-context)
 7. [The context token](#the-context-token)
+   - [App pages](#app-pages): the page context and the page token
 8. [Change the ticket from your backend](#change-the-ticket-from-your-backend)
 9. [Security checklist](#security-checklist)
 10. [Errors and edge cases](#errors-and-edge-cases)
@@ -97,7 +99,8 @@ An Admin opens **Ticket Apps** in Tikki and fills in:
 | Name | Text | Shown as the card title or the tab name. Keep it short: "Orders". |
 | Sidebar URL | `https://...` or empty | A card in the ticket sidebar. |
 | Tab URL | `https://...` or empty | A tab next to Conversation and Activity. |
-| Page URL | `https://...` or empty | A page in the Apps menu. Tikki stores it now and shows it from a later version. |
+| Page URL | `https://...` or empty | A page in the Apps menu of the main sidebar. See [App pages](#app-pages). |
+| Show the page to Requesters | On or off | Default off: only Agents and Admins see the page. On: Requesters also see it. Only for the page: the sidebar card and the tab are always for staff only. Needs a page URL. |
 | Show on | "All Ticket Types", or "Only these types" with a checklist | For example, check "Data request" and "Payment issue". "All Ticket Types" also covers types added later. |
 | Access | `read`, `comment` or `update` | What your backend may do with the token. Default `read`. See [scopes](#scopes). A lower access applies at once, also to tokens made before. A higher access applies to new tokens only. |
 | On | On or off | Off hides the app and stops its tokens at once. |
@@ -108,7 +111,7 @@ Set at least one URL. A placement is on when its URL is set; see [Placements](#p
 - It must use `https://`. `http://` works only for a loopback address (`localhost`, `127.0.0.1`, `[::1]`) on a development or test instance.
 - It cannot be on Tikki's own origin.
 
-Apps appear in the order of the admin list.
+Apps appear in the order of the admin list, in the ticket and in the Apps menu.
 
 Your page must allow Tikki to frame it. If you send a CSP header, include Tikki's origin:
 
@@ -122,17 +125,19 @@ Remove `X-Frame-Options: DENY` or `SAMEORIGIN` from that page, or the browser sh
 
 One app can show in more than one placement. Each placement loads its own URL, so a sidebar card can be a small page that loads fast, and the tab can be a full tool on another host.
 
-Tikki adds `placement=sidebar` or `placement=tab` to the query of the URL. It keeps the rest of the query you wrote; a `placement` already in your URL is replaced. For example, `https://orders.you.com/tikki?view=compact` loads as `https://orders.you.com/tikki?view=compact&placement=sidebar`. The context has the same value in `app.placement`, and the token in `tikki_placement`. On your backend, use the checked token, not the query.
+Tikki adds `placement=sidebar`, `placement=tab` or `placement=page` to the query of the URL. It keeps the rest of the query you wrote; a `placement` already in your URL is replaced. For example, `https://orders.you.com/tikki?view=compact` loads as `https://orders.you.com/tikki?view=compact&placement=sidebar`. The context has the same value in `app.placement`, and the token in `tikki_placement`. On your backend, use the checked token, not the query.
 
-| | `sidebar` | `tab` |
-|---|---|---|
-| Where | A card in the ticket sidebar, below Requester | A tab after Conversation and Activity |
-| Width | The sidebar width (about 280–360 px; full width on a phone) | The main column width |
-| Height | Starts at 200 px. You set it with `tikki:resize`, 120–600 px | Fills the column |
-| Loads | When the ticket opens | The first time the Agent opens the tab, then it stays loaded |
-| Good for | Short facts: plan, last order, account status | A full tool: order history, refund form |
+| | `sidebar` | `tab` | `page` |
+|---|---|---|---|
+| Where | A card in the ticket sidebar, below Requester | A tab after Conversation and Activity | `/apps/{id}`, from the Apps menu of the main sidebar. Outside any ticket |
+| Who | Agents and Admins | Agents and Admins | Agents and Admins; also Requesters when "Show the page to Requesters" is on |
+| Width | The sidebar width (about 280–360 px; full width on a phone) | The main column width | The main area (full width on a phone) |
+| Height | Starts at 200 px. You set it with `tikki:resize`, 120–600 px | Fills the column | Fills the main area under the page header |
+| Loads | When the ticket opens | The first time the Agent opens the tab, then it stays loaded | When the User opens the page |
+| Context | Ticket context, ticket token | Ticket context, ticket token | [Page context, page token](#app-pages) |
+| Good for | Short facts: plan, last order, account status | A full tool: order history, refund form | A tool across tickets: a timesheet, a report |
 
-Design for narrow widths in both placements. On a phone, the sidebar card is full width below the conversation.
+Design for narrow widths in all placements. On a phone, the sidebar card is full width below the conversation.
 
 Tikki follows the Agent's light or dark mode. You get the current mode in `context.theme` and can match it.
 
@@ -148,19 +153,26 @@ All messages are plain objects with a `type`. Always pass Tikki's origin as the 
 |---|---|---|
 | `tikki:fetch-context` | — | Tikki answers with `tikki:context`. Use it at start-up and when your token is close to expiry. Send a first message within 10 s of load, or Tikki shows "The app did not answer". |
 | `tikki:resize` | `height` (number, px) | Sidebar only. Tikki clamps it to 120–600. Ignored for tabs. |
-| `tikki:refresh` | — | Tikki reloads the ticket. Send it after your backend changed the ticket. |
+| `tikki:refresh` | — | Tikki reloads the ticket. Send it after your backend changed the ticket. Ignored on a page. |
+| `tikki:navigate` | `path` (string) | Tikki opens this Tikki path in the same tab, for example `/tickets/PAY-1048` or `/apps/4`. Works from every placement. See below. |
 
 Tikki ignores other types, and messages from any window other than your iframe.
+
+`tikki:navigate` accepts only a path that starts with `/tickets/` or `/apps/`, with no scheme, no `//`, no backslash and no white space. Tikki resolves `..` first, so `/tickets/../sign-out` is ignored too. It ignores every other path without an answer. To open your own site, use a link with `target="_blank"`.
+
+```js
+window.parent.postMessage({ type: 'tikki:navigate', path: '/tickets/PAY-1048' }, TIKKI_ORIGIN)
+```
 
 ### From Tikki to your app
 
 | `type` | Fields | When |
 |---|---|---|
-| `tikki:context` | `data`, `token`, `expires_at` | When the frame loads, after `tikki:fetch-context`, and after the Agent changes the ticket on this page (Status, assignee, Fields, ...). A change by another person does not send it. |
+| `tikki:context` | `data`, `token`, `expires_at` | When the frame loads, after `tikki:fetch-context`, after the Agent changes the ticket on this page (Status, assignee, Fields, ...), and when the color mode changes. A change by another person does not send it. On a page, `data` is the [page context](#the-page-context). |
 
 ## The context
 
-`data` in `tikki:context`. The field names and shapes are the same as in the REST API (`GET /api/v1/tickets/{ref}`).
+`data` in `tikki:context` for the `sidebar` and `tab` placements. A page gets the [page context](#the-page-context). The field names and shapes are the same as in the REST API (`GET /api/v1/tickets/{ref}`).
 
 ```json
 {
@@ -219,7 +231,7 @@ A JSON Web Token, signed by Tikki. It lives 5 minutes. `expires_at` in the messa
 | `aud` | The origin of the URL of this placement, for example `https://app.you.com` |
 | `sub` | The Agent's User id (same as `agent.id`) |
 | `tikki_app` | Your app id (same as `app.id`) |
-| `tikki_placement` | `sidebar` or `tab` (same as `app.placement`) |
+| `tikki_placement` | `sidebar` or `tab` (same as `app.placement`). A page token has `page`: see [App pages](#app-pages) |
 | `tikki_ticket` | The ticket ref, for example `PAY-1048` |
 | `tikki_scope` | `read`, `comment` or `update`: the app's access when Tikki made the token |
 | `iat`, `exp` | Issued at, expires (5 minutes later) |
@@ -252,6 +264,45 @@ Always check `issuer`, `audience` and the expiry (`jwtVerify` checks `exp`). A t
 Use the checked `sub` and `tikki_ticket`, not the values in the browser context, for any decision on your side. For example, show refunds only for the order in the checked ticket.
 
 The token can be your app's sign-in. Browsers block third-party cookies in iframes, so a cookie session inside the frame often fails. Send the token with each request, or swap it once for your own short session.
+
+## App pages
+
+An app with a page URL gets a page at `/apps/{id}` in Tikki, outside any ticket, with an entry in the **Apps** menu of the main sidebar. The page shows the app's name as its title, and your frame fills the main area under it. Agents and Admins see each page. Requesters see a page only when the Admin turns on "Show the page to Requesters". For anyone else, Tikki shows "No app page here" and makes no token.
+
+### The page context
+
+`data` in `tikki:context` on a page. No `ticket` and no `requester`: a page is outside any ticket.
+
+```json
+{
+  "version": 1,
+  "app": { "id": 4, "name": "Timesheet", "placement": "page" },
+  "theme": "dark",
+  "user": { "id": "u_8f2c", "name": "Sam Lee", "email": "sam@acme.com", "role": "agent" }
+}
+```
+
+`user.role` is `admin`, `agent` or `requester`. Note the key: a page has `user`, a ticket placement has `agent`.
+
+### The page token
+
+The page gets a token like the other placements, with other claims:
+
+| Claim | Value |
+|---|---|
+| `iss` | `https://tikki.example.com/api/auth` |
+| `aud` | The origin of the page URL |
+| `sub` | The User id (same as `user.id`) |
+| `tikki_app` | Your app id |
+| `tikki_placement` | `page` |
+| `tikki_role` | `admin`, `agent` or `requester`: the User's role when Tikki made the token |
+| `iat`, `exp` | Issued at, expires (5 minutes later) |
+
+**The page token proves who the User is, and nothing more.** It has no `tikki_ticket` and no `tikki_scope`. The Tikki REST API and `/mcp` answer `401` to it, so your page cannot read or change any ticket through Tikki. Your backend checks it as in [Check it on your backend](#check-it-on-your-backend), with your page's origin as the audience, and then uses `sub` and `tikki_role` for its own rules. For example, a timesheet shows an Agent their own hours and an Admin the hours of everyone.
+
+The role is the role at the time Tikki made the token, so a role change applies within 5 minutes. A page that needs ticket data stores it itself. For example, the timesheet saves the ticket title when a sidebar card logs time.
+
+Always check `tikki_placement` on your backend. If your sidebar and your page are on one origin, both tokens have the same `aud`: a sidebar token has a ticket, a page token has none.
 
 ## Change the ticket from your backend
 
@@ -335,7 +386,8 @@ What Tikki does on its side:
 
 - It loads your page in a sandboxed iframe (`allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox`). The frame itself cannot navigate the Tikki tab. A popup that your page opens has no sandbox; do not use its `opener`.
 - It sends no referrer to your page.
-- It never shows apps to Requesters and never makes tokens for them.
+- It never shows a sidebar card or a tab to Requesters and never makes ticket tokens for them. A Requester sees an app page, and gets a page token, only when the Admin shows that page to Requesters.
+- A page token has no ticket. The REST API and `/mcp` refuse it.
 - It checks your app with each API call: it must be on and still shown on the ticket's type, and `aud` must be the origin of the URL of `tikki_placement`. When an Admin turns your app off, deletes it, or removes or moves the URL of a placement, the tokens of that placement stop working at once.
 - It checks the Agent with each API call. A deactivated Agent, or one who is now a Requester, makes the token stop.
 
@@ -350,6 +402,8 @@ What Tikki does on its side:
 | The Agent lost access to the ticket | `404` | Show a short message. Do not retry. |
 | The app was turned off or deleted, no longer shows on this Ticket Type, or the URL of this placement was removed or moved to another origin | `401` | Show a short message. |
 | The Agent was deactivated or is no longer an Agent | `401` | Show a short message. |
+| A page token sent to the Tikki REST API or `/mcp` | `401` | A page token cannot read tickets. Store the data you need in your app. |
+| `tikki:navigate` with a path that is not `/tickets/...` or `/apps/...` | Nothing | Send a Tikki path, or open your own link with `target="_blank"`. |
 | Too many calls | `429` with `Retry-After` | The limit is the Agent's own web limit. Wait and retry. |
 | The ticket changed in Tikki | You get a new `tikki:context` | Re-render from the new data. |
 
@@ -363,8 +417,8 @@ Errors use the Tikki API error format:
 
 1. Run Tikki locally (see the README). It listens on `http://localhost:8787`.
 2. Serve your app on another port, for example `npx serve -p 5173`.
-3. In Tikki, open Ticket Apps and add `http://localhost:5173` as the Sidebar URL, the Tab URL, or both (allowed only on a development or test instance).
-4. Open any ticket as the Admin (`admin@example.com`). Your app shows in the sidebar, as a tab, or both.
+3. In Tikki, open Ticket Apps and add `http://localhost:5173` as the Sidebar URL, the Tab URL, the Page URL, or more than one (allowed only on a development or test instance).
+4. Open any ticket as the Admin (`admin@example.com`). Your app shows in the sidebar, as a tab, or both. A page shows in the Apps menu of the main sidebar.
 5. In your app, use `TIKKI_ORIGIN = 'http://localhost:8787'` and audience `http://localhost:5173`.
 
 A real example with a database, writes and dark mode is the time tracking app in [`examples/time-tracking/`](../examples/time-tracking/README.md).
@@ -380,7 +434,10 @@ It listens on `http://localhost:5173`. Set `TIKKI` when Tikki is not on `http://
 ## FAQ
 
 **Can I show my app to the customer (the requester)?**
-No. Ticket Apps are for staff only.
+Only a page, and only a Requester in your organization (a User, not a Contact of an Application). The Admin turns on "Show the page to Requesters". The sidebar card and the tab are for staff only.
+
+**Can my page read tickets through Tikki?**
+No. The page token has no ticket, and the API answers `401`. Store what you need when a sidebar card or a tab sends it to your backend, with a ticket token.
 
 **Can my page change the ticket with a message, without a backend?**
 No. Writes go only through the REST API with the token. If a message could change the ticket, one script bug on your page could change any ticket the Agent can reach.
@@ -395,4 +452,4 @@ No. Call `GET /api/v1/tickets/{ref}/comments` with the token. The answer has the
 Yes. Set the Sidebar URL and the Tab URL. They can be two pages, or one page that reads `placement` from its query. Each frame gets its own token, for the origin of its own URL.
 
 **Can I open a link or a popup?**
-Yes. Popups and `target="_blank"` links work. The frame cannot navigate the Tikki tab itself.
+Yes. Popups and `target="_blank"` links work. The frame cannot navigate the Tikki tab itself. To open a ticket or another app page in Tikki, send `tikki:navigate`.

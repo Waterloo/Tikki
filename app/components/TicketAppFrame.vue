@@ -1,14 +1,17 @@
 <script setup lang="ts">
-import type { ContextToken, FramePlacement, TicketAppFrame } from '~/types/ticket-apps'
+import type { ContextToken, TicketAppPlacement } from '~/types/ticket-apps'
+import { appNavigationPath } from '../../shared/app-navigation'
 
 /** One placement of a Ticket App in a sandboxed iframe, and the messages of docs/ticket-apps.md. */
 const props = defineProps<{
-  app: TicketAppFrame
-  /** The app has a URL for it. */
-  placement: FramePlacement
-  ticketRef: string
+  app: { id: number, name: string }
+  /** The URL of this placement. */
+  url: string
+  placement: TicketAppPlacement
+  /** The ticket of a sidebar or tab placement. A page has none. */
+  ticketRef?: string
   /** Changes when the ticket changed, so the app gets a new context. */
-  ticketVersion: string
+  ticketVersion?: string
 }>()
 // The app's backend changed the ticket: the page reloads it.
 const emit = defineEmits<{ refresh: [] }>()
@@ -20,7 +23,7 @@ const MAX_HEIGHT = 600
 const RENEW_BEFORE_MS = 60_000
 
 const colorMode = useColorMode()
-const appUrl = computed(() => new URL(props.app.urls[props.placement]!))
+const appUrl = computed(() => new URL(props.url))
 const origin = computed(() => appUrl.value.origin)
 // The Admin's own query stays.
 const src = computed(() => {
@@ -52,7 +55,9 @@ function getContext(): Promise<ContextToken> {
   if (context && Date.now() < renewAt) return Promise.resolve(context)
   if (inflight) return inflight
   const gen = generation
-  const request = $fetch<ContextToken>(`/api/v1/tickets/${encodeURIComponent(props.ticketRef)}/apps/${props.app.id}/token`, { method: 'POST', body: { placement: props.placement } })
+  const request = (props.placement === 'page'
+    ? $fetch<ContextToken>(`/api/v1/apps/${props.app.id}/token`, { method: 'POST' })
+    : $fetch<ContextToken>(`/api/v1/tickets/${encodeURIComponent(props.ticketRef ?? '')}/apps/${props.app.id}/token`, { method: 'POST', body: { placement: props.placement } }))
     .then((c) => {
       if (gen === generation) {
         context = c
@@ -76,7 +81,7 @@ async function sendContext() {
     frame.value?.contentWindow?.postMessage({ type: 'tikki:context', data, token: c.token, expires_at: c.expires_at }, origin.value)
   } catch (e) {
     if ((e as { status?: number }).status === 401) return navigateTo('/sign-in')
-    fail('Tikki could not get the ticket context for this app. It may be turned off.')
+    fail(props.placement === 'page' ? 'Tikki could not get the context for this app. It may be turned off.' : 'Tikki could not get the ticket context for this app. It may be turned off.')
   }
 }
 
@@ -100,7 +105,7 @@ function retry() {
 
 function onMessage(event: MessageEvent) {
   if (!frame.value || event.source !== frame.value.contentWindow || event.origin !== origin.value) return
-  const msg = event.data as { type?: unknown, height?: unknown } | null
+  const msg = event.data as { type?: unknown, height?: unknown, path?: unknown } | null
   if (typeof msg !== 'object' || msg === null) return
   if (state.value === 'loading') {
     clearTimeout(timer)
@@ -112,6 +117,9 @@ function onMessage(event: MessageEvent) {
     height.value = Math.min(MAX_HEIGHT, Math.max(MIN_HEIGHT, Math.round(msg.height)))
   } else if (msg.type === 'tikki:refresh') {
     emit('refresh')
+  } else if (msg.type === 'tikki:navigate') {
+    const path = appNavigationPath(msg.path)
+    if (path) navigateTo(path)
   }
 }
 
@@ -136,7 +144,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="flex flex-col gap-2 min-w-0">
+  <div class="flex flex-col gap-2 min-w-0" :class="placement === 'page' ? 'h-full' : ''">
     <div v-if="state === 'failed'" role="alert" class="flex flex-wrap items-center justify-between gap-3 rounded-[10px] px-3.5 py-3 text-sm bg-(--ui-bg-elevated) text-(--ui-text)">
       <span class="flex items-center gap-2 min-w-0">
         <UIcon name="i-lucide-circle-alert" class="size-4 shrink-0 text-(--ui-error)" aria-hidden="true" />
@@ -155,9 +163,9 @@ onBeforeUnmount(() => {
       :data-app-id="app.id"
       sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
       referrerpolicy="no-referrer"
-      class="block w-full border-0 rounded-[10px] bg-(--ui-bg)"
+      class="block w-full border-0 bg-(--ui-bg)"
       :data-placement="placement"
-      :class="placement === 'tab' ? 'h-[70vh] min-h-[420px]' : ''"
+      :class="{ 'h-[70vh] min-h-[420px]': placement === 'tab', 'flex-1 min-h-0': placement === 'page', 'rounded-[10px]': placement !== 'page' }"
       :style="placement === 'sidebar' ? { height: `${height}px` } : undefined"
       @load="sendContext"
     />

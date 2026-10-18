@@ -18,8 +18,10 @@ const page = `<!doctype html>
     if (event.origin !== TIKKI || event.source !== window.parent) return
     const msg = event.data
     if (!msg || msg.type !== 'tikki:context') return
-    window.tikkiLog.push({ ref: msg.data.ticket.ref, theme: msg.data.theme, token: msg.token, expires_at: msg.expires_at, data: msg.data })
-    document.getElementById('ref').textContent = msg.data.ticket.ref
+    // A page context (issue 39) has no ticket.
+    const ref = msg.data.ticket ? msg.data.ticket.ref : 'none'
+    window.tikkiLog.push({ ref, theme: msg.data.theme, token: msg.token, expires_at: msg.expires_at, data: msg.data })
+    document.getElementById('ref').textContent = ref
     document.getElementById('count').textContent = String(window.tikkiLog.length)
   })
   // mode=writer: the button asks this app's backend to add an internal note, then tells Tikki to reload the ticket.

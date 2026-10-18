@@ -1,5 +1,5 @@
 import { and, eq, isNull, ne, or, sql, type SQL } from 'drizzle-orm'
-import { contact, ticket, ticketParticipant, ticketType, type ApplicationPermission, type StatusCategory, type TicketAppAccess, type TicketVisibility } from '../db/schema'
+import { contact, ticket, ticketApp, ticketParticipant, ticketType, type ApplicationPermission, type StatusCategory, type TicketAppAccess, type TicketVisibility } from '../db/schema'
 import { TICKET_REFERENCE } from '../../shared/ticket-type-rules'
 import type { ApplicationPrincipal, Principal, UserPrincipal } from './tickets'
 
@@ -202,6 +202,15 @@ export function authorizeListAssignees(principal: Principal): Refusal | null {
 export function authorizeTicketApps(principal: Principal): Refusal | null {
   if (viaApp(principal)) return APP_REFUSED
   return isStaff(principal) ? null : { status: 403, code: 'FORBIDDEN', message: 'Only Agents and Admins can use Ticket Apps.' }
+}
+
+/**
+ * Issue 39: the app pages this User may open, as a SQL condition on `ticket_app`. Agents and Admins see each page;
+ * a Requester only a page that the Admin shows to Requesters. The caller adds "on, with a page URL".
+ */
+export function visibleAppPages(principal: UserPrincipal): SQL {
+  if (viaApp(principal)) return sql`0`
+  return isStaff(principal) ? sql`1` : eq(ticketApp.pageForRequesters, true)
 }
 
 /** Null when the Principal may list tickets. Which tickets is `readableTickets`. */
