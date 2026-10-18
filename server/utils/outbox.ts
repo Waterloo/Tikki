@@ -31,6 +31,7 @@ export function changedKey(entry: Pick<ChangeEntry, 'action' | 'fieldKey'>): str
     case 'assignee_changed': return 'assignee'
     case 'field_changed': return entry.fieldKey!
     case 'type_changed': return 'ticket_type'
+    case 'team_changed': return 'team'
     case 'description_changed': return 'description'
     // Cancel and reopen change the Status.
     case 'ticket_cancelled':
@@ -54,7 +55,7 @@ function ticketJson(number: number | SQL): SQL {
     'priority', t.priority,
     'status', json_object('key', s.key, 'name', s.name, 'category', s.category),
     'ticket_type', json_object('id', tt.id, 'name', tt.name, 'prefix', tt.prefix),
-    'team', json((SELECT json_object('id', tm.id, 'name', tm.name) FROM team tm WHERE tm.id = tt.team_id)),
+    'team', json((SELECT json_object('id', tm.id, 'name', tm.name) FROM team tm WHERE tm.id = t.team_id)),
     -- A Contact (issue 12) has no User row; its ticket names the Contact and its Application.
     'requester', CASE WHEN t.contact_id IS NULL
       THEN json_object('kind', 'user', 'id', r.id, 'name', r.name, 'email', r.email)
@@ -109,11 +110,15 @@ function applicationView(payload: SQL): SQL {
       'contact', json_remove(json(json_extract(${p}, '$.after.requester')), '$.kind', '$.application_id'),
       'application', json_object('id', json_extract(${p}, '$.comment.author.id'), 'name', json_extract(${p}, '$.comment.author.name')))
     ELSE json(json_extract(${p}, '$.comment.author')) END`
-  return sql`json_set(${p},
+  // Team is staff structure (issue 13): removed from the views, and a change of only the Team is not delivered (see fanOut).
+  const changedWithoutTeam = sql`json((SELECT json_group_array(value) FROM json_each(json_extract(${p}, '$.changed')) WHERE value <> 'team'))`
+  return sql`json_remove(json_set(${p},
     '$.before.assigned', ${assigned('before')}, '$.before.assignee', NULL,
     '$.after.assigned', ${assigned('after')}, '$.after.assignee', NULL,
     '$.actor', ${staffOr('$.actor')},
-    '$.comment.author', ${commentAuthor})`
+    '$.comment.author', ${commentAuthor},
+    '$.changed', ${changedWithoutTeam}),
+    '$.before.team', '$.after.team')`
 }
 
 /**
@@ -136,6 +141,7 @@ function fanOut(db: Db, id: string, type: string, now: Date) {
         -- A Restricted ticket counts as internal data: its title must not reach a team channel (8.31).
         (e.owner = 'admin' AND (e.include_internal = 1 OR (ev.internal = 0 AND NOT ${restricted})))
         OR (e.owner = 'application' AND ev.internal = 0 AND NOT ${restricted} AND ${type} IN (${sql.join(app.map(t => sql`${t}`), sql`, `)})
+          AND (${type} <> 'ticket.updated' OR EXISTS (SELECT 1 FROM json_each(ev.payload, '$.changed') WHERE value <> 'team'))
           AND EXISTS (SELECT 1 FROM ticket t JOIN contact c ON c.id = t.contact_id
             WHERE t.number = ev.ticket_number AND c.application_id = e.application_id))
       )`)

@@ -18,6 +18,7 @@ import { DEFAULT_PREFERENCES, noticeText } from './notifications'
 /** Which switch controls the email for each kind of notice. */
 const PREFERENCE_OF: Record<NotificationKind, PreferenceKey> = {
   ticket_created: 'team_ticket',
+  moved_to_team: 'team_ticket',
   assigned: 'assigned',
   public_comment: 'public_comment',
   internal_comment: 'internal_comment',

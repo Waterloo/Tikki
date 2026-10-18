@@ -84,8 +84,11 @@ export const ticket = sqliteTable('ticket', {
   reopenedFrom: integer('reopened_from').references((): AnySQLiteColumn => ticket.number),
   // Issue 22: set while an Admin has soft-deleted the ticket. The read rule in policy.ts hides it everywhere.
   deletedAt: integer('deleted_at', { mode: 'timestamp_ms' }),
+  // Issue 29: the ticket's own Team (4.13a). Nullable for the same SQLite reason as `status`; the code fails loudly on null.
+  teamId: integer('team_id').references(() => team.id),
 }, t => [
   index('ticket_requester_idx').on(t.requesterId),
+  index('ticket_team_idx').on(t.teamId),
   // Issue 10: list filters and the Status-ordered cursor.
   index('ticket_status_updated_idx').on(t.status, t.updatedAt),
   index('ticket_type_idx').on(t.ticketTypeId),
@@ -145,6 +148,8 @@ export const AUDIT_ACTIONS = ['ticket_created', 'status_changed', 'priority_chan
   'role_changed', 'user_invited', 'invite_resent', 'invite_revoked', 'user_deactivated', 'user_reactivated',
   'team_created', 'team_renamed', 'team_removed', 'team_member_added', 'team_member_removed',
   'invite_changed',
+  // Issue 29: a ticket moved to another Team
+  'team_changed',
 ] as const
 
 /** What an Admin change without a ticket is about. A ticket entry has `ticketNumber` and no subject. */
@@ -245,7 +250,7 @@ export const ticketTypeOldPrefix = sqliteTable('ticket_type_old_prefix', {
 })
 
 // Issue 18: Inbox notifications and preferences
-export const NOTIFICATION_KINDS = ['ticket_created', 'assigned', 'public_comment', 'internal_comment', 'status_changed', 'webhook_failing', 'webhook_disabled'] as const
+export const NOTIFICATION_KINDS = ['ticket_created', 'assigned', 'public_comment', 'internal_comment', 'status_changed', 'webhook_failing', 'webhook_disabled', 'moved_to_team'] as const
 export type NotificationKind = typeof NOTIFICATION_KINDS[number]
 
 /** One row for each notice for one User. The Inbox always gets every notice; preferences only control email (8.15). */

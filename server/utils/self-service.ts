@@ -46,6 +46,8 @@ export async function reopenTicket(db: Db, principal: Principal, number: number,
   const [created] = await db.batch([
     db.insert(ticket).values({
       ticketTypeId: row.typeId,
+      // The Team of the type, as for any new ticket (4.13a).
+      teamId: sql`(SELECT team_id FROM ticket_type WHERE id = ${row.typeId})`,
       // The same Schema Version, so the copied Field values stay valid.
       schemaVersion: row.schemaVersion,
       title: row.title,

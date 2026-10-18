@@ -101,7 +101,7 @@ describe('policy: who can change a ticket', () => {
     expect(assigned.status).toBe(200)
     const a = await assigned.json() as Ticket
     expect(a.assignee?.id).toBe(agent.user.id)
-    expect(a.allowed_actions).toEqual(['change_status', 'change_priority', 'assign', 'edit_fields', 'edit_description', 'change_type', 'comment', 'comment_internal'])
+    expect(a.allowed_actions).toEqual(['change_status', 'change_priority', 'assign', 'edit_fields', 'edit_description', 'change_type', 'move_team', 'comment', 'comment_internal'])
     expect(a.updated_at > ticket.updated_at).toBe(true)
 
     const moved = await (await patch(agent, String(ticket.number), { status: 'in_progress', priority: 'high' })).json() as Ticket
@@ -128,13 +128,13 @@ describe('policy: who can change a ticket', () => {
       { key: 'status', label: 'Status', reason: 'Must be one of the options.', options: ['open', 'in_progress', 'waiting', 'resolved', 'closed'] },
     ])
     expect(await details({ assignee_id: requester.user.id })).toEqual([
-      { key: 'assignee_id', label: 'Assignee', reason: 'Must be the ID of an Agent or Admin.' },
+      { key: 'assignee_id', label: 'Assignee', reason: 'Must be the ID of an active Agent or Admin.' },
     ])
     expect(await details({ title: 'New title' })).toEqual([
-      { key: 'body', label: 'Request body', reason: 'Only status, priority, assignee_id, fields, description can change here. Unknown: title.' },
+      { key: 'body', label: 'Request body', reason: 'Only status, priority, assignee_id, team_id, fields, description can change here. Unknown: title.' },
     ])
     expect(await details({})).toEqual([
-      { key: 'body', label: 'Request body', reason: 'Send at least one of status, priority, assignee_id, fields, description.' },
+      { key: 'body', label: 'Request body', reason: 'Send at least one of status, priority, assignee_id, team_id, fields, description.' },
     ])
   })
 })

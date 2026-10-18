@@ -172,7 +172,7 @@ export async function listActivity(db: Db, principal: Principal, number: number)
     }).from(auditLog)
       .leftJoin(user, eq(auditLog.principalId, user.id))
       .leftJoin(application, eq(auditLog.applicationId, application.id))
-      .where(and(eq(auditLog.ticketNumber, number), ne(auditLog.action, 'comment_added'))).orderBy(asc(auditLog.id)),
+      .where(and(eq(auditLog.ticketNumber, number), ne(auditLog.action, 'comment_added'), principal.kind === 'application' ? ne(auditLog.action, 'team_changed') : undefined)).orderBy(asc(auditLog.id)),
     selectComments(db, principal, number).orderBy(asc(comment.createdAt), asc(comment.id)),
     db.select({ key: status.key, name: status.name }).from(status),
     pinnedFields(db, row),
@@ -214,6 +214,7 @@ export async function listActivity(db: Db, principal: Principal, number: number)
       case 'assignee_changed': return principal.kind === 'application' ? 'Support' : personNames.get(String(value)) ?? 'unknown User'
       case 'participant_added':
       case 'participant_removed': return personNames.get(String(value)) ?? 'unknown User'
+      case 'team_changed': return (value as { name: string }).name
       case 'type_changed': {
         const v = value as { type: string, ref: string }
         return `${v.type} (${v.ref})`
@@ -239,7 +240,7 @@ export async function listActivity(db: Db, principal: Principal, number: number)
       before: show(e, e.before),
       after: show(e, e.after),
       unmoved: unmovedOf(e),
-      erased: (!!action || e.action === 'type_changed') && e.before === null,
+      erased: (!!action || e.action === 'type_changed' || e.action === 'team_changed') && e.before === null,
       reverts_id: e.revertsId,
       reverted: revertedIds.has(e.id),
       revertible,

@@ -3,7 +3,7 @@ import type { Notice, NoticeKind, NoticeList, Preference } from '~/types/notific
 
 const LABEL: Record<Preference['key'], { label: string, note?: string }> = {
   assigned: { label: 'A ticket is assigned to me', note: 'Always on' },
-  team_ticket: { label: 'A new ticket arrives for my team' },
+  team_ticket: { label: 'A ticket arrives for, or moves to, my team' },
   public_comment: { label: 'Someone replies on my tickets', note: 'Public comments' },
   internal_comment: { label: 'Someone adds an internal note on my tickets' },
   status_changed: { label: 'The status of my ticket changes' },
@@ -14,6 +14,7 @@ const LABEL: Record<Preference['key'], { label: string, note?: string }> = {
 const KIND: Record<NoticeKind, { icon: string, tile: string }> = {
   public_comment: { icon: 'i-lucide-message-circle', tile: 'bg-[#eaf1fd] text-[#1a4fb4] dark:bg-[#1c2a45] dark:text-[#a9c3f0]' },
   ticket_created: { icon: 'i-lucide-ticket-plus', tile: 'bg-[#eef0f3] text-[#2b2e35] dark:bg-[#26282e] dark:text-[#c3c6cc]' },
+  moved_to_team: { icon: 'i-lucide-arrow-right-left', tile: 'bg-[#eef0f3] text-[#2b2e35] dark:bg-[#26282e] dark:text-[#c3c6cc]' },
   status_changed: { icon: 'i-lucide-refresh-cw', tile: 'bg-[#eef0f3] text-[#2b2e35] dark:bg-[#26282e] dark:text-[#c3c6cc]' },
   assigned: { icon: 'i-lucide-user', tile: 'bg-[#e7f5ec] text-[#1b6136] dark:bg-[#12281b] dark:text-[#7fd19c]' },
   internal_comment: { icon: 'i-lucide-lock', tile: 'bg-[#fff3e3] text-[#7a3e00] dark:bg-[#2e1d0d] dark:text-[#f4b77a]' },

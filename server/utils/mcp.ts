@@ -5,7 +5,7 @@ import { verifyJwsAccessToken } from 'better-auth/oauth2'
 import { eq } from 'drizzle-orm'
 import { errors as joseErrors, type JWTPayload } from 'jose'
 import { z } from 'zod'
-import { PRIORITIES, user } from '../db/schema'
+import { PRIORITIES, team, user } from '../db/schema'
 import { createComment, listComments } from './activity'
 import { attachText, AttachmentError } from './attachments'
 import type { Role } from './auth'
@@ -16,7 +16,7 @@ import { limitMessage, takeSlot, USER_MCP_LIMIT, USER_MCP_WRITE_LIMIT } from './
 import { db, useAuth } from './services'
 import { getTicketTypeWithFields, listTicketTypes } from './ticket-types'
 import { changeTicketType } from './ticket-type-change'
-import { createTicket, FIELD_KEY, getTicket, listTickets, MAX_SEARCH_LENGTH, parseTicketReference, TicketValidationError, updateTicket, type ListFilter, type TicketSummary, type UserPrincipal } from './tickets'
+import { createTicket, FIELD_KEY, getTicket, listTickets, loadFor, MAX_SEARCH_LENGTH, parseTicketReference, TicketValidationError, updateTicket, type ListFilter, type TicketDetail, type TicketSummary, type UserPrincipal } from './tickets'
 import { createUploadLink } from './upload-links'
 import { UNTRUSTED_NOTICE, untrusted, untrustedDeep } from './untrusted'
 
@@ -136,13 +136,14 @@ function buildServer(principal: UserPrincipal) {
 
   /** Runs one change through the same module function and policy as REST, and reports the result or the refusal. */
   function change(ref: string, input: Record<string, unknown>, apply: typeof updateTicket = updateTicket) {
-    return run(async () => {
-      const t = await apply(db, principal, numberOf(ref), input)
-      return {
-        text: `${t.ref} (${t.ticket_type.name}): Status ${t.status.name}, Priority ${t.priority}, ${t.assignee ? `assigned to ${t.assignee.name || t.assignee.email}` : 'unassigned'}.`,
-        data: { number: t.number, ref: t.ref, status: t.status.key, priority: t.priority, assignee_id: t.assignee?.id ?? null },
-      }
-    })
+    return run(async () => changed(await apply(db, principal, numberOf(ref), input)))
+  }
+
+  function changed(t: TicketDetail) {
+    return {
+      text: `${t.ref} (${t.ticket_type.name}): Status ${t.status.name}, Priority ${t.priority}, ${t.assignee ? `assigned to ${t.assignee.name || t.assignee.email}` : 'unassigned'}.`,
+      data: { number: t.number, ref: t.ref, status: t.status.key, priority: t.priority, assignee_id: t.assignee?.id ?? null },
+    }
   }
 
   const summary = (t: TicketSummary) => ({
@@ -151,6 +152,7 @@ function buildServer(principal: UserPrincipal) {
     status: t.status.key,
     priority: t.priority,
     type: t.ticket_type.name,
+    team: t.team?.name,
     assignee: t.assignee ? name(t.assignee) : null,
     updated_at: t.updated_at,
   })
@@ -289,10 +291,37 @@ function buildServer(principal: UserPrincipal) {
 
   server.registerTool('assign_ticket', {
     title: 'Assign ticket',
-    description: 'Agents only. Assign one ticket to the signed-in user ("me"), or remove the assignee ("nobody"). Ask the user to confirm before you call it.',
-    inputSchema: z.object({ ticket: ticketArg, assignee: z.enum(['me', 'nobody']) }),
+    description: 'Agents only. Assign one ticket to the signed-in user ("me"), to an active Agent or Admin by email, or remove the assignee ("none"). Moving a ticket to another Team keeps the assignee. Ask the user to confirm before you call it.',
+    inputSchema: z.object({ ticket: ticketArg, assignee: z.string().min(1).max(320).describe('"me", "none", or the email of an active Agent or Admin.') }),
     annotations: { title: 'Assign ticket', ...writeAnnotations },
-  }, ({ ticket, assignee }) => change(ticket, { assignee_id: assignee === 'me' ? principal.userId : null }))
+  }, ({ ticket, assignee }) => {
+    const wanted = assignee.trim().toLowerCase()
+    if (wanted === 'me') return change(ticket, { assignee_id: principal.userId })
+    if (wanted === 'none' || wanted === 'nobody') return change(ticket, { assignee_id: null })
+    // The policy answers first, so a Requester gets the same refusal as on REST. An unknown email then fails like an unknown ID.
+    return run(async () => {
+      const number = numberOf(ticket)
+      await loadFor(db, principal, 'assign', number)
+      const [found] = await db.select({ id: user.id }).from(user).where(eq(user.email, wanted)).limit(1)
+      // An email is never a User ID, so a missing User fails the same check as on REST.
+      return changed(await updateTicket(db, principal, number, { assignee_id: found?.id ?? wanted }))
+    })
+  })
+
+  server.registerTool('move_ticket_team', {
+    title: 'Move ticket to a Team',
+    description: 'Agents only. Move one ticket to another Team by name, for example from Support to Development. The assignee stays. The members of the new Team get a notice. Ask the user to confirm before you call it.',
+    inputSchema: z.object({ ticket: ticketArg, team: z.string().min(1).max(100).describe('The name of the Team.') }),
+    annotations: { title: 'Move ticket to a Team', ...writeAnnotations },
+  }, ({ ticket, team: teamName }) => run(async () => {
+    const number = numberOf(ticket)
+    await loadFor(db, principal, 'move_team', number)
+    const teams = await db.select({ id: team.id, name: team.name }).from(team)
+    const found = teams.find(t => t.name.toLowerCase() === teamName.trim().toLowerCase())
+    if (!found) throw new TicketValidationError([{ key: 'team', label: 'Team', reason: `No Team has this name. Teams: ${teams.map(t => t.name).join(', ') || 'none'}.` }])
+    const t = await updateTicket(db, principal, number, { team_id: found.id })
+    return { text: `${t.ref} is in the Team ${t.team?.name}.`, data: { number: t.number, ref: t.ref, team: t.team?.name ?? null } }
+  }))
 
   server.registerTool('change_ticket_type', {
     title: 'Change ticket type',

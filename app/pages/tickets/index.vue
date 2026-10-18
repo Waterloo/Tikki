@@ -34,10 +34,12 @@ const filter = computed<Filter>(() => route.query.filter === 'unassigned' || rou
 const search = computed(() => one(route.query.q)?.trim() ?? '')
 const typeId = computed(() => one(route.query.type) ?? ALL)
 const priority = computed(() => one(route.query.priority) ?? ALL)
+const teamId = computed(() => one(route.query.team) ?? ALL)
 const branch = computed(() => one(route.query.branch) ?? ALL)
-const narrowed = computed(() => search.value !== '' || typeId.value !== ALL || priority.value !== ALL || branch.value !== ALL)
+const narrowed = computed(() => search.value !== '' || typeId.value !== ALL || priority.value !== ALL || teamId.value !== ALL || branch.value !== ALL)
 
 const typeItems = ref<{ label: string, value: string }[]>([])
+const teamItems = ref<{ label: string, value: string }[]>([])
 const branchItems = ref<{ label: string, value: string }[]>([])
 const searchText = ref(search.value)
 
@@ -61,6 +63,7 @@ function params(cursor?: string) {
     q: search.value || undefined,
     type: typeId.value === ALL ? undefined : typeId.value,
     priority: priority.value === ALL ? undefined : priority.value,
+    team: teamId.value === ALL ? undefined : teamId.value,
     field: branch.value === ALL ? undefined : `${BRANCH_KEY}:${branch.value}`,
     cursor,
   }
@@ -143,6 +146,10 @@ async function loadFilterChoices() {
     const options = new Set(details.flatMap(d => d.fields.find(f => f.key === BRANCH_KEY)?.options ?? []))
     if (options.size) branchItems.value = [{ label: 'Any branch', value: ALL }, ...[...options].sort().map(o => ({ label: o, value: o }))]
   } catch { /* the menus stay hidden */ }
+  try {
+    const { teams } = await $fetch<{ teams: { id: number, name: string }[] }>('/api/v1/assignees')
+    if (teams.length > 1) teamItems.value = [{ label: 'Any team', value: ALL }, ...teams.map(t => ({ label: t.name, value: String(t.id) }))]
+  } catch { /* the menu stays hidden */ }
 }
 
 function shownIn(groupTickets: TicketSummary[], count: number) {
@@ -204,6 +211,7 @@ onBeforeUnmount(() => clearTimeout(typing))
         />
         <USelect v-if="typeItems.length" :model-value="typeId" :items="typeItems" aria-label="Ticket Type" size="lg" class="min-w-32" @update:model-value="setQuery({ type: $event })" />
         <USelect :model-value="priority" :items="PRIORITY_ITEMS" aria-label="Priority" size="lg" class="min-w-32" @update:model-value="setQuery({ priority: $event })" />
+        <USelect v-if="teamItems.length" :model-value="teamId" :items="teamItems" aria-label="Team" size="lg" class="min-w-32" @update:model-value="setQuery({ team: $event })" />
         <USelect v-if="branchItems.length" :model-value="branch" :items="branchItems" aria-label="Branch" size="lg" class="min-w-32" @update:model-value="setQuery({ branch: $event })" />
       </div>
     </div>

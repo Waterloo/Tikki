@@ -7,7 +7,7 @@ import type { ApplicationPrincipal, Principal, UserPrincipal } from './tickets'
  * REST, MCP, and the UI (through `allowed_actions`) use it. No other code checks permissions.
  */
 
-export const TICKET_ACTIONS = ['read', 'change_status', 'change_priority', 'assign', 'edit_fields', 'edit_description', 'change_type', 'comment', 'comment_internal', 'cancel', 'reopen', 'delete', 'manage_participants'] as const
+export const TICKET_ACTIONS = ['read', 'change_status', 'change_priority', 'assign', 'edit_fields', 'edit_description', 'change_type', 'move_team', 'comment', 'comment_internal', 'cancel', 'reopen', 'delete', 'manage_participants'] as const
 export type TicketAction = typeof TICKET_ACTIONS[number]
 
 /** The facts about a ticket that the rules use. */
@@ -52,6 +52,7 @@ const AGENT_ONLY: Record<Exclude<TicketAction, 'read'>, string> = {
   cancel: 'Only the Requester can cancel a ticket.',
   reopen: 'Only the Requester can reopen a ticket.',
   change_type: 'Only Agents can change the Ticket Type of a ticket.',
+  move_team: 'Only Agents can move a ticket to another Team.',
   comment: 'You cannot comment on this ticket.',
   comment_internal: 'Only Agents can write Internal Comments.',
   delete: 'Only Admins can delete a ticket.',
@@ -141,6 +142,11 @@ export function authorize(principal: Principal, action: TicketAction, t: PolicyT
     default:
       return isStaff(principal) ? null : forbidden(AGENT_ONLY[action])
   }
+}
+
+/** The people a ticket can be assigned to, and the Teams it can move to, are staff data (issue 29). */
+export function authorizeListAssignees(principal: Principal): Refusal | null {
+  return isStaff(principal) ? null : { status: 403, code: 'FORBIDDEN', message: 'Only Agents can see who a ticket can be assigned to.' }
 }
 
 /** Null when the Principal may list tickets. Which tickets is `readableTickets`. */
