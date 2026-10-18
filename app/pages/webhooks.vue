@@ -237,6 +237,9 @@ const resultClass = (d: Delivery) => d.state === 'delivered' ? GREEN : d.attempt
       :breadcrumb="[{ label: 'Admin' }, { label: 'Webhooks' }]"
     >
       <template #actions>
+        <UButton :to="'/docs/webhooks'" external target="_blank" icon="i-lucide-book-open" color="neutral" variant="outline" size="lg">
+          Developer docs
+        </UButton>
         <UButton icon="i-lucide-plus" size="lg" @click="openForm(null)">
           Add endpoint
         </UButton>

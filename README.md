@@ -76,7 +76,7 @@ In the ChatGPT desktop browser, the page gives ChatGPT a smaller set of tools ([
 
 Admins create an **Application** and give it an API key, permissions and the Ticket Types it can use. The Application raises tickets for its **Contacts** (its own customers). Contacts do not need an account.
 
-The API is described in OpenAPI at `/api/v1/openapi.json`. Each Application has its own rate limit.
+The API is described in OpenAPI at `/api/v1/openapi.json`, and the reference with examples is at `/docs/api`. Each Application has its own rate limit. Signed webhooks: [docs/webhooks.md](docs/webhooks.md).
 
 ## Show your own tools inside a ticket
 
@@ -95,9 +95,22 @@ A **Ticket App** is your own web page, shown inside a ticket as a sidebar card o
 
 Requesters never see Ticket Apps. Your page needs no SDK: about 20 lines of JavaScript.
 
-- Developer guide: [docs/ticket-apps.md](docs/ticket-apps.md) (messages, context, token check, API calls, security checklist).
+- Developer guide: [docs/ticket-apps.md](docs/ticket-apps.md), also at `/docs/ticket-apps` on your Tikki (messages, context, token check, API calls, security checklist).
 - Example app: [time tracking](examples/time-tracking/README.md). Agents log time on a ticket and can add it as an internal note.
 - Minimal example with a backend token check: [examples/ticket-app/server.mjs](examples/ticket-app/server.mjs). Run `node examples/ticket-app/server.mjs` and add `http://localhost:5173/` as a Ticket App on your local Tikki.
+
+## Developer docs
+
+Every Tikki serves its developer docs at `/docs`, without sign-in. For this instance: [tikki.jithinsha.in/docs](https://tikki.jithinsha.in/docs/). The pages are made at build time from these files, so they match the deployed version:
+
+| Page | Source |
+|---|---|
+| [Ticket Apps](docs/ticket-apps.md) | `docs/ticket-apps.md` |
+| [Webhooks](docs/webhooks.md) | `docs/webhooks.md` |
+| [AI assistants (MCP)](docs/ai-assistants.md) | `docs/ai-assistants.md` |
+| REST API reference | The OpenAPI document (`server/utils/openapi.ts`) |
+
+How to write them: [docs/writing-docs.md](docs/writing-docs.md).
 
 ## Stack
 

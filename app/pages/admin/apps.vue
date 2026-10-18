@@ -15,7 +15,7 @@ const ACCESS: { value: TicketAppAccess, label: string, description: string }[] =
   { value: 'update', label: 'Update', description: 'Also change the Status, Priority, assignee and Fields.' },
 ]
 const ACCESS_LABEL: Record<TicketAppAccess, string> = { read: 'Read', comment: 'Comment', update: 'Update' }
-const GUIDE = '/api/docs/ticket-apps.md'
+const GUIDE = '/docs/ticket-apps'
 
 const toast = useToast()
 const apps = ref<TicketApp[]>([])

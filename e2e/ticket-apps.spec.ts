@@ -206,7 +206,7 @@ test('the admin page adds, orders, turns off and deletes an app', async ({ brows
   const page = await staffPage(await context.newPage())
   await page.getByRole('link', { name: 'Ticket Apps' }).click()
   await expect(page.getByRole('heading', { name: 'Ticket Apps', level: 1 })).toBeVisible()
-  await expect(page.getByRole('link', { name: 'Read the developer guide' })).toHaveAttribute('href', '/api/docs/ticket-apps.md')
+  await expect(page.getByRole('link', { name: 'Read the developer guide' })).toHaveAttribute('href', '/docs/ticket-apps')
 
   const name = `Lookup ${Date.now()}`
   const dialog = page.getByRole('dialog')

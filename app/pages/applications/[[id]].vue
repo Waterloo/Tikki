@@ -205,6 +205,9 @@ onMounted(() => Promise.all([loadList(), loadDetail()]))
       :breadcrumb="[{ label: 'Admin' }, { label: 'Applications', to: detail ? '/applications' : undefined }, ...(detail ? [{ label: detail.name }] : [])]"
     >
       <template #actions>
+        <UButton :to="'/docs/api'" external target="_blank" icon="i-lucide-book-open" color="neutral" variant="outline" size="lg">
+          Developer docs
+        </UButton>
         <UButton icon="i-lucide-plus" size="lg" :disabled="listState !== 'ready'" @click="creating = true">
           New application
         </UButton>
