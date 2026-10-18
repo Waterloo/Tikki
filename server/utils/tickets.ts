@@ -42,10 +42,14 @@ export interface PersonView {
   email: string
 }
 
-/** Who did something: a User, or an Application with an API key. */
+/**
+ * Who did something. An Application acts for the Contact of its own ticket, so it shows as that Contact through the
+ * Application. An Application viewer sees staff as `support`, without name or email (customer systems get no staff emails).
+ */
 export type ActorView =
   | (PersonView & { kind: 'user' })
-  | { kind: 'application', id: number, name: string }
+  | { kind: 'contact', contact: { id: number, external_id: string, name: string, email: string }, application: { id: number, name: string } }
+  | { kind: 'support' }
 
 /** The columns of a row that a User or an Application wrote (`author_id`/`uploader_id`/`principal_id` or `application_id`). */
 export function actorId(principal: Principal): string | null {
@@ -66,7 +70,9 @@ export interface TicketSummary {
   status: StatusView
   ticket_type: { id: number, name: string, prefix: string, icon: string, color: string }
   requester: RequesterView
+  /** Null for an Application: it learns only `assigned`, not the staff member. */
   assignee: PersonView | null
+  assigned: boolean
   channel: Channel
   /** The Application that created the ticket, for tickets from the API. */
   application: { id: number, name: string } | null
@@ -251,11 +257,17 @@ function toSummary(row: SummaryRow): TicketSummary {
     ticket_type: { id: row.typeId, name: row.typeName, prefix: row.prefix, icon: row.typeIcon, color: row.typeColor },
     requester: toRequester(row),
     assignee: row.assigneeId === null ? null : { id: row.assigneeId, name: row.assigneeName ?? '', email: row.assigneeEmail ?? '' },
+    assigned: row.assigneeId !== null,
     channel: row.channel,
     application: row.applicationId === null ? null : { id: row.applicationId, name: row.applicationName! },
     created_at: row.createdAt.toISOString(),
     updated_at: row.updatedAt.toISOString(),
   }
+}
+
+/** An Application learns whether a ticket has an assignee, never who it is. */
+function forViewer(principal: Principal, summary: TicketSummary): TicketSummary {
+  return principal.kind === 'application' ? { ...summary, assignee: null } : summary
 }
 
 export function policyFacts(row: Pick<SummaryRow, 'requesterId' | 'applicationId' | 'visibleToAll' | 'statusKey' | 'statusCategory'>): PolicyTicket {
@@ -282,7 +294,7 @@ async function toDetail(db: Db, principal: Principal, row: DetailRow): Promise<T
       : db.select({ prefix: ticketType.prefix }).from(ticket).innerJoin(ticketType, eq(ticket.ticketTypeId, ticketType.id)).where(eq(ticket.number, row.reopenedFrom)),
   ])
   return {
-    ...toSummary(row),
+    ...forViewer(principal, toSummary(row)),
     description: row.description,
     schema_version: row.schemaVersion,
     fields: row.fields,
@@ -595,7 +607,7 @@ export async function listTickets(db: Db, principal: Principal, filter: ListFilt
   ])
   const page = rows.slice(0, limit)
   return {
-    tickets: page.map(toSummary),
+    tickets: page.map(r => forViewer(principal, toSummary(r))),
     counts: Object.fromEntries(counts.map(c => [c.status ?? '', c.count])),
     nextCursor: rows.length > limit ? encodeCursor(page.at(-1)!) : null,
   }
@@ -616,7 +628,7 @@ export async function similarTickets(db: Db, principal: Principal, title: string
   const rows = await selectSummaries(db, and(readableTickets(principal), ne(status.category, 'done'), sql`${score} >= ${Math.min(2, words.length)}`))
     .orderBy(desc(score), desc(ticket.updatedAt), desc(ticket.number))
     .limit(SIMILAR_LIMIT)
-  return rows.map(toSummary)
+  return rows.map(r => forViewer(principal, toSummary(r)))
 }
 
 /** The ticket, if the Principal may read it. Throws PolicyRefusal otherwise. */

@@ -66,8 +66,8 @@ describe('API keys', () => {
     expect(ticket.channel).toBe('api')
     expect(ticket.application).toEqual({ id: app.id, name: app.name })
     expect(ticket.requester).toMatchObject({ kind: 'contact', external_id: 'cus_1', name: 'Ana Lima', email: 'ana@shop.example' })
-    // With comments:create it may add a Public Comment; every Agent action stays refused.
-    expect(ticket.allowed_actions).toEqual(['comment'])
+    // With comments:create it may add a Public Comment, with tickets:update it may cancel; every Agent action stays refused.
+    expect(ticket.allowed_actions).toEqual(['comment', 'cancel'])
 
     // An Agent sees the same Contact as Requester.
     const agent = await signInAs('agent')
@@ -428,7 +428,7 @@ describe('Applications and the merged features', () => {
 
     const mine = await comment(t.ref, { body: 'Customer says hi' }, bearer(key))
     expect(mine.status, await mine.clone().text()).toBe(201)
-    expect(await mine.json()).toMatchObject({ visibility: 'public', author: { kind: 'application', id: app.id, name: app.name } })
+    expect(await mine.json()).toMatchObject({ visibility: 'public', author: { kind: 'contact', contact: { external_id: 'cus_1', name: 'Ana Lima' }, application: { id: app.id, name: app.name } } })
     expect((await comment(t.ref, { body: 'Sneaky', visibility: 'internal' }, bearer(key))).status).toBe(403)
 
     const comments = await (await call(`/api/v1/tickets/${t.ref}/comments`, { headers: bearer(key) })).json() as { data: Comment[] }
@@ -460,7 +460,7 @@ describe('Applications and the merged features', () => {
     ])
     const agent = await signInAs('agent')
     const { data: items } = await (await call(`/api/v1/tickets/${t.ref}/activity`, { headers: { cookie: agent.cookie } })).json() as { data: Event[] }
-    const actor = { kind: 'application', id: app.id, name: app.name }
+    const actor = { kind: 'contact', contact: { id: t.requester.id, external_id: 'cus_1', name: 'Ana Lima', email: 'ana@shop.example' }, application: { id: app.id, name: app.name } }
     expect(items.find(i => i.action === 'ticket_created')?.principal).toEqual(actor)
     expect(items.find(i => i.type === 'comment')?.comment?.author).toEqual(actor)
   })
@@ -541,16 +541,124 @@ describe('Applications and the merged features', () => {
     expect(detail.allowed_actions).not.toContain('reopen')
   })
 
-  it('refuses self-service, type change, and revert to an Application', async () => {
+  it('refuses edit, type change, and revert to an Application', async () => {
     const { key } = await newApp()
     const t = await created(key, body(gen))
     expect((await patch(t.ref, { description: 'Edited by the API' }, bearer(key))).status).toBe(403)
-    expect((await postJson(`/api/v1/tickets/${t.ref}/cancel`, {}, bearer(key))).status).toBe(403)
-    expect((await postJson(`/api/v1/tickets/${t.ref}/reopen`, {}, bearer(key))).status).toBe(403)
     expect((await call(`/api/v1/tickets/${t.ref}/type`, { method: 'PUT', body: JSON.stringify({ ticket_type_id: bug }), headers: bearer(key) })).status).toBe(403)
     const agent = await signInAs('agent')
     await patch(t.ref, { priority: 'high' }, { cookie: agent.cookie })
     const entry = await env.DB.prepare('SELECT id FROM audit_log WHERE ticket_number = ? AND action = \'priority_changed\'').bind(t.number).first<{ id: number }>()
     expect((await postJson(`/api/v1/tickets/${t.ref}/activity/${entry!.id}/revert`, {}, bearer(key))).status).toBe(403)
+  })
+})
+
+describe('Application actions for Contacts (issue 13)', () => {
+  const DAY = 24 * 60 * 60 * 1000
+  const act = (ref: string, what: 'cancel' | 'reopen', key: string) => postJson(`/api/v1/tickets/${ref}/${what}`, {}, bearer(key))
+  const get = async (ref: string, key: string) => await (await call(`/api/v1/tickets/${ref}`, { headers: bearer(key) })).json() as Ticket & { status: { key: string }, assignee: unknown, assigned: boolean }
+  const setStatus = async (ref: string, status: string) => {
+    const agent = await signInAs('agent')
+    expect((await patch(ref, { status }, { cookie: agent.cookie })).status).toBe(200)
+  }
+  const patch = (ref: string, payload: unknown, headers: HeadersInit) => call(`/api/v1/tickets/${ref}`, { method: 'PATCH', body: JSON.stringify(payload), headers })
+
+  it('shows an Application comment as Public, written by the Contact through the Application', async () => {
+    const { app, key } = await newApp()
+    const t = await created(key, body(gen))
+    const res = await postJson(`/api/v1/tickets/${t.ref}/comments`, { body: 'Any update?' }, bearer(key))
+    expect(res.status).toBe(201)
+    expect(await res.json()).toMatchObject({ visibility: 'public', author: { kind: 'contact', contact: { id: t.requester.id, name: 'Ana Lima' }, application: { id: app.id } } })
+    // Stored as the Application; the Contact comes from the ticket.
+    const row = await env.DB.prepare('SELECT author_id, application_id FROM comment WHERE ticket_number = ?').bind(t.number).first()
+    expect(row).toEqual({ author_id: null, application_id: app.id })
+  })
+
+  it('cancels its own ticket, with the comment and audit entry of a Requester cancel', async () => {
+    const { app, key } = await newApp()
+    const t = await created(key, body(gen))
+    expect((await get(t.ref, key)).allowed_actions).toEqual(['comment', 'cancel'])
+    const res = await act(t.ref, 'cancel', key)
+    expect(res.status, await res.clone().text()).toBe(200)
+    expect((await res.json() as { status: { key: string } }).status.key).toBe('closed')
+    const rows = await env.DB.prepare('SELECT action, application_id, principal_id FROM audit_log WHERE ticket_number = ? ORDER BY id').bind(t.number).all()
+    expect(rows.results.map(r => r.action)).toEqual(['ticket_created', 'ticket_cancelled', 'comment_added'])
+    expect(rows.results.slice(1).every(r => r.application_id === app.id && r.principal_id === null)).toBe(true)
+  })
+
+  it('refuses a cancel of a ticket that is done', async () => {
+    const { key } = await newApp()
+    const t = await created(key, body(gen))
+    await setStatus(t.ref, 'resolved')
+    const res = await act(t.ref, 'cancel', key)
+    expect(res.status).toBe(403)
+    expect((await res.json() as ErrorBody).error.message).toBe('A ticket that is done cannot be cancelled.')
+  })
+
+  it('reopens a resolved ticket in 14 days, and creates a linked ticket after that', async () => {
+    const { key } = await newApp()
+    const t = await created(key, body(gen))
+    expect((await act(t.ref, 'reopen', key)).status).toBe(403)
+    await setStatus(t.ref, 'resolved')
+    expect((await get(t.ref, key)).allowed_actions).toEqual(['comment', 'reopen'])
+    await env.DB.prepare('UPDATE audit_log SET created_at = created_at - ? WHERE ticket_number = ?').bind(13 * DAY, t.number).run()
+    const same = await act(t.ref, 'reopen', key)
+    expect(same.status).toBe(200)
+    expect(await same.json()).toMatchObject({ number: t.number, status: { key: 'open' } })
+
+    await setStatus(t.ref, 'resolved')
+    await env.DB.prepare('UPDATE audit_log SET created_at = created_at - ? WHERE ticket_number = ?').bind(15 * DAY, t.number).run()
+    const fresh = await act(t.ref, 'reopen', key)
+    expect(fresh.status).toBe(201)
+    const body2 = await fresh.json() as Ticket & { reopened_from: unknown }
+    expect(body2.number).not.toBe(t.number)
+    expect(body2.reopened_from).toEqual({ number: t.number, ref: t.ref })
+    // Same Contact, same Application.
+    expect(body2.requester.id).toBe(t.requester.id)
+    expect(body2.application).toEqual(t.application)
+  })
+
+  it('refuses cancel and reopen without tickets:update, and on another Application\'s ticket', async () => {
+    const [{ key: noUpdate }, other] = await Promise.all([newApp(['tickets:create', 'tickets:read', 'comments:create']), newApp()])
+    const t = await created(noUpdate, body(gen))
+    for (const what of ['cancel', 'reopen'] as const) {
+      const res = await act(t.ref, what, noUpdate)
+      expect(res.status).toBe(403)
+      expect((await res.json() as ErrorBody).error.message).toContain('tickets:update')
+      const foreign = await act(t.ref, what, other.key)
+      expect(foreign.status).toBe(404)
+      expect((await foreign.json() as ErrorBody).error.code).toBe('NOT_FOUND')
+    }
+    const mine = await created(other.key, body(gen))
+    const ownRes = await act(mine.ref, 'cancel', noUpdate)
+    expect(ownRes.status).toBe(404)
+    // The ticket did not change.
+    expect((await get(t.ref, noUpdate)).status.key).toBe('open')
+    expect((await postJson(`/api/v1/tickets/${t.ref}/comments`, { body: 'x' }, bearer(other.key))).status).toBe(404)
+  })
+
+  it('hides the assignee and Agent names from an Application', async () => {
+    const { key } = await newApp()
+    const t = await created(key, body(gen))
+    expect(await get(t.ref, key)).toMatchObject({ assignee: null, assigned: false })
+    const agent = await signInAs('agent')
+    expect((await patch(t.ref, { assignee_id: agent.user.id }, { cookie: agent.cookie })).status).toBe(200)
+    await postJson(`/api/v1/tickets/${t.ref}/comments`, { body: 'We are on it.', visibility: 'public' }, { cookie: agent.cookie })
+
+    const seen = await get(t.ref, key)
+    expect(seen).toMatchObject({ assignee: null, assigned: true })
+    const list = await (await call('/api/v1/tickets', { headers: bearer(key) })).json() as { data: { ref: string, assignee: unknown, assigned: boolean }[] }
+    expect(list.data.find(x => x.ref === t.ref)).toMatchObject({ assignee: null, assigned: true })
+
+    const comments = await call(`/api/v1/tickets/${t.ref}/comments`, { headers: bearer(key) })
+    const activity = await call(`/api/v1/tickets/${t.ref}/activity`, { headers: bearer(key) })
+    for (const res of [comments, activity]) {
+      const text = await res.text()
+      expect(text).not.toContain(agent.user.email)
+      expect(text).toContain('"kind":"support"')
+    }
+    // Staff still see the name.
+    const staff = await (await call(`/api/v1/tickets/${t.ref}`, { headers: { cookie: agent.cookie } })).json() as { assignee: { id: string }, assigned: boolean }
+    expect(staff).toMatchObject({ assignee: { id: agent.user.id }, assigned: true })
   })
 })

@@ -12,3 +12,22 @@ export function initials(person: Named): string {
   const source = person.name?.trim() || person.email?.split('@')[0] || ''
   return source.split(/[\s._-]+/).filter(Boolean).slice(0, 2).map(p => p[0]!.toUpperCase()).join('')
 }
+
+interface ActorLike {
+  kind: string
+  name?: string | null
+  email?: string | null
+  contact?: Named
+  application?: { name: string }
+}
+
+/** The person to show for an actor: a Contact by its name, staff seen by an Application as "Support". */
+export function actorPerson(actor: ActorLike): Named {
+  if (actor.kind === 'contact') return actor.contact!
+  return actor.kind === 'support' ? { name: 'Support' } : actor
+}
+
+/** "Contact · Acme Shop" for an Application's action, else empty. */
+export function actorSource(actor: ActorLike): string {
+  return actor.kind === 'contact' ? `Contact · ${actor.application!.name}` : ''
+}

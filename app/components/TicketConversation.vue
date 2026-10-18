@@ -82,7 +82,8 @@ const cap = (v: string | null) => v ? v.charAt(0).toUpperCase() + v.slice(1) : '
 
 /** The parts of one line: plain text and the bold new value. */
 function describe(e: Extract<ActivityItem, { type: 'event' }>): { text: string, strong?: string }[] {
-  const who = `${displayName(e.principal)}${SOURCE[e.channel]}`
+  const source = actorSource(e.principal)
+  const who = `${displayName(actorPerson(e.principal))}${source ? ` (${source})` : ''}${SOURCE[e.channel]}`
   const prefix = e.reverts_id ? `${who} reverted a change: ` : `${who} `
   const [before, after] = e.action === 'priority_changed' ? [cap(e.before), cap(e.after)] : [e.before, e.after]
   const from = before ?? 'none'
@@ -133,8 +134,9 @@ onMounted(() => load())
             : 'bg-(--ui-bg) border-(--ui-border)'"
         >
           <div class="flex flex-wrap items-center gap-2">
-            <UserAvatar :person="item.comment.author" />
-            <span class="text-sm font-medium text-(--ui-text-highlighted)">{{ displayName(item.comment.author) }}</span>
+            <UserAvatar :person="actorPerson(item.comment.author)" />
+            <span class="text-sm font-medium text-(--ui-text-highlighted)">{{ displayName(actorPerson(item.comment.author)) }}</span>
+            <span v-if="actorSource(item.comment.author)" class="inline-flex items-center min-h-[22px] px-2 rounded-full text-xs font-medium bg-(--ui-bg-accented) text-(--ui-text-toned)">{{ actorSource(item.comment.author) }}</span>
             <span
               v-if="item.comment.visibility === 'internal'"
               class="inline-flex items-center gap-1 min-h-[22px] px-2 rounded-full text-xs font-medium bg-[#f7e7c6] text-[#6b4300] dark:bg-[#4a3a1c] dark:text-[#f1d9a0]"

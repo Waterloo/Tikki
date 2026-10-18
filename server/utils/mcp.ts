@@ -199,7 +199,7 @@ function buildServer(principal: UserPrincipal) {
       description: untrusted(t.description),
       fields: untrustedDeep(t.fields),
       allowed_actions: t.allowed_actions,
-      comments: shown.map(c => ({ visibility: c.visibility, author: name(c.author), created_at: c.created_at, body: untrusted(c.body) })),
+      comments: shown.map(c => ({ visibility: c.visibility, author: c.author.kind === 'user' ? name(c.author) : c.author.kind === 'contact' ? `${c.author.contact.name} (Contact · ${c.author.application.name})` : 'Support', created_at: c.created_at, body: untrusted(c.body) })),
       ...(comments.length > shown.length ? { older_comments_omitted: comments.length - shown.length } : {}),
     }
     return { text: JSON.stringify(data), data }

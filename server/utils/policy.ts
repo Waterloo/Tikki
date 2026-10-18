@@ -86,12 +86,16 @@ export function authorize(principal: Principal, action: TicketAction, t: PolicyT
     // Every action needs `tickets:read`, because each one answers with the ticket or the comment.
     if (!has(principal, 'tickets:read')) return missing('tickets:read')
     if (action === 'comment' || action === 'comment_internal') return authorizeApplicationComment(principal, t, action === 'comment_internal')
-    return action === 'read' ? null : forbidden(AGENT_ONLY[action])
+    if (action === 'read') return null
+    // The only other actions are cancel and reopen, for the Contact it acts for, with the User rules below.
+    if (action !== 'cancel' && action !== 'reopen') return forbidden(AGENT_ONLY[action])
+    if (!has(principal, 'tickets:update')) return missing('tickets:update')
   }
   // Everyone who can read a ticket can write a Public Comment (4.18).
   if (action === 'read' || action === 'comment') return null
-  // A Contact's ticket has no User Requester; the null check keeps it from matching.
-  const isRequester = t.requesterId !== null && t.requesterId === principal.userId
+  // An Application that can read the ticket acts for its Contact, who is the Requester. A Contact's ticket has no
+  // User Requester; the null check keeps it from matching.
+  const isRequester = principal.kind === 'application' || (t.requesterId !== null && t.requesterId === principal.userId)
   switch (action) {
     // The Requester edits only while the Status Category is `open` (4.20).
     case 'edit_fields':

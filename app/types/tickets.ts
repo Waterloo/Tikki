@@ -17,10 +17,11 @@ export interface Person {
   email: string
 }
 
-/** Who did something: a User, or an Application with an API key. */
+/** Who did something: a User, a Contact through its Application, or `support` (staff, as an Application sees them). */
 export type Actor =
   | (Person & { kind: 'user' })
-  | { kind: 'application', id: number, name: string }
+  | { kind: 'contact', contact: { id: number, external_id: string, name: string, email: string }, application: { id: number, name: string } }
+  | { kind: 'support' }
 
 /** A User, or a Contact of an Application. */
 export type Requester =
@@ -36,6 +37,7 @@ export interface TicketSummary {
   ticket_type: { id: number, name: string, prefix: string, icon: string, color: string }
   requester: Requester
   assignee: Person | null
+  assigned: boolean
   channel: Channel
   application: { id: number, name: string } | null
   created_at: string
