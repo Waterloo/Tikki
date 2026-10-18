@@ -46,6 +46,7 @@ test('an Agent raises a data request and adds a second Agent; a third Agent cann
   await expect(owner.page.getByText(`e2e-helper-${stamp}@example.com added`)).toBeVisible()
   await expect(panel.getByRole('button', { name: `Remove e2e-helper-${stamp}@example.com` })).toBeVisible()
   // The Activity shows the change.
+  await owner.page.getByRole('tab', { name: 'Activity' }).click()
   await expect(owner.page.getByRole('listitem').filter({ hasText: 'as a Participant' })).toBeVisible()
 
   await helper.page.goto(`/tickets/${ref}`)

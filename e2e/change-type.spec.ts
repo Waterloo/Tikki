@@ -29,6 +29,7 @@ test('an Agent changes Bug to Payment issue, and the header shows the new refere
   const newRef = `${prefix}-${number}`
   await expect(admin).toHaveURL(new RegExp(`/tickets/${newRef}$`))
   await expect(admin.getByText(newRef, { exact: true }).filter({ visible: true }).first()).toBeVisible()
+  await admin.getByRole('tab', { name: 'Activity' }).click()
   await expect(admin.getByRole('listitem').filter({ hasText: `from Bug (${ref}) to ${name} (${newRef})` })).toBeVisible()
   await expect(admin.getByText('Did not move: Page or feature')).toBeVisible()
 

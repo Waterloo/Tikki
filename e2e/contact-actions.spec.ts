@@ -25,5 +25,5 @@ test('the Admin sees an Application comment and cancel as "Contact · <Applicati
   await expect(page.getByText('Is there any update?')).toBeVisible()
   await expect(page.getByText(`Contact · ${name}`).first()).toBeVisible()
   await expect(page.getByText('Jordan Morales').first()).toBeVisible()
-  await expect(page.getByText(/cancelled this ticket/)).toBeVisible()
+  await expect(page.getByRole('button', { name: /Latest change:.*cancelled this ticket/ })).toBeVisible()
 })
