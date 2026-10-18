@@ -131,7 +131,7 @@ test('a Requester sees no Apps section until "Show the page to Requesters" is on
   const row = adminPage.getByRole('region', { name: shared.name, exact: true })
   await expect(row.getByText('Page', { exact: true })).toBeVisible()
   await expect(row.getByText('Requesters', { exact: true })).toHaveCount(0)
-  await row.getByRole('button', { name: 'Edit' }).click()
+  await row.getByRole('button', { name: 'Edit', exact: true }).click()
   const dialog = adminPage.getByRole('dialog')
   const toggle = dialog.getByRole('switch', { name: 'Show the page to Requesters' })
   await expect(toggle).toBeEnabled()

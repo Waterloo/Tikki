@@ -55,9 +55,10 @@ function getContext(): Promise<ContextToken> {
   if (context && Date.now() < renewAt) return Promise.resolve(context)
   if (inflight) return inflight
   const gen = generation
+  if (props.placement !== 'page' && !props.ticketRef) throw new Error(`A ${props.placement} frame needs a ticket.`)
   const request = (props.placement === 'page'
     ? $fetch<ContextToken>(`/api/v1/apps/${props.app.id}/token`, { method: 'POST' })
-    : $fetch<ContextToken>(`/api/v1/tickets/${encodeURIComponent(props.ticketRef ?? '')}/apps/${props.app.id}/token`, { method: 'POST', body: { placement: props.placement } }))
+    : $fetch<ContextToken>(`/api/v1/tickets/${encodeURIComponent(props.ticketRef!)}/apps/${props.app.id}/token`, { method: 'POST', body: { placement: props.placement } }))
     .then((c) => {
       if (gen === generation) {
         context = c
