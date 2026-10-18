@@ -65,8 +65,8 @@ function seed(context: BrowserContext): Promise<Seed> {
       data: { name: `Layout app ${stamp}`, description: 'layout', permissions: ['tickets:create', 'tickets:read'], ticket_type_ids: [bug.id] },
     })) as { id: number }
     await ok(await api.post('/api/v1/webhooks', { data: { name: `Layout hook ${stamp}`, url: 'http://localhost/nowhere' } }))
-    // One app with a sidebar card and a tab (issues 34, 37), on Bug tickets only.
-    const both = await ok(await api.post('/api/v1/admin/ticket-apps', { data: { name: 'Orders', sidebar_url: appUrl(TIKKI_ORIGIN), tab_url: appUrl(TIKKI_ORIGIN), ticket_type_ids: [bug.id] } })) as { id: number }
+    // One app with a sidebar card, a tab and a page (issues 34, 37, 39), on Bug tickets only.
+    const both = await ok(await api.post('/api/v1/admin/ticket-apps', { data: { name: 'Orders', sidebar_url: appUrl(TIKKI_ORIGIN), tab_url: appUrl(TIKKI_ORIGIN), page_url: appUrl(TIKKI_ORIGIN), ticket_type_ids: [bug.id] } })) as { id: number }
     // Light and dark images (issue 38), so the card title, the tab and the list show an image.
     const icon = (fill: string) => Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="${fill}"/></svg>`)
     for (const [mode, fill] of [['light', '#e11d48'], ['dark', '#38bdf8']] as const) {
@@ -91,6 +91,7 @@ const PAGES: [string, (s: Seed) => string][] = [
   ['Application', s => `/applications/${s.appId}`],
   ['Webhooks', () => '/webhooks'],
   ['Ticket Apps', () => '/admin/apps'],
+  ['App page', s => `/apps/${s.ticketAppIds[0]}`],
   ['Settings', () => '/settings'],
 ]
 

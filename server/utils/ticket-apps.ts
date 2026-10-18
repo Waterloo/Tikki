@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNull, sql, type SQLWrapper } from 'drizzle-orm'
+import { and, asc, eq, inArray, isNotNull, isNull, sql, type SQLWrapper } from 'drizzle-orm'
 import { waitUntil } from 'cloudflare:workers'
 import { createLocalJWKSet, errors as joseErrors, jwtVerify, type JSONWebKeySet } from 'jose'
 import { z } from 'zod'
@@ -9,7 +9,7 @@ import { adminAuditEntry } from './audit'
 import type { Db, Role } from './auth'
 import type { AppEnv } from './config'
 import { config, env } from './env'
-import { isStaffRole } from './policy'
+import { isStaffRole, visibleAppPages } from './policy'
 import { useAuth } from './services'
 import { parseTicketReference, type RequesterView, type TicketDetail, type UserPrincipal } from './tickets'
 
@@ -61,6 +61,7 @@ const typeIdsInput = z.array(z.number({ error: 'Must be Ticket Type IDs.' }).int
   .nullable()
 const enabledInput = z.boolean({ error: 'Must be true or false.' })
 const accessInput = z.enum(TICKET_APP_ACCESS, { error: `Must be one of ${TICKET_APP_ACCESS.join(', ')}.` })
+const pageForRequestersInput = z.boolean({ error: 'Must be true or false.' })
 
 const iconNameInput = z.enum(APP_ICONS.map(i => i.icon) as [string, ...string[]], { error: 'Must be one of the built-in icons.' })
 const iconColorInput = z.enum(TYPE_COLORS.map(c => c.color) as [string, ...string[]], { error: 'Must be one of the Ticket Type colors.' })
@@ -75,6 +76,7 @@ export const ticketAppCreateInput = z.strictObject({
   enabled: enabledInput.default(true),
   icon_name: iconNameInput.default(DEFAULT_APP_ICON),
   icon_color: iconColorInput.default(DEFAULT_APP_ICON_COLOR),
+  page_for_requesters: pageForRequestersInput.default(false),
 })
 
 export const ticketAppUpdateInput = z.strictObject({
@@ -87,6 +89,7 @@ export const ticketAppUpdateInput = z.strictObject({
   enabled: enabledInput.optional(),
   icon_name: iconNameInput.optional(),
   icon_color: iconColorInput.optional(),
+  page_for_requesters: pageForRequestersInput.optional(),
 })
 
 export const ticketAppMoveInput = z.strictObject({ direction: z.enum(['up', 'down'], { error: 'Must be up or down.' }) })
@@ -107,6 +110,8 @@ export interface TicketAppView {
   access: TicketAppAccess
   enabled: boolean
   icon: TicketAppIcon
+  /** Issue 39: Requesters also see the page. False when there is no page URL. */
+  page_for_requesters: boolean
   created_at: string
 }
 
@@ -143,6 +148,8 @@ export function dropIconObjects(appId: number, modes: readonly AppIconMode[]): v
 
 const urlColumns = { sidebarUrl: ticketApp.sidebarUrl, tabUrl: ticketApp.tabUrl, pageUrl: ticketApp.pageUrl }
 const noUrl = () => invalid([{ key: 'urls', reason: 'Set at least one URL: sidebar, tab or page.' }])
+// Refused, not reset: a silent change of who sees the page would surprise the Admin.
+const noPageForRequesters = () => invalid([{ key: 'page_for_requesters', reason: 'Set a page URL first. Only the page can show to Requesters.' }])
 
 async function activeTypeIds(db: Db): Promise<Set<number>> {
   const rows = await db.select({ id: ticketType.id }).from(ticketType).where(isNull(ticketType.archivedAt))
@@ -158,6 +165,7 @@ function toView(row: Row, active: Set<number>): TicketAppView {
     access: row.access,
     enabled: row.enabled,
     icon: iconOf(row),
+    page_for_requesters: row.pageForRequesters,
     created_at: row.createdAt.toISOString(),
   }
 }
@@ -182,14 +190,15 @@ async function checkTypeIds(db: Db, ids: number[] | null): Promise<number[] | nu
   return unique
 }
 
-type Audited = Pick<Row, 'name' | 'sidebarUrl' | 'tabUrl' | 'pageUrl' | 'ticketTypeIds' | 'access'> & IconColumns
+type Audited = Pick<Row, 'name' | 'sidebarUrl' | 'tabUrl' | 'pageUrl' | 'ticketTypeIds' | 'access' | 'pageForRequesters'> & IconColumns
 // The icon is the kind and the version, never the bytes.
-const audited = (row: Audited) => ({ name: row.name, sidebar_url: row.sidebarUrl, tab_url: row.tabUrl, page_url: row.pageUrl, ticket_type_ids: row.ticketTypeIds, access: row.access, icon: iconOf(row) })
+const audited = (row: Audited) => ({ name: row.name, sidebar_url: row.sidebarUrl, tab_url: row.tabUrl, page_url: row.pageUrl, ticket_type_ids: row.ticketTypeIds, access: row.access, page_for_requesters: row.pageForRequesters, icon: iconOf(row) })
 
 export async function createTicketApp(db: Db, principal: UserPrincipal, input: z.infer<typeof ticketAppCreateInput>): Promise<TicketAppView> {
   if (!input.sidebar_url && !input.tab_url && !input.page_url) throw noUrl()
+  if (input.page_for_requesters && !input.page_url) throw noPageForRequesters()
   const ticketTypeIds = await checkTypeIds(db, input.ticket_type_ids)
-  const values = { name: input.name, sidebarUrl: input.sidebar_url, tabUrl: input.tab_url, pageUrl: input.page_url, ticketTypeIds, access: input.access, iconName: input.icon_name, iconColor: input.icon_color, iconLightType: null, iconDarkType: null, iconVersion: 0 }
+  const values = { name: input.name, sidebarUrl: input.sidebar_url, tabUrl: input.tab_url, pageUrl: input.page_url, ticketTypeIds, access: input.access, iconName: input.icon_name, iconColor: input.icon_color, iconLightType: null, iconDarkType: null, iconVersion: 0, pageForRequesters: input.page_for_requesters }
   const [[created]] = await db.batch([
     db.insert(ticketApp).values({
       ...values,
@@ -216,8 +225,10 @@ export async function updateTicketApp(db: Db, principal: UserPrincipal, id: numb
     iconLightType: current.iconLightType,
     iconDarkType: current.iconDarkType,
     iconVersion: current.iconVersion,
+    pageForRequesters: input.page_for_requesters ?? current.pageForRequesters,
   }
   if (!next.sidebarUrl && !next.tabUrl && !next.pageUrl) throw noUrl()
+  if (next.pageForRequesters && !next.pageUrl) throw noPageForRequesters()
   if (input.ticket_type_ids !== undefined) next.ticketTypeIds = await checkTypeIds(db, input.ticket_type_ids)
   const before = audited(current)
   const after = audited(next)
@@ -384,6 +395,81 @@ export async function contextToken(db: Db, principal: UserPrincipal, appId: numb
   }
 }
 
+// --- App pages (issue 39) -------------------------------------------------------------------------------------------
+
+/** An entry of the Apps menu. `url` is the page URL. */
+export interface AppPageView {
+  id: number
+  name: string
+  url: string
+  icon: TicketAppIcon
+}
+
+/** On, with a page URL, and one this User may see. Ticket Types do not apply: a page is outside any ticket. */
+const pageShownTo = (principal: UserPrincipal) => and(eq(ticketApp.enabled, true), isNotNull(ticketApp.pageUrl), visibleAppPages(principal))
+
+/** The app pages this User may open, in the admin order. */
+export async function appPagesFor(db: Db, principal: UserPrincipal): Promise<AppPageView[]> {
+  const rows = await db.select({ id: ticketApp.id, name: ticketApp.name, url: ticketApp.pageUrl, ...iconColumns }).from(ticketApp)
+    .where(pageShownTo(principal)).orderBy(asc(ticketApp.sortOrder), asc(ticketApp.id))
+  return rows.map(r => ({ id: r.id, name: r.name, url: r.url!, icon: iconOf(r) }))
+}
+
+/** True when this User may open the app's page. A Requester may then also see its icon. */
+export async function appPageShownTo(db: Db, principal: UserPrincipal, id: number): Promise<boolean> {
+  return await db.$count(ticketApp, and(eq(ticketApp.id, id), pageShownTo(principal))) > 0
+}
+
+/** The context of an app page (docs/ticket-apps.md#the-page-context), without `theme`. No ticket and no requester. */
+export interface PageContext {
+  version: 1
+  app: { id: number, name: string, placement: 'page' }
+  user: { id: string, name: string, email: string, role: string }
+}
+
+export interface PageToken {
+  token: string
+  expires_at: string
+  data: PageContext
+}
+
+/**
+ * A page token and the page context (ADR 0005). The token proves who the User is and nothing more: it has no
+ * `tikki_ticket` and no `tikki_scope`, so `principalForContextToken` refuses it. Throws NOT_FOUND for an app this User
+ * may not see, an app that is off, or one without a page URL.
+ */
+export async function pageToken(db: Db, principal: UserPrincipal, appId: number, now = Date.now()): Promise<PageToken> {
+  const [[app], [me]] = await Promise.all([
+    db.select({ id: ticketApp.id, name: ticketApp.name, url: ticketApp.pageUrl }).from(ticketApp)
+      .where(and(eq(ticketApp.id, appId), pageShownTo(principal))).limit(1),
+    db.select({ id: user.id, name: user.name, email: user.email, role: user.role }).from(user).where(eq(user.id, principal.userId)).limit(1),
+  ])
+  if (!app?.url) throw notFound()
+  if (!me) throw new Error(`User ${principal.userId} has a session but no row.`)
+
+  const iat = Math.floor(now / 1000)
+  const exp = iat + CONTEXT_TOKEN_SECONDS
+  const { token } = await useAuth().api.signJWT({
+    body: {
+      payload: {
+        iss: `${config.appUrl}/api/auth`,
+        aud: new URL(app.url).origin,
+        sub: me.id,
+        tikki_app: app.id,
+        tikki_placement: 'page',
+        tikki_role: me.role,
+        iat,
+        exp,
+      },
+    },
+  })
+  return {
+    token,
+    expires_at: new Date(exp * 1000).toISOString(),
+    data: { version: 1, app: { id: app.id, name: app.name, placement: 'page' }, user: me },
+  }
+}
+
 /** Each level includes the ones before it. */
 const ACCESS_RANK: Record<TicketAppAccess, number> = { read: 0, comment: 1, update: 2 }
 
@@ -400,7 +486,8 @@ export function looksLikeJwt(credential: string): boolean {
  * valid now. Valid: Tikki's signature and issuer, not expired, `aud` the origin of the URL of `tikki_placement` of the
  * app in `tikki_app` (so a token for one view cannot be used by another view's origin, ADR 0005), that app on
  * and still shown on the ticket's type, and `sub` an active Agent or Admin. An MCP access token has no `tikki_app` and
- * fails. The access is the lower of the token's and the app's current one, so a lowered access applies at once.
+ * fails. A page token (issue 39) has no `tikki_ticket` and `tikki_placement: 'page'`, so it fails too: it must never
+ * reach a ticket. The access is the lower of the token's and the app's current one, so a lowered access applies at once.
  */
 export async function principalForContextToken(db: Db, token: string): Promise<UserPrincipal | null> {
   let claims

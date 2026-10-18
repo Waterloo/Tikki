@@ -490,7 +490,7 @@ export const inviteTeam = sqliteTable('invite_team', {
 
 // Issue 34: Ticket Apps
 
-/** Issue 37: where an app shows. Each placement has its own URL (ADR 0005). `page` shows from issue 39. */
+/** Issue 37: where an app shows. Each placement has its own URL (ADR 0005). `page` is outside tickets (issue 39). */
 export const TICKET_APP_PLACEMENTS = ['sidebar', 'tab', 'page'] as const
 export type TicketAppPlacement = typeof TICKET_APP_PLACEMENTS[number]
 /** Issue 35: what the app's backend may do with a context token. Each level includes the one before. */
@@ -520,6 +520,8 @@ export const ticketApp = sqliteTable('ticket_app', {
   iconLightType: text('icon_light_type'),
   iconDarkType: text('icon_dark_type'),
   iconVersion: integer('icon_version').notNull().default(0),
+  // Issue 39: the page only. Sidebar and tab stay staff only.
+  pageForRequesters: integer('page_for_requesters', { mode: 'boolean' }).notNull().default(false),
 }, () => [
   check('ticket_app_one_url', sql`sidebar_url IS NOT NULL OR tab_url IS NOT NULL OR page_url IS NOT NULL`),
 ])

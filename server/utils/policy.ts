@@ -1,5 +1,5 @@
 import { and, eq, isNull, ne, or, sql, type SQL } from 'drizzle-orm'
-import { contact, ticket, ticketParticipant, ticketType, type ApplicationPermission, type StatusCategory, type TicketAppAccess, type TicketVisibility } from '../db/schema'
+import { contact, ticket, ticketApp, ticketParticipant, ticketType, type ApplicationPermission, type StatusCategory, type TicketAppAccess, type TicketVisibility } from '../db/schema'
 import { TICKET_REFERENCE } from '../../shared/ticket-type-rules'
 import type { ApplicationPrincipal, Principal, UserPrincipal } from './tickets'
 
@@ -205,11 +205,20 @@ export function authorizeTicketApps(principal: Principal): Refusal | null {
 }
 
 /**
- * Null when the Principal may see the icon of a Ticket App. Staff see every app. Requesters see none yet: issue 39
- * adds the apps with a page that is shown to Requesters. A refused User gets the same 404 as for a missing app.
+ * Null when the Principal may see the icon of every Ticket App: staff. Others see only the icon of a page in
+ * `visibleAppPages` (the icon route checks that). A refused User gets the same 404 as for a missing app.
  */
 export function authorizeTicketAppIcon(principal: Principal): Refusal | null {
   return isStaff(principal) ? null : { status: 404, code: 'NOT_FOUND', message: 'No Ticket App has this ID.' }
+}
+
+/**
+ * Issue 39: the app pages this User may open, as a SQL condition on `ticket_app`. Agents and Admins see each page;
+ * a Requester only a page that the Admin shows to Requesters. The caller adds "on, with a page URL".
+ */
+export function visibleAppPages(principal: UserPrincipal): SQL {
+  if (viaApp(principal)) return sql`0`
+  return isStaff(principal) ? sql`1` : eq(ticketApp.pageForRequesters, true)
 }
 
 /** Null when the Principal may list tickets. Which tickets is `readableTickets`. */

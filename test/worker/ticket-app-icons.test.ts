@@ -142,6 +142,19 @@ describe('Ticket App icons', () => {
     expect((await get(999999, 'light', requester)).status).toBe(404)
   })
 
+  it('serves a Requester the icon of a page shown to Requesters, and nothing else (issue 39)', async () => {
+    const page = 'http://localhost:9938/page.html'
+    const shown = await newApp({ page_url: page, page_for_requesters: true })
+    const staffPage = await newApp({ page_url: page })
+    const off = await newApp({ page_url: page, page_for_requesters: true, enabled: false })
+    for (const app of [shown, staffPage, off]) await put(app.id, 'light', PNG)
+    expect((await get(shown.id, 'light', requester)).status).toBe(200)
+    expect((await get(staffPage.id, 'light', requester)).status).toBe(404)
+    expect((await get(off.id, 'light', requester)).status).toBe(404)
+    const menu = await (await call('/api/v1/apps', { headers: h(requester) })).json() as { data: { id: number, icon: { kind: string } }[] }
+    expect(menu.data.find(a => a.id === shown.id)?.icon.kind).toBe('image')
+  })
+
   it('never serves the image to an API key or a context token without a session', async () => {
     const app = await newApp()
     await put(app.id, 'light', PNG)

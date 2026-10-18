@@ -19,6 +19,8 @@ export interface TicketApp {
   access: TicketAppAccess
   enabled: boolean
   icon: TicketAppIcon
+  /** Requesters also see the page (issue 39). */
+  page_for_requesters: boolean
   created_at: string
 }
 
@@ -30,4 +32,12 @@ export interface ContextToken {
   expires_at: string
   /** The context without `theme`. The page adds it. */
   data: Record<string, unknown>
+}
+
+/** An entry of the Apps menu (issue 39). `url` is the page URL. */
+export interface AppPage {
+  id: number
+  name: string
+  url: string
+  icon: TicketAppIcon
 }

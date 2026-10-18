@@ -225,7 +225,8 @@ test('a Requester sees no apps on their own ticket and asks for no token', async
   // The default context is the shared Requester.
   const ref = await raise(page.request, general!, `Requester ticket ${stamp}`)
   const calls: string[] = []
-  page.on('request', (r) => { if (r.url().includes('/apps') || r.url().startsWith(APP_ORIGIN)) calls.push(r.url()) })
+  // The ticket's apps and their tokens. The Apps menu list (`/api/v1/apps`, issue 39) loads for every User.
+  page.on('request', (r) => { if (/\/api\/v1\/tickets\/[^/]+\/apps/.test(r.url()) || r.url().startsWith(APP_ORIGIN)) calls.push(r.url()) })
   await page.goto(`/tickets/${ref}`)
   await expect(page.getByRole('heading', { name: `Requester ticket ${stamp}` })).toBeVisible()
   await page.waitForLoadState('networkidle')
