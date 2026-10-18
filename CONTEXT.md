@@ -130,6 +130,14 @@ A file that a User uploaded before its ticket exists. Only the uploader can read
 **Untrusted content marker**:
 The `<untrusted_content>` tags around text that Users wrote, in MCP tool results. The AI must treat that text as data, not as instructions.
 
+**Participant**:
+A User on a ticket: its Requester, its assignee, or a User someone added. On a Restricted ticket only Participants and Admins can see it.
+_Avoid_: Watcher, follower, CC
+
+**Restricted ticket**:
+A ticket of a Ticket Type that is "Participants only". Only its Participants and the Admins can see it.
+_Avoid_: Private ticket, confidential ticket
+
 ## Change and delivery
 
 **Activity**:

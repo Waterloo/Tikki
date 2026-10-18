@@ -80,6 +80,7 @@ Facts verified on 2026-10-18 that the design depends on:
 | 3.29 | An Admin cannot deactivate themself. The last active Admin cannot lose the role. The check is part of the UPDATE statement (2.11), so two Admins cannot demote each other at the same time. (issue 20) | Delegated |
 | 3.30 | An invite lets one email outside the allowed domains sign in (3.16). The invited User starts as Requester (3.14). An unused invite expires after 30 days, and "Resend" starts 30 days again. After the first sign-in it never expires. An Admin removes an unused invite and stops a used one by deactivation. (issue 20) | Delegated |
 | 3.31 | After sign-in, the page goes back only to a path on this site. A path that starts with `//` or `/\` is refused. (issue 17) | Delegated |
+| 3.32 | A Ticket Type can be "Participants only". Its tickets are Restricted tickets: only their Participants and the Admins see them, also when the other person is an Agent. Admins see them, because they manage Erasure, delete and the audit log, and a ticket that one person alone can see is lost when that person leaves. For everyone else a Restricted ticket answers "not found". (issue 27) | Decided |
 
 ## 4. Tickets, types, and fields
 
@@ -218,6 +219,7 @@ Facts verified on 2026-10-18 that the design depends on:
 | 8.28 | Email is queued after the change succeeded, with `waitUntil`, for REST and MCP. A failure never affects the change. A notice is mailed once, and a failed email is not retried. A Requester never gets an email for an Internal Comment, and deactivated Users get none. (issue 19) | Delegated |
 | 8.29 | The Inbox and the email share one text. The subject is `[GEN-12] <text>` on one line. The email has a plain text part and a small HTML part that escapes all ticket text. There is no template engine. (issue 19) | Delegated |
 | 8.30 | A mail error is logged and shown to Admins in Settings with the time, until the next send works. It makes no Inbox notice, because a daily-limit error would repeat for every email. "Send test email" goes to the Admin's own address. (issue 19) | Delegated |
+| 8.31 | Admin Webhook Endpoints get no Event for a Restricted ticket (3.32), unless the endpoint has "include internal data". Otherwise its title would reach a team channel. Notices of a Restricted ticket go to its Participants only. (issue 27) | Decided |
 
 Notification rules (Q31, Decided):
 
