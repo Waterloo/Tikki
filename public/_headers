@@ -1,0 +1,5 @@
+# Static pages are served without the Worker, so they get the frame headers here.
+# Worker responses get the same headers in server/utils/frame-headers.ts. Keep both in step.
+/*
+  Content-Security-Policy: frame-ancestors 'none'
+  X-Frame-Options: DENY
