@@ -40,6 +40,7 @@ test('a Support Agent moves a ticket to Development and assigns it to a Developm
   await panel.getByRole('combobox', { name: 'Team' }).click()
   await support.page.getByRole('option', { name: devName }).click()
   await expectToast(support.page, `Moved to ${devName}`)
+  await support.page.getByRole('tab', { name: 'Activity' }).click()
   await expect(support.page.getByRole('listitem').filter({ hasText: `Support to ${devName}` })).toBeVisible()
 
   // "Me (you)" is first, then the members of the ticket's Team.

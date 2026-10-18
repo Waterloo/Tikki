@@ -29,6 +29,7 @@ test('an Agent replies in public, the Requester sees it, and an internal note st
   // A change appears in the Activity and can be reverted.
   await agentPage.getByRole('combobox', { name: 'Priority' }).click()
   await agentPage.getByRole('option', { name: 'Urgent' }).click()
+  await agentPage.getByRole('tab', { name: 'Activity' }).click()
   const line = agentPage.getByRole('listitem').filter({ hasText: 'changed priority from Normal to Urgent' })
   await expect(line).toBeVisible()
   await line.getByRole('button', { name: 'Revert' }).click()
@@ -41,12 +42,14 @@ test('an Agent replies in public, the Requester sees it, and an internal note st
   await expect(page.getByText(`Secret note ${stamp}`)).toHaveCount(0)
   await expect(page.getByText('Internal', { exact: true })).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Internal note', exact: true })).toHaveCount(0)
-  await expect(page.getByRole('button', { name: 'Revert' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Revert', exact: true })).toHaveCount(0)
 
   // The Requester replies; the Agent sees it.
   await page.getByLabel('Your team sees this reply.').fill(`Thanks ${stamp}`)
   await page.getByRole('button', { name: 'Send reply', exact: true }).click()
   await expect(page.getByText(`Thanks ${stamp}`)).toBeVisible()
+  await agentPage.getByRole('tab', { name: 'Conversation' }).click()
+  await expect(agentPage).not.toHaveURL(/tab=/)
   await agentPage.reload()
   await expect(agentPage.getByText(`Thanks ${stamp}`)).toBeVisible()
   await staff.close()

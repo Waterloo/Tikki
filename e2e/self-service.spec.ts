@@ -27,7 +27,7 @@ test('a Requester edits while open, cannot edit later, reopens a resolved ticket
   await page.getByRole('textbox', { name: 'Description' }).fill(`Corrected text ${stamp}`)
   await page.getByRole('button', { name: 'Save changes' }).click()
   await expect(page.getByText(`Corrected text ${stamp}`)).toBeVisible()
-  await expect(page.getByText('edited the description')).toBeVisible()
+  await expect(page.getByRole('button', { name: /Latest change:.*edited the description/ })).toBeVisible()
 
   // The Admin works the ticket in a second session.
   const staff = await browser.newContext({ storageState: undefined })
@@ -46,7 +46,7 @@ test('a Requester edits while open, cannot edit later, reopens a resolved ticket
   await expect(more(page)).toHaveCount(0)
   await page.getByRole('button', { name: 'Reopen' }).click()
   await expect(page.getByRole('button', { name: 'Reopen' })).toHaveCount(0)
-  await expect(page.getByText('reopened this ticket')).toBeVisible()
+  await expect(page.getByRole('button', { name: /Latest change:.*reopened this ticket/ })).toBeVisible()
 
   await openCancel(page)
   await page.getByRole('dialog').getByRole('button', { name: 'Cancel ticket' }).click()
