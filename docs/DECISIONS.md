@@ -160,6 +160,7 @@ Facts verified on 2026-10-18 that the design depends on:
 | 5.14 | An Upload Link is used up by the upload, not by opening the page. The link is claimed before the body streams, and a failed upload gives it back. A Worker that stops during an upload leaves it used, which is the safe side. Refusals name the cause (not found, wrong User, used, expired), because the token has 256 bits and cannot be guessed. (issue 17) | Delegated |
 | 5.15 | `attach_text` counts size in UTF-8 bytes. A larger text answers `FILE_TOO_LARGE` and points to the Upload Link tool. The caller cannot choose the type: `text/csv` for a `.csv` name, else `text/plain`. (issue 17) | Delegated |
 | 5.16 | MCP acts only as a User. An Application cannot call MCP tools or use an Upload Link. (issues 12, 17) | Delegated |
+| 5.17 | `create_ticket` checks for similar open tickets that the User can read before it creates one. With matches it creates nothing, returns them, and Claude asks the User; `confirm_new: true` creates the ticket anyway. Reason: most tickets come through Claude, and a duplicate costs the Agents more than one extra question. (issue 30) | Decided |
 
 ## 6. REST API
 
@@ -186,6 +187,7 @@ Facts verified on 2026-10-18 that the design depends on:
 | 7.6 | A file that a User uploads before the ticket exists is unattached. Only the uploader can read it. A "file" Field on a new ticket can claim it. A file of another person, or a file already on a ticket, gives the same Field error as an unknown file. (issue 16) | Delegated |
 | 7.7 | Only images (PNG, JPEG, GIF, WebP), PDF, plain text, CSV, JSON, ZIP and the three Office types are served with their own type. Everything else, HTML and SVG included, is served as `application/octet-stream`. All downloads also carry `nosniff`, a sandbox CSP and `no-store`. Reason: a stored file must never run script on our origin. (issue 16) | Delegated |
 | 7.8 | Everyone who can read a ticket can attach a file to it, a Requester included. An Application can attach only to its own tickets, and it cannot make an unattached upload. (issues 12, 16) | Delegated |
+| 7.9 | The scheduled run deletes unattached uploads older than 24 hours (R2 object and row), and used or expired Upload Links older than 24 hours. (issue 30) | Decided |
 
 ## 8. Webhooks and notifications
 
