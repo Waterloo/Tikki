@@ -41,8 +41,8 @@ Vertical slices of [the PRD](../PRD.md). Each slice goes through every layer and
 | 32 | [No framing of Tikki by other sites](32-frame-protection.md) | AFK | — | Done |
 | 33 | [Ticket page tabs: Conversation and Activity](33-ticket-page-tabs.md) | AFK | — | Done |
 | 34 | [Ticket Apps: an external page inside the ticket](34-ticket-apps.md) | AFK | 32, 33 | Done |
-| 35 | [Ticket Apps change the ticket through the API](35-ticket-app-writes.md) | AFK | 34 | Planned |
-| 36 | [WebMCP tools in the Tikki page](36-webmcp-tools.md) | AFK | 35 | Planned |
+| 35 | [Ticket Apps change the ticket through the API](35-ticket-app-writes.md) | AFK | 34 | Done |
+| 36 | [WebMCP tools in the Tikki page](36-webmcp-tools.md) | AFK | 35 | Done |
 
 All AFK issues except 02 are merged into `integration` on 2026-10-18. The cloud setup is deferred (issues 02, 24 and 25, and the staging checks).
 

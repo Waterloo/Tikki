@@ -148,6 +148,13 @@ _Avoid_: Dashboard app, plugin, integration
 A short-lived signed token that says which Agent has which ticket open in which Ticket App. The app's backend uses it to trust the context and, with the right scope, to change that one ticket through the API as that Agent.
 _Avoid_: App key, session token
 
+**Ticket App access**:
+What a Ticket App's backend may do with its Context Token: read, comment, or update. Each level includes the one before. An Admin sets it.
+
+**WebMCP tools**:
+Tools that the Tikki page gives to an AI agent in the same browser tab. They act as the signed-in User, with the same rights as a click.
+_Avoid_: Browser connector
+
 **Activity**:
 The permanent record of each change to a ticket, with the Principal that made it.
 _Avoid_: History, timeline, audit trail (for a single ticket)

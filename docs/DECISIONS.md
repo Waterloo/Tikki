@@ -161,6 +161,9 @@ Facts verified on 2026-10-18 that the design depends on:
 | 5.15 | `attach_text` counts size in UTF-8 bytes. A larger text answers `FILE_TOO_LARGE` and points to the Upload Link tool. The caller cannot choose the type: `text/csv` for a `.csv` name, else `text/plain`. (issue 17) | Delegated |
 | 5.16 | MCP acts only as a User. An Application cannot call MCP tools or use an Upload Link. (issues 12, 17) | Delegated |
 | 5.17 | `create_ticket` checks for similar open tickets that the User can read before it creates one. With matches it creates nothing, returns them, and Claude asks the User; `confirm_new: true` creates the ticket anyway. Reason: most tickets come through Claude, and a duplicate costs the Agents more than one extra question. (issue 30) | Decided |
+| 5.18 | The WebMCP tools in the page call only the REST API, with `$fetch` and the session. The browser holds no permission rule; `readableTickets` and the policy decide, as for a click. Results have the fields and the wording of the `/mcp` tool each one mirrors, with the same `untrusted()` wrap (5.12). (issue 36) | Decided |
+| 5.19 | `X-Tikki-Channel: ai` on a session request gives `channel: 'ai'`. It is a label only: the rights stay the User's (5.1). The request counts in `USER_MCP_LIMIT`, and a write (any method but `GET`/`HEAD`) also in `USER_MCP_WRITE_LIMIT`, in place of the web limit. Any other value, and the header on an API-key or context-token request, answers `400 INVALID_CHANNEL`. (issue 36) | Decided |
+| 5.20 | The source chip and the Activity line show channel `ai` as "AI", not "Claude": ChatGPT uses `/mcp` and the page tools too, and Tikki cannot tell the agents apart. The ticket header says "from an AI assistant". (issue 36) | Decided |
 
 ## 6. REST API
 

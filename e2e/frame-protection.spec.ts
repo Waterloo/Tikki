@@ -24,7 +24,7 @@ test('a page on another origin cannot frame the app', async ({ page }) => {
     res.setHeader('content-type', 'text/html')
     res.end(`<iframe id="f" src="http://localhost:${PORT}/"></iframe>`)
   })
-  await new Promise<void>((resolve) => framer.listen(0, resolve))
+  await new Promise<void>((resolve) => framer.listen(0, '127.0.0.1', resolve))
   try {
     const { port } = framer.address() as { port: number }
     await page.goto(`http://127.0.0.1:${port}/`)
