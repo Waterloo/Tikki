@@ -16,6 +16,7 @@ Nuxt 4 on one Cloudflare Worker. D1 (SQLite), R2 (files), Cron Trigger. Free pla
 - A ticket of an Application has a Contact as Requester, not a User. `requesterId` is null.
 - Narrow with `principal.kind` before you read `userId`. Use `actorId(principal)` for "the User id or null".
 - Get a Principal from `restPrincipal(event)` (API key, else session) or `sessionPrincipal(event)` (User only), both in [`rest.ts`](../server/utils/rest.ts). MCP builds a `UserPrincipal` with `channel: 'ai'` in [`mcp.ts`](../server/utils/mcp.ts). `adminPrincipal` and `peoplePrincipal` add the Admin check.
+- `channel: 'ai'` also comes from a session request with the header `X-Tikki-Channel: ai`, which the WebMCP tools in the page send (issue 36, `sessionPrincipal`). So a Principal comes from an API key, a context token, the session, or MCP. The header is a label only: the rights are the User's (5.1), and the request counts in the MCP rate limits (`takeToolSlot` in `rate-limit.ts`). Any other value, and the header on an API-key or context-token request, answers `400 INVALID_CHANNEL`.
 - A Ticket App's context token (issue 35) is a `UserPrincipal` with `channel: 'app'` and a `ticketApp` grant: one ticket and one access level. `restPrincipal` accepts it only on the routes of `isTicketAppRoute` in `policy.ts`. The policy refuses any other ticket (`NOT_FOUND`) and any action outside the access (`FORBIDDEN`). A new route for Ticket Apps goes into `APP_ROUTES` and `APP_ACTIONS` there.
 - Why: a bad API key must never fall back to a cookie, and an Application must never reach a User-only route.
 
@@ -81,7 +82,9 @@ A new output for an Application gets its view function in the same change.
 
 ## Text for the AI
 
-[`untrusted.ts`](../server/utils/untrusted.ts): every user-written string in an MCP result goes through `untrusted()` (`untrustedDeep()` for Field values) (5.7). Why: the wrapper breaks a closing tag, so text cannot leave the marker.
+[`shared/untrusted.ts`](../shared/untrusted.ts): every user-written string in an MCP result or a WebMCP tool result goes through `untrusted()` (`untrustedDeep()` for Field values) (5.7). `server/utils/mcp.ts` and `app/utils/webmcp.ts` import it from there. Why: the wrapper breaks a closing tag, so text cannot leave the marker.
+
+WebMCP tools in the page (issue 36): `app/composables/useWebMcpTools.ts` is the only caller of `registerTool`. The tools (`app/utils/webmcp.ts`) call only the REST API, so the browser holds no permission rule.
 
 ## Attachments
 

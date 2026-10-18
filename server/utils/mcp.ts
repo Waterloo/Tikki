@@ -10,15 +10,15 @@ import { createComment, listComments } from './activity'
 import { attachText, AttachmentError } from './attachments'
 import type { Role } from './auth'
 import { config, env } from './env'
-import { fieldsToJsonSchema } from './mcp-schema'
+import { fieldsToJsonSchema } from '../../shared/fields-schema'
 import { NOT_FOUND, PolicyRefusal } from './policy'
-import { limitMessage, takeSlot, USER_MCP_LIMIT, USER_MCP_WRITE_LIMIT } from './rate-limit'
+import { limitMessage, takeToolSlot } from './rate-limit'
 import { db, useAuth } from './services'
 import { getTicketTypeWithFields, listTicketTypes } from './ticket-types'
 import { changeTicketType } from './ticket-type-change'
 import { createTicket, FIELD_KEY, getTicket, listTickets, loadFor, MAX_SEARCH_LENGTH, parseTicketReference, similarTickets, TicketValidationError, updateTicket, type ListFilter, type TicketDetail, type TicketSummary, type UserPrincipal } from './tickets'
 import { createUploadLink } from './upload-links'
-import { UNTRUSTED_NOTICE, untrusted, untrustedDeep } from './untrusted'
+import { UNTRUSTED_NOTICE, untrusted, untrustedDeep } from '../../shared/untrusted'
 
 // Small pages: the results go into the context of Claude.
 const PAGE_SIZE = 20
@@ -28,18 +28,13 @@ const COMMENT_LIMIT = 20
 
 const name = (p: { name: string, email?: string }) => p.name || p.email || ''
 
-async function takeToolSlot(principal: UserPrincipal, write: boolean) {
-  return (write ? await takeSlot(db, `mcp-write:${principal.userId}`, USER_MCP_WRITE_LIMIT) : null)
-    ?? await takeSlot(db, `mcp:${principal.userId}`, USER_MCP_LIMIT)
-}
-
 function buildServer(principal: UserPrincipal) {
   const server = new McpServer({ name: 'ticketing', version: '0.1.0' })
   // Every tool call counts against the rate limits (DECISIONS 10). A tool without `readOnlyHint: true` counts as a write.
   type Register = (name: string, config: { annotations?: { readOnlyHint?: boolean } }, cb: (...args: unknown[]) => unknown) => unknown
   const register = server.registerTool.bind(server) as unknown as Register
   server.registerTool = ((name: string, config: Parameters<Register>[1], cb: Parameters<Register>[2]) => register(name, config, async (...args: unknown[]) => {
-    const limited = await takeToolSlot(principal, config.annotations?.readOnlyHint !== true)
+    const limited = await takeToolSlot(db, principal.userId, config.annotations?.readOnlyHint !== true)
     if (limited) {
       const text = `RATE_LIMITED: ${limitMessage('tool calls', limited)}`
       return { isError: true, content: [{ type: 'text' as const, text }], structuredContent: { error: { code: 'RATE_LIMITED', message: text, retry_after: limited.retryAfter } } }

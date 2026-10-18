@@ -1,3 +1,7 @@
+<script setup lang="ts">
+useWebMcpTools()
+</script>
+
 <template>
   <!-- rem with equal sizes: a fixed 248 px sidebar, as on the canvas. -->
   <UDashboardGroup unit="rem">

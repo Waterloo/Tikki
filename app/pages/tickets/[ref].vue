@@ -9,7 +9,7 @@ const PRIORITIES: { value: Priority, label: string }[] = [
   { value: 'high', label: 'High' },
   { value: 'urgent', label: 'Urgent' },
 ]
-const SOURCE: Record<TicketDetail['channel'], string> = { web: 'the web app', ai: 'Claude', api: 'an Application', app: 'a Ticket App' }
+const SOURCE: Record<TicketDetail['channel'], string> = { web: 'the web app', ai: 'an AI assistant', api: 'an Application', app: 'a Ticket App' }
 
 const route = useRoute()
 const router = useRouter()
@@ -41,6 +41,8 @@ const cancelOpen = ref(false)
 const acting = ref<'cancel' | 'reopen' | null>(null)
 // Bumped after a save, so the timeline reloads.
 const activityVersion = ref(0)
+// The comment composer's text. Here, so the WebMCP `open_ticket` does not navigate away from it.
+const draft = ref('')
 
 const isStaff = computed(() => role.value === 'admin' || role.value === 'agent')
 const back = computed(() => isStaff.value ? { label: 'All tickets', to: '/tickets' } : { label: 'My tickets', to: '/' })
@@ -364,6 +366,14 @@ function formatValue(type: string, value: unknown): string {
   return String(value)
 }
 
+useCurrentTicketTools(() => state.value === 'ready' ? ticket.value : null, {
+  hasDraft: () => draft.value.trim() !== '',
+  changed: (t) => {
+    if (t) ticket.value = t
+    activityVersion.value++
+  },
+})
+
 watch(() => route.params.ref, (next, previous) => {
   if (next !== previous && next !== ticket.value?.ref) load()
 })
@@ -504,7 +514,7 @@ onMounted(load)
           </div>
 
           <TicketAttachments :ticket-ref="ticket.ref" :attachments="attachments" :state="attachmentsState" @uploaded="attachments.push($event)" @retry="loadAttachments(ticket.ref)" />
-          <TicketConversation :ticket="ticket" :version="activityVersion" :apps="apps.filter(a => a.position === 'tab')" @reverted="ticket = $event" @refresh="refreshTicket" />
+          <TicketConversation v-model:draft="draft" :ticket="ticket" :version="activityVersion" :apps="apps.filter(a => a.position === 'tab')" @reverted="ticket = $event" @refresh="refreshTicket" />
         </div>
 
         <aside aria-label="Ticket properties" class="flex-[1_1_300px] min-w-0 flex flex-col gap-4">

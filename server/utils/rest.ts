@@ -3,7 +3,7 @@ import { ApplicationInputError, principalForKey } from './applications'
 import type { Role } from './auth'
 import { db, useAuth } from './services'
 import { RevertRefusal } from './activity'
-import { limitMessage, takeSlot, USER_WEB_LIMIT, type Limited } from './rate-limit'
+import { limitMessage, takeSlot, takeToolSlot, USER_WEB_LIMIT, type Limited } from './rate-limit'
 import { PeopleError } from './people'
 import { authorizeManagePeople, isAdmin, isTicketAppRoute, NOT_FOUND, PolicyRefusal } from './policy'
 import { looksLikeJwt, principalForContextToken, TicketAppError } from './ticket-apps'
@@ -22,13 +22,22 @@ export function rateLimited(what: string, limited: Limited): Response {
   return res
 }
 
+/** The WebMCP tools in the page send it (issue 36). It is a label: the rights stay those of the User (5.1). */
+const CHANNEL_HEADER = 'x-tikki-channel'
+
 /** The User of the web session. For routes that an Application must never use. */
 export async function sessionPrincipal(event: H3Event): Promise<UserPrincipal | Response> {
+  const channel = event.headers.get(CHANNEL_HEADER)
+  if (channel !== null && channel !== 'ai') return apiError(400, 'INVALID_CHANNEL', 'X-Tikki-Channel must be "ai".')
   const session = await useAuth().api.getSession({ headers: event.headers })
   if (!session) return apiError(401, 'UNAUTHENTICATED', 'Sign in first.')
-  const limited = await takeSlot(db, `user:${session.user.id}`, USER_WEB_LIMIT)
-  if (limited) return rateLimited('requests', limited)
-  return { kind: 'user', userId: session.user.id, role: session.user.role as Role, channel: 'web' }
+  const userId = session.user.id
+  // The agent in the page gets the same budget as through `/mcp`.
+  const limited = channel === 'ai'
+    ? await takeToolSlot(db, userId, event.method !== 'GET' && event.method !== 'HEAD')
+    : await takeSlot(db, `user:${userId}`, USER_WEB_LIMIT)
+  if (limited) return rateLimited(channel === 'ai' ? 'tool calls' : 'requests', limited)
+  return { kind: 'user', userId, role: session.user.role as Role, channel: channel === 'ai' ? 'ai' : 'web' }
 }
 
 /**
@@ -40,6 +49,8 @@ export async function restPrincipal(event: H3Event): Promise<Principal | Respons
   // `event.headers`, not getHeader: the upload routes pass only the headers (server/utils/upload.ts).
   const authorization = event.headers.get('authorization')
   if (authorization === null) return sessionPrincipal(event)
+  // An API key or a context token has its own channel. A wrong client must fail visibly.
+  if (event.headers.has(CHANNEL_HEADER)) return apiError(400, 'INVALID_CHANNEL', 'X-Tikki-Channel is only for requests with the web session.')
   const key = /^Bearer\s+(\S+)$/i.exec(authorization)?.[1]
   if (key && looksLikeJwt(key)) return contextTokenPrincipal(event, key)
   const check = key ? await principalForKey(db, key) : { ok: false as const, reason: 'invalid' as const }

@@ -18,7 +18,7 @@ const items = ref<ActivityItem[]>([])
 const state = ref<'loading' | 'ready' | 'error'>('loading')
 const reverting = ref<string | null>(null)
 const sending = ref(false)
-const draft = ref('')
+const draft = defineModel<string>('draft', { default: '' })
 const mode = ref<'internal' | 'public'>('internal')
 
 // Each tab needs a `slot` name equal to its `value`.
@@ -111,7 +111,7 @@ async function revert(id: string) {
   }
 }
 
-const SOURCE = { web: '', ai: ' (via Claude)', api: ' (via API)' } as const
+const SOURCE = { web: '', ai: ' (via AI)', api: ' (via API)' } as const
 const via = (e: EventItem) => e.channel === 'app' ? ` (via ${e.ticket_app?.name ?? 'a Ticket App'})` : SOURCE[e.channel]
 const cap = (v: string | null) => v ? v.charAt(0).toUpperCase() + v.slice(1) : ''
 

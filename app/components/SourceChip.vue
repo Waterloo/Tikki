@@ -11,7 +11,7 @@ const NEUTRAL = 'bg-[#eef0f3] text-[#3d424b] dark:bg-[#222429] dark:text-[#c3c6c
 
 const look = computed(() => {
   switch (props.channel) {
-    case 'ai': return { label: 'Claude', icon: 'i-lucide-sparkles', class: 'bg-[#f4f1ec] text-[#6b4a1f] dark:bg-[#2a2218] dark:text-[#e2c08a]' }
+    case 'ai': return { label: 'AI', icon: 'i-lucide-sparkles', class: 'bg-[#f4f1ec] text-[#6b4a1f] dark:bg-[#2a2218] dark:text-[#e2c08a]' }
     case 'api': return { label: props.application ?? 'Application', icon: 'i-lucide-key-round', class: NEUTRAL }
     case 'app': return { label: props.ticketApp ? `via ${props.ticketApp}` : 'via a Ticket App', icon: 'i-lucide-app-window', class: NEUTRAL }
     default: return { label: 'Web', icon: 'i-lucide-globe', class: NEUTRAL }
