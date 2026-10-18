@@ -5,7 +5,7 @@ import { FIELD_KEY_PATTERN, firstUnusedColor, keyFromLabel, PREFIX_PATTERN, RESE
 import { adminAuditEntry } from './audit'
 import type { Db } from './auth'
 import { FIELD_TYPES, type FieldDef, type FieldOption } from './fields'
-import type { Principal } from './tickets'
+import type { UserPrincipal } from './tickets'
 import { currentSchemaVersion, selectTypes, toView, type TicketTypeView } from './ticket-types'
 
 /** One problem with the input. `key` is the input name, or `fields.<index>.<name>` for a Field. */
@@ -312,7 +312,7 @@ export async function getAdminType(db: Db, id: number): Promise<AdminTypeDetail 
 }
 
 /** Creates a type and its Schema Version 1 together. Nothing is saved when anything is invalid (4.15a). */
-export async function createTicketType(db: Db, principal: Principal, input: unknown): Promise<AdminTypeDetail> {
+export async function createTicketType(db: Db, principal: UserPrincipal, input: unknown): Promise<AdminTypeDetail> {
   const parsed = createInput.safeParse(input)
   if (!parsed.success) throw invalid(toProblems(parsed.error.issues))
   const data = parsed.data
@@ -364,7 +364,7 @@ export async function createTicketType(db: Db, principal: Principal, input: unkn
  * Changes the settings of a type and/or its Fields. A change to the Fields adds a Schema Version and updates
  * no earlier one (4.4). `fields` is the full list: every earlier Field stays in it.
  */
-export async function updateTicketType(db: Db, principal: Principal, id: number, input: unknown): Promise<AdminTypeDetail> {
+export async function updateTicketType(db: Db, principal: UserPrincipal, id: number, input: unknown): Promise<AdminTypeDetail> {
   const parsed = updateInput.safeParse(input)
   if (!parsed.success) throw invalid(toProblems(parsed.error.issues))
   const data = parsed.data

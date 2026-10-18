@@ -26,7 +26,11 @@ export async function handleUpload(request: Request): Promise<Response | null> {
   const principal = await restPrincipal({ headers: request.headers } as H3Event)
   if (principal instanceof Response) return principal
   try {
-    if (link) return Response.json(await uploadViaLink(db, env.FILES, principal, link[1]!, request), { status: 201 })
+    if (link) {
+      // An Upload Link is made for one User and needs their web session (5.9).
+      if (principal.kind !== 'user') return apiError(403, 'FORBIDDEN', 'An Upload Link is for the User who asked for it, not for an API key.')
+      return Response.json(await uploadViaLink(db, env.FILES, principal, link[1]!, request), { status: 201 })
+    }
     let ticketNumber: number | null = null
     if (target) {
       ticketNumber = parseTicketReference(decodeURIComponent(target[1]!))

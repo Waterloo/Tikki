@@ -1,11 +1,11 @@
 import { AttachmentError } from '../../../utils/attachments'
 import { PolicyRefusal } from '../../../utils/policy'
-import { apiError, restPrincipal } from '../../../utils/rest'
+import { apiError, sessionPrincipal } from '../../../utils/rest'
 import { db } from '../../../utils/services'
 import { describeUploadLink } from '../../../utils/upload-links'
 
 export default defineEventHandler(async (event) => {
-  const principal = await restPrincipal(event)
+  const principal = await sessionPrincipal(event)
   if (principal instanceof Response) return principal
   try {
     return await describeUploadLink(db, principal, getRouterParam(event, 'token') ?? '')

@@ -1,10 +1,10 @@
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm'
-import { attachment, status, ticket, ticketType, type StatusCategory } from '../db/schema'
+import { attachment, contact, status, ticket, ticketType, type StatusCategory } from '../db/schema'
 import { auditEntry } from './audit'
 import type { Db } from './auth'
 import type { FieldError } from './fields'
-import { authorizeAttach, authorizeAttachmentRead, NO_ATTACHMENT, NOT_FOUND, PolicyRefusal, type PolicyTicket } from './policy'
-import type { Principal } from './tickets'
+import { authorizeAttach, authorizeAttachmentRead, authorizeUnattachedUpload, NO_ATTACHMENT, NOT_FOUND, PolicyRefusal, type PolicyTicket } from './policy'
+import type { Principal, UserPrincipal } from './tickets'
 
 /** 25 MB (7.4). */
 export const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
@@ -22,7 +22,9 @@ export interface AttachmentView {
   filename: string
   content_type: string
   size: number
-  uploader_id: string
+  /** The User who uploaded it, or null when an Application did (`application_id`). */
+  uploader_id: string | null
+  application_id: number | null
   created_at: string
   url: string
 }
@@ -37,6 +39,7 @@ function toView(row: Row): AttachmentView {
     content_type: row.contentType,
     size: row.size,
     uploader_id: row.uploaderId,
+    application_id: row.applicationId,
     created_at: row.createdAt.toISOString(),
     url: `/api/v1/attachments/${row.id}`,
   }
@@ -77,15 +80,26 @@ export function parseUploadHeaders(headers: Headers): UploadInfo {
   return { size, filename, contentType: /^[a-z0-9!#$&^_.+-]{1,60}\/[a-z0-9!#$&^_.+-]{1,60}$/.test(type) ? type : 'application/octet-stream' }
 }
 
-function policyTicket(row: { requesterId: string, visibleToAll: boolean, statusKey: string | null, statusCategory: StatusCategory | null }): PolicyTicket {
-  if (row.statusKey === null || row.statusCategory === null) throw new Error('A ticket has no Status. Every ticket must have one (4.10).')
-  return { requesterId: row.requesterId, visibleToAll: row.visibleToAll, statusKey: row.statusKey, statusCategory: row.statusCategory }
+interface FactsRow { requesterId: string | null, applicationId: number | null, visibleToAll: boolean | null, statusKey: string | null, statusCategory: StatusCategory | null }
+
+function policyTicket(row: FactsRow): PolicyTicket {
+  if (row.statusKey === null || row.statusCategory === null || row.visibleToAll === null) throw new Error('A ticket has no Status or type. Every ticket must have both.')
+  return { requesterId: row.requesterId, applicationId: row.applicationId, visibleToAll: row.visibleToAll, statusKey: row.statusKey, statusCategory: row.statusCategory }
+}
+
+const factsColumns = {
+  requesterId: ticket.requesterId,
+  applicationId: contact.applicationId,
+  visibleToAll: ticketType.visibleToAll,
+  statusKey: status.key,
+  statusCategory: status.category,
 }
 
 async function loadPolicyTicket(db: Db, number: number): Promise<PolicyTicket | null> {
-  const [row] = await db.select({ requesterId: ticket.requesterId, visibleToAll: ticketType.visibleToAll, statusKey: status.key, statusCategory: status.category }).from(ticket)
+  const [row] = await db.select(factsColumns).from(ticket)
     .innerJoin(ticketType, eq(ticket.ticketTypeId, ticketType.id))
     .leftJoin(status, eq(ticket.status, status.key))
+    .leftJoin(contact, eq(ticket.contactId, contact.id))
     .where(eq(ticket.number, number)).limit(1)
   return row ? policyTicket(row) : null
 }
@@ -103,6 +117,10 @@ export async function assertCanAttach(db: Db, principal: Principal, ticketNumber
  */
 export async function storeUpload(db: Db, bucket: R2Bucket, principal: Principal, ticketNumber: number | null, request: Request): Promise<AttachmentView> {
   if (ticketNumber !== null) await assertCanAttach(db, principal, ticketNumber)
+  else {
+    const refusal = authorizeUnattachedUpload(principal)
+    if (refusal) throw new PolicyRefusal(refusal)
+  }
   const info = parseUploadHeaders(request.headers)
   if (!request.body) throw new AttachmentError(422, 'EMPTY_FILE', 'The file is empty.')
   return putObject(db, bucket, principal, ticketNumber, info, request.body)
@@ -125,7 +143,10 @@ export async function putObject(db: Db, bucket: R2Bucket, principal: Principal, 
   }
   try {
     const insert = db.insert(attachment).values({
-      id, ticketNumber, uploaderId: principal.userId, filename: info.filename, contentType: info.contentType, size: info.size,
+      id,
+      ticketNumber,
+      ...(principal.kind === 'user' ? { uploaderId: principal.userId } : { applicationId: principal.applicationId }),
+      filename: info.filename, contentType: info.contentType, size: info.size,
     }).returning()
     const [row] = ticketNumber === null
       ? await insert
@@ -184,21 +205,17 @@ export function contentDisposition(filename: string): string {
 
 /** The file, if the Principal may read it. Throws PolicyRefusal otherwise. */
 export async function downloadAttachment(db: Db, bucket: R2Bucket, principal: Principal, id: string): Promise<Response> {
-  const [row] = await db.select({
-    file: attachment,
-    requesterId: ticket.requesterId,
-    visibleToAll: ticketType.visibleToAll,
-    statusKey: status.key,
-    statusCategory: status.category,
-  }).from(attachment)
+  const [row] = await db.select({ file: attachment, ...factsColumns }).from(attachment)
     .leftJoin(ticket, eq(attachment.ticketNumber, ticket.number))
     .leftJoin(ticketType, eq(ticket.ticketTypeId, ticketType.id))
     .leftJoin(status, eq(ticket.status, status.key))
+    .leftJoin(contact, eq(ticket.contactId, contact.id))
     .where(eq(attachment.id, id)).limit(1)
   if (!row) throw new PolicyRefusal(NO_ATTACHMENT)
+  // Not `requesterId === null`: a Contact's ticket has no User Requester.
   const refusal = authorizeAttachmentRead(principal, {
     uploaderId: row.file.uploaderId,
-    ticket: row.requesterId === null ? null : policyTicket({ ...row, requesterId: row.requesterId, visibleToAll: row.visibleToAll ?? false }),
+    ticket: row.file.ticketNumber === null ? null : policyTicket(row),
   })
   if (refusal) throw new PolicyRefusal(refusal)
 
@@ -234,13 +251,13 @@ export async function checkFileRefs(db: Db, principal: Principal, ticketNumber: 
   return refs.flatMap((ref) => {
     const row = byId.get(String(ref.id))
     const usable = row && (ticketNumber !== null && row.ticketNumber === ticketNumber
-      || row.ticketNumber === null && row.uploaderId === principal.userId)
+      || row.ticketNumber === null && principal.kind === 'user' && row.uploaderId === principal.userId)
     return usable ? [] : [{ key: ref.key, label: ref.label, reason: 'Must be the ID of a file you uploaded to this ticket.' }]
   })
 }
 
 /** A batch statement: the new ticket (the last insert in the batch) takes the unattached uploads of this User. */
-export function claimUploads(db: Db, principal: Principal, ids: string[]) {
+export function claimUploads(db: Db, principal: UserPrincipal, ids: string[]) {
   return db.update(attachment).set({ ticketNumber: sql`last_insert_rowid()` })
     .where(and(inArray(attachment.id, ids), isNull(attachment.ticketNumber), eq(attachment.uploaderId, principal.userId)))
 }

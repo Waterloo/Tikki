@@ -1,31 +1,59 @@
-import { and, asc, count, desc, eq, gt, isNull, lt, ne, or, sql, type SQL, type SQLWrapper } from 'drizzle-orm'
+import { and, asc, count, desc, eq, gt, isNull, lt, lte, ne, or, sql, type SQL, type SQLWrapper } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/sqlite-core'
 import type { BatchItem } from 'drizzle-orm/batch'
 import { z } from 'zod'
-import { comment, PRIORITIES, schemaVersion, status, team, ticket, ticketType, user, type AuditAction, type Priority } from '../db/schema'
+import { application, comment, contact, idempotencyKey, PRIORITIES, schemaVersion, status, team, ticket, ticketType, user, type ApplicationPermission, type AuditAction, type Priority } from '../db/schema'
 import { auditEntry } from './audit'
 import type { Db, Role } from './auth'
 import { checkFileRefs, claimUploads } from './attachments'
 import { activeOptions, validateFields, type FieldDef, type FieldError, type FieldType, type FieldValues } from './fields'
 import { noticeTicketCreated, noticesForChange } from './notifications'
-import { allowedActions, assertAllowed, canBeAssignee, canSeeInternal, NOT_FOUND, PolicyRefusal, readableTickets, type PolicyTicket, type TicketAction } from './policy'
+import { allowedActions, assertAllowed, assertMayCreate, canBeAssignee, canReadInternalComments, NOT_FOUND, PolicyRefusal, readableTickets, type PolicyTicket, type TicketAction } from './policy'
 import type { StatusView } from './statuses'
 import { loadTicketType } from './ticket-types'
 
 export type Channel = 'web' | 'ai' | 'api'
 
-/** Who acts. `channel: 'ai'` is a User acting through Claude, with the same rights as the User (5.1). */
-export interface Principal {
+/** A User. `channel: 'ai'` is a User acting through Claude, with the same rights as the User (5.1). */
+export interface UserPrincipal {
+  kind: 'user'
   userId: string
   role: Role
-  channel: Channel
+  channel: 'web' | 'ai'
 }
+
+/** An Application with an API key. Its rights are its permissions and allowed Ticket Types, never a Role. */
+export interface ApplicationPrincipal {
+  kind: 'application'
+  applicationId: number
+  permissions: readonly ApplicationPermission[]
+  ticketTypeIds: readonly number[]
+  channel: 'api'
+}
+
+/** Who acts (glossary: Principal). */
+export type Principal = UserPrincipal | ApplicationPrincipal
 
 export interface PersonView {
   id: string
   name: string
   email: string
 }
+
+/** Who did something: a User, or an Application with an API key. */
+export type ActorView =
+  | (PersonView & { kind: 'user' })
+  | { kind: 'application', id: number, name: string }
+
+/** The columns of a row that a User or an Application wrote (`author_id`/`uploader_id`/`principal_id` or `application_id`). */
+export function actorId(principal: Principal): string | null {
+  return principal.kind === 'user' ? principal.userId : null
+}
+
+/** A User, or a Contact of an Application. */
+export type RequesterView =
+  | (PersonView & { kind: 'user' })
+  | { kind: 'contact', id: number, external_id: string, name: string, email: string }
 
 /** A ticket in a list. */
 export interface TicketSummary {
@@ -35,9 +63,11 @@ export interface TicketSummary {
   priority: Priority
   status: StatusView
   ticket_type: { id: number, name: string, prefix: string, icon: string, color: string }
-  requester: PersonView
+  requester: RequesterView
   assignee: PersonView | null
   channel: Channel
+  /** The Application that created the ticket, for tickets from the API. */
+  application: { id: number, name: string } | null
   created_at: string
   updated_at: string
 }
@@ -73,14 +103,27 @@ export const ticketTextInput = z.object({
   description: z.string({ error: 'Must be text.' }).trim().max(20_000, 'Description must be 20000 characters or fewer.').default(''),
 })
 
-const coreInput = ticketTextInput.extend({
+export const coreInput = ticketTextInput.extend({
   priority: z.enum(PRIORITIES, { error: 'Must be one of the options.' }).default('normal'),
 })
 
-const typeInput = z.object({
+export const typeInput = z.object({
   ticket_type_id: z.number({ error: 'Choose a Ticket Type.' }).int('Choose a Ticket Type.').positive('Choose a Ticket Type.'),
   fields: z.record(z.string(), z.unknown(), { error: 'Must be an object keyed by Field Key.' }).default({}),
 })
+
+/** The Contact a ticket from an Application is for. The same `external_id` always finds the same Contact (3.8). */
+export const contactInput = z.object({
+  external_id: z.string({ error: 'Must be text.' }).trim().min(1, 'The external ID is required.').max(200, 'Must be 200 characters or fewer.')
+    .describe('Your ID for this person. The same ID always gives the same Contact.'),
+  name: z.string({ error: 'Must be text.' }).trim().min(1, 'The name is required.').max(200, 'Must be 200 characters or fewer.'),
+  email: z.email({ error: 'Must be an email address.' }).max(320, 'Must be 320 characters or fewer.'),
+}, { error: 'Send the Contact: external_id, name, and email.' })
+
+const contactPart = z.object({ contact: contactInput })
+
+/** The body of a create from an Application. Validation checks the same parts one by one, to report every problem at once. */
+export const applicationTicketInput = coreInput.extend(typeInput.shape).extend(contactPart.shape)
 
 const UPDATABLE = { status: 'change_status', priority: 'change_priority', assignee_id: 'assign', fields: 'edit_fields', description: 'edit_description' } as const satisfies Record<string, TicketAction>
 
@@ -99,6 +142,7 @@ const updateInput = z.strictObject({
 })
 
 const coreLabels: Record<string, string> = {
+  contact: 'Contact',
   title: 'Title',
   description: 'Description',
   priority: 'Priority',
@@ -111,8 +155,9 @@ const coreLabels: Record<string, string> = {
 /** Errors for the core attributes use the attribute name as `key`, so Field Keys must not reuse these names. */
 function coreErrors(issues: z.core.$ZodIssue[]): FieldError[] {
   return issues.map((issue) => {
-    const key = String(issue.path[0] ?? 'body')
-    const error: FieldError = { key, label: coreLabels[key] ?? 'Request body', reason: issue.message }
+    // Nested keys only exist inside `contact`, for example `contact.email`.
+    const key = issue.path.length ? issue.path.map(String).join('.') : 'body'
+    const error: FieldError = { key, label: coreLabels[String(issue.path[0])] ?? 'Request body', reason: issue.message }
     if (key === 'priority') error.options = [...PRIORITIES]
     return error
   })
@@ -132,6 +177,7 @@ export function parseTicketReference(value: string): number | null {
 }
 
 const requester = alias(user, 'requester')
+const source = alias(application, 'source')
 const assignee = alias(user, 'assignee')
 
 const summaryColumns = {
@@ -142,6 +188,12 @@ const summaryColumns = {
   createdAt: ticket.createdAt,
   updatedAt: ticket.updatedAt,
   requesterId: ticket.requesterId,
+  contactId: contact.id,
+  contactExternalId: contact.externalId,
+  contactName: contact.name,
+  contactEmail: contact.email,
+  applicationId: source.id,
+  applicationName: source.name,
   statusKey: status.key,
   statusPosition: status.position,
   statusName: status.name,
@@ -174,7 +226,9 @@ function selectSummaries(db: Db, where: SQL | undefined) {
     .innerJoin(ticketType, eq(ticket.ticketTypeId, ticketType.id))
     // Left joins, so a row with a missing Status or Team fails loudly in toSummary instead of vanishing from lists.
     .leftJoin(status, eq(ticket.status, status.key))
-    .innerJoin(requester, eq(ticket.requesterId, requester.id))
+    .leftJoin(requester, eq(ticket.requesterId, requester.id))
+    .leftJoin(contact, eq(ticket.contactId, contact.id))
+    .leftJoin(source, eq(contact.applicationId, source.id))
     .leftJoin(assignee, eq(ticket.assigneeId, assignee.id))
     .where(where)
 }
@@ -183,7 +237,9 @@ function selectDetail(db: Db, number: number) {
   return db.select(detailColumns).from(ticket)
     .innerJoin(ticketType, eq(ticket.ticketTypeId, ticketType.id))
     .leftJoin(status, eq(ticket.status, status.key))
-    .innerJoin(requester, eq(ticket.requesterId, requester.id))
+    .leftJoin(requester, eq(ticket.requesterId, requester.id))
+    .leftJoin(contact, eq(ticket.contactId, contact.id))
+    .leftJoin(source, eq(contact.applicationId, source.id))
     .leftJoin(assignee, eq(ticket.assigneeId, assignee.id))
     .leftJoin(team, eq(ticketType.teamId, team.id))
     .where(eq(ticket.number, number))
@@ -192,6 +248,16 @@ function selectDetail(db: Db, number: number) {
 
 type SummaryRow = Awaited<ReturnType<typeof selectSummaries>>[number]
 export type DetailRow = Awaited<ReturnType<typeof selectDetail>>[number]
+
+function toRequester(row: SummaryRow): RequesterView {
+  if (row.contactId !== null) {
+    return { kind: 'contact', id: row.contactId, external_id: row.contactExternalId!, name: row.contactName!, email: row.contactEmail! }
+  }
+  if (row.requesterId === null || row.requesterName === null || row.requesterEmail === null) {
+    throw new Error(`Ticket ${row.number} has no Requester. Every ticket must have one.`)
+  }
+  return { kind: 'user', id: row.requesterId, name: row.requesterName, email: row.requesterEmail }
+}
 
 function toSummary(row: SummaryRow): TicketSummary {
   if (row.statusKey === null || row.statusName === null || row.statusCategory === null) {
@@ -204,17 +270,18 @@ function toSummary(row: SummaryRow): TicketSummary {
     priority: row.priority,
     status: { key: row.statusKey, name: row.statusName, category: row.statusCategory },
     ticket_type: { id: row.typeId, name: row.typeName, prefix: row.prefix, icon: row.typeIcon, color: row.typeColor },
-    requester: { id: row.requesterId, name: row.requesterName, email: row.requesterEmail },
+    requester: toRequester(row),
     assignee: row.assigneeId === null ? null : { id: row.assigneeId, name: row.assigneeName ?? '', email: row.assigneeEmail ?? '' },
     channel: row.channel,
+    application: row.applicationId === null ? null : { id: row.applicationId, name: row.applicationName! },
     created_at: row.createdAt.toISOString(),
     updated_at: row.updatedAt.toISOString(),
   }
 }
 
-export function policyFacts(row: Pick<SummaryRow, 'requesterId' | 'visibleToAll' | 'statusKey' | 'statusCategory'>): PolicyTicket {
+export function policyFacts(row: Pick<SummaryRow, 'requesterId' | 'applicationId' | 'visibleToAll' | 'statusKey' | 'statusCategory'>): PolicyTicket {
   if (row.statusKey === null || row.statusCategory === null) throw new Error('A ticket has no Status. Every ticket must have one (4.10).')
-  return { requesterId: row.requesterId, visibleToAll: row.visibleToAll, statusKey: row.statusKey, statusCategory: row.statusCategory }
+  return { requesterId: row.requesterId, applicationId: row.applicationId, visibleToAll: row.visibleToAll, statusKey: row.statusKey, statusCategory: row.statusCategory }
 }
 
 /** The Fields of the Schema Version that the ticket is pinned to. */
@@ -230,7 +297,7 @@ async function toDetail(db: Db, principal: Principal, row: DetailRow): Promise<T
   const [fields, [comments], [origin]] = await Promise.all([
     pinnedFields(db, row),
     db.select({ n: count() }).from(comment)
-      .where(and(eq(comment.ticketNumber, row.number), canSeeInternal(principal) ? undefined : eq(comment.visibility, 'public'))),
+      .where(and(eq(comment.ticketNumber, row.number), canReadInternalComments(principal) ? undefined : eq(comment.visibility, 'public'))),
     row.reopenedFrom === null
       ? Promise.resolve([])
       : db.select({ prefix: ticketType.prefix }).from(ticket).innerJoin(ticketType, eq(ticket.ticketTypeId, ticketType.id)).where(eq(ticket.number, row.reopenedFrom)),
@@ -260,14 +327,23 @@ export async function loadFor(db: Db, principal: Principal, action: TicketAction
   return row
 }
 
+interface NewTicket {
+  values: Omit<typeof ticket.$inferInsert, 'requesterId' | 'contactId' | 'channel'>
+  /** Uploads that file Fields point to. The create claims them for the new ticket. */
+  fileIds: string[]
+}
+
 /**
- * Creates a ticket of the chosen type, pinned to the type's newest Schema Version, with Status `open`.
- * Throws TicketValidationError with every problem at once: core attributes and Field values.
+ * Checks a new ticket of the chosen type, pinned to the type's newest Schema Version, with Status `open`.
+ * Throws TicketValidationError with every problem at once (core attributes, Field values, and `extraErrors`),
+ * or PolicyRefusal for a type the Principal may not use.
  */
-export async function createTicket(db: Db, principal: Principal, input: unknown): Promise<TicketDetail> {
+async function checkNewTicket(db: Db, principal: Principal, input: unknown, extraErrors: FieldError[] = []): Promise<NewTicket> {
   const core = coreInput.safeParse(input)
   const target = typeInput.safeParse(input)
-  const errors = [...(core.success ? [] : coreErrors(core.error.issues)), ...(target.success ? [] : coreErrors(target.error.issues))]
+  const errors = [...(core.success ? [] : coreErrors(core.error.issues)), ...(target.success ? [] : coreErrors(target.error.issues)), ...extraErrors]
+  // Before the type is loaded, so an Application gets the same refusal for a type it may not use and one that does not exist.
+  if (target.success) assertMayCreate(principal, target.data.ticket_type_id)
 
   const found = target.success ? await loadTicketType(db, target.data.ticket_type_id) : null
   let values: FieldValues = {}
@@ -290,25 +366,132 @@ export async function createTicket(db: Db, principal: Principal, input: unknown)
   if (errors.length || !core.success || !found) throw new TicketValidationError(errors)
 
   const now = new Date()
-  const [created] = await db.batch([db.insert(ticket).values({
-    ticketTypeId: found.type.id,
-    schemaVersion: found.version.version,
-    title: core.data.title,
-    description: core.data.description,
-    priority: core.data.priority,
-    fields: values,
-    requesterId: principal.userId,
-    channel: principal.channel,
-    status: 'open',
-    createdAt: now,
-    updatedAt: now,
-  }).returning({ number: ticket.number }),
-  // An update keeps last_insert_rowid(), so the uploads join the new ticket; the audit insert must come last.
-  ...(fileIds.length ? [claimUploads(db, principal, fileIds)] : []),
-  auditEntry(db, principal, { ticketNumber: sql`last_insert_rowid()`, action: 'ticket_created' }),
-  noticeTicketCreated(db, principal.userId),
+  return {
+    values: {
+      ticketTypeId: found.type.id,
+      schemaVersion: found.version.version,
+      title: core.data.title,
+      description: core.data.description,
+      priority: core.data.priority,
+      fields: values,
+      status: 'open',
+      createdAt: now,
+      updatedAt: now,
+    },
+    fileIds,
+  }
+}
+
+/** Creates a ticket with the User as Requester. Throws TicketValidationError or PolicyRefusal. */
+export async function createTicket(db: Db, principal: UserPrincipal, input: unknown): Promise<TicketDetail> {
+  const { values, fileIds } = await checkNewTicket(db, principal, input)
+  const [created] = await db.batch([
+    db.insert(ticket).values({ ...values, requesterId: principal.userId, channel: principal.channel }).returning({ number: ticket.number }),
+    // An update keeps last_insert_rowid(), so the uploads join the new ticket; the audit insert must come last.
+    ...(fileIds.length ? [claimUploads(db, principal, fileIds)] : []),
+    auditEntry(db, principal, { ticketNumber: sql`last_insert_rowid()`, action: 'ticket_created' }),
+    noticeTicketCreated(db, principal.userId),
   ])
   return getTicket(db, principal, created[0]!.number)
+}
+
+/** The first result of a create is kept this long for its `Idempotency-Key` (6.3). */
+export const IDEMPOTENCY_WINDOW_MS = 24 * 60 * 60 * 1000
+
+export interface Idempotency {
+  key: string
+  /** Hex SHA-256 of the request body. */
+  requestHash: string
+}
+
+/** The same `Idempotency-Key` came with another body. Nothing was created. */
+export class IdempotencyMismatch extends Error {
+  constructor() {
+    super('This Idempotency-Key was used with another request body in the last 24 hours. Use a new key for a new ticket.')
+    this.name = 'IdempotencyMismatch'
+  }
+}
+
+/** The ticket of an earlier create with this key in the window, or null. Throws IdempotencyMismatch for another body. */
+async function findReplay(db: Db, principal: ApplicationPrincipal, idempotency: Idempotency, now: number): Promise<number | null> {
+  const [row] = await db.select({ requestHash: idempotencyKey.requestHash, ticketNumber: idempotencyKey.ticketNumber }).from(idempotencyKey)
+    .where(and(
+      eq(idempotencyKey.applicationId, principal.applicationId),
+      eq(idempotencyKey.key, idempotency.key),
+      gt(idempotencyKey.createdAt, new Date(now - IDEMPOTENCY_WINDOW_MS)),
+    )).limit(1)
+  if (!row) return null
+  if (row.requestHash !== idempotency.requestHash) throw new IdempotencyMismatch()
+  return row.ticketNumber
+}
+
+/** The result of a create, for the Application that made it, also when it has no `tickets:read`. */
+async function createdTicket(db: Db, principal: ApplicationPrincipal, number: number): Promise<TicketDetail> {
+  const [row] = await selectDetail(db, number)
+  if (!row || row.applicationId !== principal.applicationId) throw new Error(`Ticket ${number} is not a ticket of Application ${principal.applicationId}.`)
+  return toDetail(db, principal, row)
+}
+
+function isIdempotencyConflict(error: unknown): boolean {
+  // Drizzle wraps the D1 error, so the SQLite message can be on the cause.
+  const messages = [error, (error as { cause?: unknown })?.cause].map(e => (e instanceof Error ? e.message : ''))
+  return messages.some(m => m.includes('UNIQUE constraint failed: idempotency_key'))
+}
+
+/**
+ * Creates a ticket for a Contact of the Application. The Contact is found or made from `contact.external_id` (3.8),
+ * and its name and email are updated to the values sent. With an Idempotency-Key, a repeat in 24 hours returns the
+ * first ticket and creates nothing (6.3). Throws TicketValidationError, PolicyRefusal, or IdempotencyMismatch.
+ */
+export async function createApplicationTicket(db: Db, principal: ApplicationPrincipal, input: unknown, idempotency?: Idempotency): Promise<{ ticket: TicketDetail, replayed: boolean }> {
+  assertMayCreate(principal)
+  const now = Date.now()
+  if (idempotency) {
+    const replay = await findReplay(db, principal, idempotency, now)
+    if (replay !== null) return { ticket: await createdTicket(db, principal, replay), replayed: true }
+  }
+
+  const parsedContact = contactPart.safeParse(input)
+  // No file IDs to claim: an Application cannot upload before the ticket exists, so checkNewTicket refuses file Fields.
+  const { values } = await checkNewTicket(db, principal, input, parsedContact.success ? [] : coreErrors(parsedContact.error.issues))
+  const person = parsedContact.data!.contact
+  const appId = principal.applicationId
+
+  // One batch, so D1 runs it as one transaction: the Contact, the ticket, and the key all exist, or none does.
+  const upsertContact = db.insert(contact)
+    .values({ applicationId: appId, externalId: person.external_id, name: person.name, email: person.email, createdAt: values.createdAt, updatedAt: values.createdAt })
+    .onConflictDoUpdate({ target: [contact.applicationId, contact.externalId], set: { name: person.name, email: person.email, updatedAt: values.createdAt } })
+  const insertTicket = db.insert(ticket).values({
+    ...values,
+    contactId: sql`(SELECT ${contact.id} FROM ${contact} WHERE ${contact.applicationId} = ${appId} AND ${contact.externalId} = ${person.external_id})`,
+    channel: 'api',
+  }).returning({ number: ticket.number })
+
+  // noticeTicketCreated reads last_insert_rowid() as the audit entry, so it comes right after it. A Contact is no User,
+  // so it gets no Inbox notice; the staff of the type's Team do.
+  const created = (ticketNumber: SQL) => [auditEntry(db, principal, { ticketNumber, action: 'ticket_created' }), noticeTicketCreated(db, null)] as const
+
+  try {
+    if (!idempotency) {
+      const [, inserted] = await db.batch([upsertContact, insertTicket, ...created(sql`last_insert_rowid()`)])
+      return { ticket: await createdTicket(db, principal, inserted[0]!.number), replayed: false }
+    }
+    const [, , inserted] = await db.batch([
+      // An expired key may be used again. This also keeps the table small.
+      db.delete(idempotencyKey).where(and(eq(idempotencyKey.applicationId, appId), lte(idempotencyKey.createdAt, new Date(now - IDEMPOTENCY_WINDOW_MS)))),
+      upsertContact,
+      insertTicket,
+      // The primary key refuses a second row for the key, so a concurrent repeat rolls back its whole batch.
+      db.insert(idempotencyKey).values({ applicationId: appId, key: idempotency.key, requestHash: idempotency.requestHash, ticketNumber: sql`last_insert_rowid()`, createdAt: new Date(now) }),
+      ...created(sql`(SELECT ${idempotencyKey.ticketNumber} FROM ${idempotencyKey} WHERE ${idempotencyKey.applicationId} = ${appId} AND ${idempotencyKey.key} = ${idempotency.key})`),
+    ])
+    return { ticket: await createdTicket(db, principal, inserted[0]!.number), replayed: false }
+  } catch (error) {
+    if (!idempotency || !isIdempotencyConflict(error)) throw error
+    const replay = await findReplay(db, principal, idempotency, now)
+    if (replay === null) throw error
+    return { ticket: await createdTicket(db, principal, replay), replayed: true }
+  }
 }
 
 export interface ListFilter {
@@ -370,10 +553,12 @@ function fieldCondition(key: string, value: string): SQL {
 }
 
 function filterCondition(principal: Principal, filter: ListFilter): SQL | undefined {
-  const assignee = filter.assignee === 'me' ? principal.userId : filter.assignee
+  const me = principal.kind === 'user' ? principal.userId : null
+  if (me === null && (filter.requesterIsMe || filter.assignee)) throw new Error('The requester and assignee filters are only for Users.')
+  const assignee = filter.assignee === 'me' ? me! : filter.assignee
   return and(
     readableTickets(principal),
-    filter.requesterIsMe ? eq(ticket.requesterId, principal.userId) : undefined,
+    filter.requesterIsMe ? eq(ticket.requesterId, me!) : undefined,
     assignee === 'none' ? isNull(ticket.assigneeId) : assignee ? eq(ticket.assigneeId, assignee) : undefined,
     filter.search ? searchCondition(filter.search) : undefined,
     filter.ticketTypeId !== undefined ? eq(ticket.ticketTypeId, filter.ticketTypeId) : undefined,
@@ -420,6 +605,7 @@ export async function listTickets(db: Db, principal: Principal, filter: ListFilt
     db.select({ status: ticket.status, count: count() }).from(ticket)
       .innerJoin(ticketType, eq(ticket.ticketTypeId, ticketType.id))
       .leftJoin(status, eq(ticket.status, status.key))
+      .leftJoin(contact, eq(ticket.contactId, contact.id))
       .where(where)
       .groupBy(ticket.status),
   ])
@@ -555,6 +741,6 @@ export async function applyChange(db: Db, principal: Principal, number: number, 
       values: { before: e.before, after: e.after },
     })),
     ...extra,
-    ...noticesForChange(db, principal.userId, number, entries),
+    ...noticesForChange(db, principal.kind === 'user' ? principal.userId : null, number, entries),
   ])
 }

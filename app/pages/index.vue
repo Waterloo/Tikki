@@ -98,7 +98,7 @@ onMounted(load)
             <span class="row-start-3 col-span-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 xl:contents">
               <span><StatusBadge :status="t.status" /></span>
               <span class="hidden xl:block"><PriorityBadge :priority="t.priority" /></span>
-              <span><SourceChip :channel="t.channel" /></span>
+              <span><SourceChip :channel="t.channel" :application="t.application?.name" /></span>
               <time class="text-[13px] text-(--ui-text-muted) xl:text-right whitespace-nowrap" :datetime="t.created_at">
                 {{ formatDay(t.created_at) }}
               </time>

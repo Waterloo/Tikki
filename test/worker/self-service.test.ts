@@ -200,7 +200,7 @@ describe('Requester reopen', () => {
 
   it('uses the test clock: 14 days exactly is inside, one millisecond more is outside', async () => {
     const [requester, agent] = await Promise.all([signInAs('requester'), signInAs('agent')])
-    const principal = { userId: requester.user.id, role: 'requester', channel: 'web' } as const
+    const principal = { kind: 'user', userId: requester.user.id, role: 'requester', channel: 'web' } as const
     const inside = await create(requester)
     await resolve(agent, inside.ref)
     const [{ at }] = (await env.DB.prepare('SELECT created_at AS at FROM audit_log WHERE ticket_number = ? AND action = ?').bind(inside.number, 'status_changed').all<{ at: number }>()).results as [{ at: number }]

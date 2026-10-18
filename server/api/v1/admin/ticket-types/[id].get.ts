@@ -6,7 +6,7 @@ import { getAdminType } from '../../../../utils/ticket-type-admin'
 export default defineEventHandler(async (event) => {
   const principal = await adminPrincipal(event)
   if (principal instanceof Response) return principal
-  const id = routeId(event)
+  const id = routeId(event, 'id')
   const found = id === null ? null : await getAdminType(db, id)
   return found ?? apiError(404, 'NOT_FOUND', 'No Ticket Type has this ID.')
 })

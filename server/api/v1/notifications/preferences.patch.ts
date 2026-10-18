@@ -1,10 +1,10 @@
 import { PreferenceError, setPreferences } from '../../../utils/notifications'
-import { apiError, restPrincipal } from '../../../utils/rest'
+import { apiError, sessionPrincipal } from '../../../utils/rest'
 import { db } from '../../../utils/services'
 
 /** `{ <key>: boolean, ... }`. `assigned` cannot be turned off. Email sending comes with issue 19. */
 export default defineEventHandler(async (event) => {
-  const principal = await restPrincipal(event)
+  const principal = await sessionPrincipal(event)
   if (principal instanceof Response) return principal
   try {
     return { data: await setPreferences(db, principal, await readBody(event)) }

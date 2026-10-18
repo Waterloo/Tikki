@@ -1,6 +1,6 @@
-import { eq, or, type SQL } from 'drizzle-orm'
-import { ticket, ticketType, type StatusCategory } from '../db/schema'
-import type { Principal } from './tickets'
+import { and, eq, isNull, or, type SQL } from 'drizzle-orm'
+import { contact, ticket, ticketType, type ApplicationPermission, type StatusCategory } from '../db/schema'
+import type { ApplicationPrincipal, Principal, UserPrincipal } from './tickets'
 
 /**
  * The one place that answers "may Principal P do action A on ticket T?" (PRD module 1).
@@ -12,7 +12,10 @@ export type TicketAction = typeof TICKET_ACTIONS[number]
 
 /** The facts about a ticket that the rules use. */
 export interface PolicyTicket {
-  requesterId: string
+  /** The User who is the Requester, or null when the Requester is a Contact. */
+  requesterId: string | null
+  /** The Application whose Contact is the Requester, or null. This is the Application that created the ticket. */
+  applicationId: number | null
   visibleToAll: boolean
   statusKey: string
   statusCategory: StatusCategory
@@ -52,7 +55,15 @@ const AGENT_ONLY: Record<Exclude<TicketAction, 'read'>, string> = {
 const STAFF_ROLES: readonly string[] = ['admin', 'agent']
 
 function isStaff(principal: Principal) {
-  return STAFF_ROLES.includes(principal.role)
+  return principal.kind === 'user' && STAFF_ROLES.includes(principal.role)
+}
+
+function has(principal: ApplicationPrincipal, permission: ApplicationPermission) {
+  return principal.permissions.includes(permission)
+}
+
+function missing(permission: ApplicationPermission): Refusal {
+  return { status: 403, code: 'FORBIDDEN', message: `This Application does not have the ${permission} permission.` }
 }
 
 /** Only a User who works on tickets can own one. */
@@ -61,16 +72,26 @@ export function canBeAssignee(role: string) {
 }
 
 function canRead(principal: Principal, t: PolicyTicket) {
-  return isStaff(principal) || t.requesterId === principal.userId || t.visibleToAll
+  // An Application sees only the tickets it created (3.11), and "visible to all" is for internal Users only.
+  if (principal.kind === 'application') return t.applicationId === principal.applicationId
+  // "Visible to all" is for internal tickets. A Contact's ticket holds customer data, so only staff see it.
+  return isStaff(principal) || t.requesterId === principal.userId || (t.visibleToAll && t.applicationId === null)
 }
 
 /** Null when the Principal may do the action; otherwise the refusal. */
 export function authorize(principal: Principal, action: TicketAction, t: PolicyTicket): Refusal | null {
   if (!canRead(principal, t)) return NOT_FOUND
+  const forbidden = (message: string): Refusal => ({ status: 403, code: 'FORBIDDEN', message })
+  if (principal.kind === 'application') {
+    // Every action needs `tickets:read`, because each one answers with the ticket or the comment.
+    if (!has(principal, 'tickets:read')) return missing('tickets:read')
+    if (action === 'comment' || action === 'comment_internal') return authorizeApplicationComment(principal, t, action === 'comment_internal')
+    return action === 'read' ? null : forbidden(AGENT_ONLY[action])
+  }
   // Everyone who can read a ticket can write a Public Comment (4.18).
   if (action === 'read' || action === 'comment') return null
-  const forbidden = (message: string): Refusal => ({ status: 403, code: 'FORBIDDEN', message })
-  const isRequester = t.requesterId === principal.userId
+  // A Contact's ticket has no User Requester; the null check keeps it from matching.
+  const isRequester = t.requesterId !== null && t.requesterId === principal.userId
   switch (action) {
     // The Requester edits only while the Status Category is `open` (4.20).
     case 'edit_fields':
@@ -90,6 +111,52 @@ export function authorize(principal: Principal, action: TicketAction, t: PolicyT
   }
 }
 
+/** Null when the Principal may list tickets. Which tickets is `readableTickets`. */
+export function authorizeList(principal: Principal): Refusal | null {
+  return principal.kind === 'application' && !has(principal, 'tickets:read') ? missing('tickets:read') : null
+}
+
+const TYPE_NOT_ALLOWED: Refusal = { status: 403, code: 'FORBIDDEN', message: 'This Application may not create tickets of this Ticket Type.' }
+
+/**
+ * Throws PolicyRefusal when the Principal may not create a ticket, or one of this type. Every User may create.
+ * An Application needs `tickets:create`, and the type must be in its allowed list (3.10).
+ */
+export function assertMayCreate(principal: Principal, ticketTypeId?: number): void {
+  if (principal.kind === 'user') return
+  if (!has(principal, 'tickets:create')) throw new PolicyRefusal(missing('tickets:create'))
+  if (ticketTypeId !== undefined && !principal.ticketTypeIds.includes(ticketTypeId)) throw new PolicyRefusal(TYPE_NOT_ALLOWED)
+}
+
+/** Whether the Principal may see this Ticket Type and its Fields. An Application sees only its allowed types. */
+export function canSeeTicketType(principal: Principal, ticketTypeId: number): boolean {
+  return principal.kind === 'user' || principal.ticketTypeIds.includes(ticketTypeId)
+}
+
+/**
+ * Internal Comments are for staff. An Application never sees them, and neither does its Contact (glossary).
+ * Issue 06 (comments) filters with this, on every channel and in every payload.
+ */
+export function canReadInternalComments(principal: Principal): boolean {
+  return isStaff(principal)
+}
+
+/**
+ * Null when an Application may add a Public Comment to a ticket: it can read the ticket and has `comments:create`
+ * (4.19). An Application can never add an Internal Comment. Issue 06 adds the rules for Users next to this one.
+ */
+export function authorizeApplicationComment(principal: ApplicationPrincipal, t: PolicyTicket, internal: boolean): Refusal | null {
+  if (!canRead(principal, t)) return NOT_FOUND
+  if (!has(principal, 'comments:create')) return missing('comments:create')
+  if (internal) return { status: 403, code: 'FORBIDDEN', message: 'An Application can add only Public Comments.' }
+  return null
+}
+
+/** Admin screens and settings are for Admins who sign in, never for an Application. */
+export function isAdmin(principal: Principal): principal is UserPrincipal {
+  return principal.kind === 'user' && principal.role === 'admin'
+}
+
 export function assertAllowed(principal: Principal, action: TicketAction, t: PolicyTicket): void {
   const refusal = authorize(principal, action, t)
   if (refusal) throw new PolicyRefusal(refusal)
@@ -101,43 +168,41 @@ export function allowedActions(principal: Principal, t: PolicyTicket): TicketAct
 }
 
 /**
- * The `read` rule as a query condition, for lists. It must match `canRead`; the REST tests check both.
+ * The `read` rule as a query condition, for lists. The query must join `contact` on `ticket.contact_id`. It must match `canRead`; the REST tests check both.
  * Undefined means every ticket.
  */
 export function readableTickets(principal: Principal): SQL | undefined {
+  if (principal.kind === 'application') return eq(contact.applicationId, principal.applicationId)
   if (isStaff(principal)) return undefined
-  return or(eq(ticket.requesterId, principal.userId), eq(ticketType.visibleToAll, true))
-}
-
-/** Only Users who work on tickets see Internal Comments (4.18). Lists and counts filter with this. */
-export function canSeeInternal(principal: Principal): boolean {
-  return isStaff(principal)
+  return or(eq(ticket.requesterId, principal.userId), and(eq(ticketType.visibleToAll, true), isNull(ticket.contactId)))
 }
 
 // Attachments (issue 16). A file is as visible as its ticket (7.1).
 export const NO_ATTACHMENT: Refusal = { status: 404, code: 'NOT_FOUND', message: 'No attachment with this ID.' }
 
-/**
- * Adding a file to a ticket takes the right to read the ticket.
- * Issue 12: the Application principal needs one rule in `canRead` ("only the tickets it created"); this follows.
- */
+/** Adding a file to a ticket takes the right to read the ticket. An Application can read only its own tickets. */
 export function authorizeAttach(principal: Principal, t: PolicyTicket): Refusal | null {
   return canRead(principal, t) ? null : NOT_FOUND
 }
 
+/** Only a User can upload before the ticket exists: an Application's create takes no file IDs. */
+export function authorizeUnattachedUpload(principal: Principal): Refusal | null {
+  return principal.kind === 'user' ? null : { status: 403, code: 'FORBIDDEN', message: 'An Application can add files only to its own tickets.' }
+}
+
 /** An upload made before its ticket exists (`ticket` is null) belongs to its uploader alone. */
-export function authorizeAttachmentRead(principal: Principal, a: { uploaderId: string, ticket: PolicyTicket | null }): Refusal | null {
-  if (a.ticket === null) return a.uploaderId === principal.userId ? null : NO_ATTACHMENT
+export function authorizeAttachmentRead(principal: Principal, a: { uploaderId: string | null, ticket: PolicyTicket | null }): Refusal | null {
+  if (a.ticket === null) return principal.kind === 'user' && a.uploaderId === principal.userId ? null : NO_ATTACHMENT
   return canRead(principal, a.ticket) ? null : NO_ATTACHMENT
 }
 
 /** People and Teams: only Admins manage them (issue 20). */
 export function authorizeManagePeople(principal: Principal): Refusal | null {
-  if (principal.role === 'admin') return null
+  if (isAdmin(principal)) return null
   return { status: 403, code: 'FORBIDDEN', message: 'Only Admins can manage people and Teams.' }
 }
 
-export function assertCanManagePeople(principal: Principal): void {
+export function assertCanManagePeople(principal: Principal): asserts principal is UserPrincipal {
   const refusal = authorizeManagePeople(principal)
   if (refusal) throw new PolicyRefusal(refusal)
 }

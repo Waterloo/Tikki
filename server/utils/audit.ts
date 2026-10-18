@@ -1,7 +1,7 @@
 import { sql, type SQL } from 'drizzle-orm'
 import { auditLog, type AuditAction, type AuditSubjectType } from '../db/schema'
 import type { Db } from './auth'
-import type { Principal } from './tickets'
+import type { Principal, UserPrincipal } from './tickets'
 
 export interface AuditInput {
   /** A number, or `sql\`last_insert_rowid()\`` for the ticket that an earlier statement of the same batch inserted. */
@@ -17,6 +17,13 @@ export interface AuditInput {
   values?: { before: unknown, after: unknown }
 }
 
+/** The audit columns of the actor: a User or an Application, exactly one (CHECK). */
+export function actor(principal: Principal) {
+  return principal.kind === 'user'
+    ? { principalId: principal.userId, applicationId: null }
+    : { principalId: null, applicationId: principal.applicationId }
+}
+
 /**
  * The one way to write the audit log (append-only, 9.4). Returns the insert and does not run it: put it in the
  * `db.batch([...])` of the change, so the change and its entry are written together or not at all.
@@ -25,7 +32,7 @@ export interface AuditInput {
 export function auditEntry(db: Db, principal: Principal, e: AuditInput) {
   return db.insert(auditLog).values({
     ticketNumber: e.ticketNumber,
-    principalId: principal.userId,
+    ...actor(principal),
     channel: principal.channel,
     action: e.action,
     fieldKey: e.fieldKey ?? null,
@@ -48,14 +55,14 @@ export interface AdminAuditInput {
   /** Values only here, so Erasure can clear them. */
   values?: { before?: unknown, after?: unknown }
   /**
-   * A SQL condition. When it is false the insert fails (NOT NULL), so the whole batch is rolled back.
+   * A SQL condition. When it is false `principal_id` is NULL and the insert fails (CHECK), so the whole batch is rolled back.
    * Use it where the change itself is guarded, so no entry stays for a change that did not happen.
    */
   onlyIf?: SQL
 }
 
-/** `auditEntry` for an Admin change that has no ticket. Same rules: put it in the `db.batch` of the change. */
-export function adminAuditEntry(db: Db, principal: Principal, e: AdminAuditInput) {
+/** `auditEntry` for an Admin change that has no ticket. Same rules: put it in the `db.batch` of the change. Admins are Users. */
+export function adminAuditEntry(db: Db, principal: UserPrincipal, e: AdminAuditInput) {
   return db.insert(auditLog).values({
     ticketNumber: null,
     subjectType: e.subject.type,

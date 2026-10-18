@@ -17,6 +17,16 @@ export interface Person {
   email: string
 }
 
+/** Who did something: a User, or an Application with an API key. */
+export type Actor =
+  | (Person & { kind: 'user' })
+  | { kind: 'application', id: number, name: string }
+
+/** A User, or a Contact of an Application. */
+export type Requester =
+  | (Person & { kind: 'user' })
+  | { kind: 'contact', id: number, external_id: string, name: string, email: string }
+
 export interface TicketSummary {
   number: number
   ref: string
@@ -24,9 +34,10 @@ export interface TicketSummary {
   priority: Priority
   status: Status
   ticket_type: { id: number, name: string, prefix: string, icon: string, color: string }
-  requester: Person
+  requester: Requester
   assignee: Person | null
   channel: Channel
+  application: { id: number, name: string } | null
   created_at: string
   updated_at: string
 }
@@ -52,7 +63,7 @@ export interface CommentView {
   id: string
   visibility: 'public' | 'internal'
   body: string
-  author: Person
+  author: Actor
   channel: Channel
   created_at: string
 }
@@ -64,7 +75,7 @@ export type ActivityItem =
     id: string
     at: string
     action: 'ticket_created' | 'status_changed' | 'priority_changed' | 'assignee_changed' | 'field_changed' | 'type_changed' | 'description_changed' | 'ticket_cancelled' | 'ticket_reopened' | 'attachment_added'
-    principal: Person
+    principal: Actor
     channel: Channel
     field: { key: string, label: string } | null
     before: string | null
@@ -84,7 +95,9 @@ export interface Attachment {
   filename: string
   content_type: string
   size: number
-  uploader_id: string
+  /** Null when an Application uploaded it (`application_id`). */
+  uploader_id: string | null
+  application_id: number | null
   created_at: string
   url: string
 }

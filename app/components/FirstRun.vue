@@ -62,6 +62,13 @@ onBeforeUnmount(() => clearInterval(timer))
       </ul>
     </SettingsSection>
 
+    <SettingsSection title="Connect another system" description="A system such as a checkout site can create tickets for its customers through the API.">
+      <p class="text-sm text-(--ui-text-muted)">
+        <NuxtLink to="/applications" class="text-(--ui-primary) underline underline-offset-2">Create an application and an API key</NuxtLink>, then see the
+        <a href="/api/v1/openapi.json" class="text-(--ui-primary) underline underline-offset-2">OpenAPI document</a>.
+      </p>
+    </SettingsSection>
+
     <SettingsSection title="Who can sign in" description="People with an email at one of these domains.">
       <div class="flex flex-wrap gap-1.5">
         <UBadge v-for="d in props.setup.allowed_domains" :key="d" color="neutral" variant="subtle" class="font-mono">

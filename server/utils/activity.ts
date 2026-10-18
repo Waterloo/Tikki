@@ -1,18 +1,18 @@
 import { and, asc, desc, eq, inArray, ne } from 'drizzle-orm'
 import { z } from 'zod'
-import { auditLog, comment, COMMENT_VISIBILITIES, status, ticket, user, type AuditAction, type CommentVisibility } from '../db/schema'
+import { application, auditLog, comment, COMMENT_VISIBILITIES, status, ticket, user, type AuditAction, type CommentVisibility } from '../db/schema'
 import { auditEntry } from './audit'
 import type { Db } from './auth'
 import { noticeComment } from './notifications'
 import type { FieldDef } from './fields'
-import { assertAllowed, authorize, canBeAssignee, canSeeInternal, NOT_FOUND, PolicyRefusal, type TicketAction } from './policy'
-import { applyChange, loadFor, pinnedFields, policyFacts, TicketValidationError, type Channel, type ChangeEntry, type DetailRow, type PersonView, type Principal } from './tickets'
+import { assertAllowed, authorize, canBeAssignee, canReadInternalComments, NOT_FOUND, PolicyRefusal, type TicketAction } from './policy'
+import { actorId, applyChange, loadFor, pinnedFields, policyFacts, TicketValidationError, type ActorView, type Channel, type ChangeEntry, type DetailRow, type Principal } from './tickets'
 
 export interface CommentView {
   id: string
   visibility: CommentVisibility
   body: string
-  author: PersonView
+  author: ActorView
   channel: Channel
   created_at: string
 }
@@ -30,21 +30,43 @@ const commentInput = z.object({
   visibility: z.enum(COMMENT_VISIBILITIES, { error: 'Must be public or internal.' }).optional(),
 })
 
-const author = { id: user.id, name: user.name, email: user.email }
-const commentColumns = { id: comment.id, visibility: comment.visibility, body: comment.body, channel: comment.channel, createdAt: comment.createdAt, authorId: author.id, authorName: author.name, authorEmail: author.email }
+const actorColumns = { userId: user.id, userName: user.name, userEmail: user.email, applicationId: application.id, applicationName: application.name }
 
-function toComment(r: { id: string, visibility: CommentVisibility, body: string, channel: Channel, createdAt: Date, authorId: string, authorName: string, authorEmail: string }): CommentView {
-  return { id: r.id, visibility: r.visibility, body: r.body, channel: r.channel, created_at: r.createdAt.toISOString(), author: { id: r.authorId, name: r.authorName, email: r.authorEmail } }
+interface ActorRow { userId: string | null, userName: string | null, userEmail: string | null, applicationId: number | null, applicationName: string | null }
+
+/** The row must left join `user` and `application` on its two actor columns; a CHECK sets exactly one. */
+function toActor(r: ActorRow): ActorView {
+  if (r.userId !== null) return { kind: 'user', id: r.userId, name: r.userName!, email: r.userEmail! }
+  if (r.applicationId !== null) return { kind: 'application', id: r.applicationId, name: r.applicationName! }
+  throw new Error('A row has neither a User nor an Application as its actor.')
+}
+
+const commentColumns = { id: comment.id, visibility: comment.visibility, body: comment.body, channel: comment.channel, createdAt: comment.createdAt, ...actorColumns }
+
+function toComment(r: { id: string, visibility: CommentVisibility, body: string, channel: Channel, createdAt: Date } & ActorRow): CommentView {
+  return { id: r.id, visibility: r.visibility, body: r.body, channel: r.channel, created_at: r.createdAt.toISOString(), author: toActor(r) }
+}
+
+function selectComments(db: Db, principal: Principal, number: number, id?: string) {
+  return db.select(commentColumns).from(comment)
+    .leftJoin(user, eq(comment.authorId, user.id))
+    .leftJoin(application, eq(comment.applicationId, application.id))
+    .where(and(visibleComments(principal, number), id === undefined ? undefined : eq(comment.id, id)))
+}
+
+/** The author columns of a new comment: a User or an Application. */
+export function commentAuthor(principal: Principal) {
+  return principal.kind === 'user' ? { authorId: principal.userId } : { applicationId: principal.applicationId }
 }
 
 /** The condition that hides Internal Comments from a Principal who may not see them. */
 function visibleComments(principal: Principal, number: number) {
-  return and(eq(comment.ticketNumber, number), canSeeInternal(principal) ? undefined : eq(comment.visibility, 'public'))
+  return and(eq(comment.ticketNumber, number), canReadInternalComments(principal) ? undefined : eq(comment.visibility, 'public'))
 }
 
 /**
- * Adds a comment. Without a visibility, an Agent writes an Internal Comment and a Requester a Public one (4.18).
- * The policy decides who may write which kind.
+ * Adds a comment. Without a visibility, an Agent writes an Internal Comment and a Requester or an Application a
+ * Public one (4.18). The policy decides who may write which kind.
  */
 export async function createComment(db: Db, principal: Principal, number: number, input: unknown): Promise<CommentView> {
   const row = await loadFor(db, principal, 'read', number)
@@ -52,16 +74,16 @@ export async function createComment(db: Db, principal: Principal, number: number
   if (!parsed.success) {
     throw new TicketValidationError(parsed.error.issues.map(i => ({ key: String(i.path[0] ?? 'body'), label: i.path[0] === 'visibility' ? 'Visibility' : 'Comment', reason: i.message })))
   }
-  const visibility = parsed.data.visibility ?? (canSeeInternal(principal) ? 'internal' : 'public')
+  const visibility = parsed.data.visibility ?? (canReadInternalComments(principal) ? 'internal' : 'public')
   assertAllowed(principal, visibility === 'internal' ? 'comment_internal' : 'comment', policyFacts(row))
 
   const id = crypto.randomUUID()
   const now = new Date()
   await db.batch([
-    db.insert(comment).values({ id, ticketNumber: number, authorId: principal.userId, channel: principal.channel, visibility, body: parsed.data.body, createdAt: now }),
+    db.insert(comment).values({ id, ticketNumber: number, ...commentAuthor(principal), channel: principal.channel, visibility, body: parsed.data.body, createdAt: now }),
     auditEntry(db, principal, { ticketNumber: number, action: 'comment_added', commentId: id }),
     db.update(ticket).set({ updatedAt: now }).where(eq(ticket.number, number)),
-    noticeComment(db, principal.userId, number, id, visibility),
+    noticeComment(db, actorId(principal), number, id, visibility),
   ])
   return (await getComment(db, principal, number, id))!
 }
@@ -69,16 +91,14 @@ export async function createComment(db: Db, principal: Principal, number: number
 /** Only the comments the Principal may see, oldest first. Internal Comments are not in the result for a Requester. */
 export async function listComments(db: Db, principal: Principal, number: number): Promise<CommentView[]> {
   await loadFor(db, principal, 'read', number)
-  const rows = await db.select(commentColumns).from(comment).innerJoin(user, eq(comment.authorId, user.id))
-    .where(visibleComments(principal, number)).orderBy(asc(comment.createdAt), asc(comment.id))
+  const rows = await selectComments(db, principal, number).orderBy(asc(comment.createdAt), asc(comment.id))
   return rows.map(toComment)
 }
 
 /** One comment, or null when it does not exist or the Principal may not see it (the same answer for both). */
 export async function getComment(db: Db, principal: Principal, number: number, id: string): Promise<CommentView | null> {
   await loadFor(db, principal, 'read', number)
-  const [row] = await db.select(commentColumns).from(comment).innerJoin(user, eq(comment.authorId, user.id))
-    .where(and(visibleComments(principal, number), eq(comment.id, id))).limit(1)
+  const [row] = await selectComments(db, principal, number, id).limit(1)
   return row ? toComment(row) : null
 }
 
@@ -89,7 +109,7 @@ export type ActivityItem =
     id: string
     at: string
     action: Exclude<AuditAction, 'comment_added'>
-    principal: PersonView
+    principal: ActorView
     channel: Channel
     field: { key: string, label: string } | null
     /** Readable values. Null: no value (a Field not set, or no assignee). */
@@ -137,11 +157,12 @@ export async function listActivity(db: Db, principal: Principal, number: number)
     db.select({
       id: auditLog.id, action: auditLog.action, fieldKey: auditLog.fieldKey, channel: auditLog.channel, revertsId: auditLog.revertsId,
       before: auditLog.before, after: auditLog.after, createdAt: auditLog.createdAt,
-      principalId: user.id, principalName: user.name, principalEmail: user.email,
-    }).from(auditLog).innerJoin(user, eq(auditLog.principalId, user.id))
+      ...actorColumns,
+    }).from(auditLog)
+      .leftJoin(user, eq(auditLog.principalId, user.id))
+      .leftJoin(application, eq(auditLog.applicationId, application.id))
       .where(and(eq(auditLog.ticketNumber, number), ne(auditLog.action, 'comment_added'))).orderBy(asc(auditLog.id)),
-    db.select(commentColumns).from(comment).innerJoin(user, eq(comment.authorId, user.id))
-      .where(visibleComments(principal, number)).orderBy(asc(comment.createdAt), asc(comment.id)),
+    selectComments(db, principal, number).orderBy(asc(comment.createdAt), asc(comment.id)),
     db.select({ key: status.key, name: status.name }).from(status),
     pinnedFields(db, row),
   ])
@@ -197,7 +218,7 @@ export async function listActivity(db: Db, principal: Principal, number: number)
       id: String(e.id),
       at: e.createdAt.toISOString(),
       action: e.action as Exclude<AuditAction, 'comment_added'>,
-      principal: { id: e.principalId, name: e.principalName, email: e.principalEmail },
+      principal: toActor(e),
       channel: e.channel,
       field: e.fieldKey === null ? null : { key: e.fieldKey, label: defByKey.get(e.fieldKey)?.label ?? e.fieldKey },
       before: show(e, e.before),

@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { listNotices } from '../../../utils/notifications'
-import { restPrincipal, validationFailed } from '../../../utils/rest'
+import { sessionPrincipal, validationFailed } from '../../../utils/rest'
 import { db } from '../../../utils/services'
 
 const query = z.object({
@@ -11,7 +11,7 @@ const query = z.object({
 
 /** The User's own notices, newest first. `filter=unread`; paging with `cursor` (the `next_cursor` of the last page). */
 export default defineEventHandler(async (event) => {
-  const principal = await restPrincipal(event)
+  const principal = await sessionPrincipal(event)
   if (principal instanceof Response) return principal
   const parsed = query.safeParse(getQuery(event))
   if (!parsed.success) return validationFailed(parsed.error.issues)

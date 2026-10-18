@@ -51,6 +51,7 @@
     "@types/node": "^24.19.2",
     "auth": "1.7.10",
     "drizzle-kit": "0.31.11",
+    "jiti": "2.7.0",
     "miniflare": "4.20260730.0",
     "typescript": "^5.9.3",
     "vitest": "^4.1.12",

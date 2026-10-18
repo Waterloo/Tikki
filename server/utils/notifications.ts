@@ -1,14 +1,16 @@
 import { and, count, desc, eq, isNull, lt, ne, sql, type SQL } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/sqlite-core'
-import { comment, notification, notificationPreference, PREFERENCE_KEYS, ticket, ticketType, user, type NotificationKind, type PreferenceKey } from '../db/schema'
+import { application, comment, contact, notification, notificationPreference, PREFERENCE_KEYS, ticket, ticketType, user, type NotificationKind, type PreferenceKey } from '../db/schema'
 import type { Db } from './auth'
-import { canSeeInternal } from './policy'
-import type { ChangeEntry, Principal } from './tickets'
+import { canReadInternalComments } from './policy'
+import type { ChangeEntry, UserPrincipal } from './tickets'
 
 /*
  * Notices (8.10, Q31). Each writer returns statements for the `db.batch([...])` of the change, so a change and its
  * notices are stored together or not at all. The actor never gets a notice about their own change. Recipients are
  * chosen inside SQL, so a write costs a constant number of statements.
+ * `actorId` is null when an Application acts (`IS NOT` keeps every recipient then). A Contact is no User: the
+ * `IS NOT NULL` conditions keep a Contact's ticket from writing a notice without a recipient.
  */
 
 /**
@@ -22,23 +24,23 @@ function insertSelect(db: Db, select: SQL) {
 /**
  * After the audit entry of a new ticket (it needs `last_insert_rowid()` to be that entry).
  * Owning Team: there is no Team membership yet (issue 20), so every Agent and Admin gets it. When membership exists,
- * join it here on the Team of the ticket's type. The Requester confirmation is not written: in v1 the Requester is
- * the actor. It comes with Applications (issue 12), where an Application creates a ticket for a Contact.
+ * join it here on the Team of the ticket's type. The Requester gets no confirmation: a User Requester is the actor,
+ * and a Contact has no Inbox (its Application learns of the ticket from the create answer).
  */
-export function noticeTicketCreated(db: Db, actorId: string) {
+export function noticeTicketCreated(db: Db, actorId: string | null) {
   return insertSelect(db, sql`
     SELECT NULL, u.id, 'ticket_created', a.ticket_number, NULL, ${actorId}, NULL, NULL, ${Date.now()}
     FROM user u, audit_log a
     JOIN ticket t ON t.number = a.ticket_number
     JOIN ticket_type tt ON tt.id = t.ticket_type_id
-    WHERE a.id = last_insert_rowid() AND u.id != ${actorId} AND u.deactivated_at IS NULL AND u.role IN ('admin', 'agent')
+    WHERE a.id = last_insert_rowid() AND u.id IS NOT ${actorId} AND u.deactivated_at IS NULL AND u.role IN ('admin', 'agent')
       AND (u.id IN (SELECT tm.user_id FROM team_member tm WHERE tm.team_id = tt.team_id)
         -- A Team without members (a new install) must not drop the notice: then every Agent and Admin gets it.
         OR NOT EXISTS (SELECT 1 FROM team_member tm WHERE tm.team_id = tt.team_id))`)
 }
 
 /** For the entries of `applyChange`: a new assignee is told, and the Requester is told of a new Status. */
-export function noticesForChange(db: Db, actorId: string, number: number, entries: ChangeEntry[]) {
+export function noticesForChange(db: Db, actorId: string | null, number: number, entries: ChangeEntry[]) {
   const now = Date.now()
   const statements = []
   for (const e of entries) {
@@ -49,25 +51,25 @@ export function noticesForChange(db: Db, actorId: string, number: number, entrie
       statements.push(insertSelect(db, sql`
         SELECT NULL, t.requester_id, 'status_changed', t.number, NULL, ${actorId},
           json_object('status', (SELECT name FROM status WHERE key = ${String(e.after)})), NULL, ${now}
-        FROM ticket t WHERE t.number = ${number} AND t.requester_id != ${actorId}`))
+        FROM ticket t WHERE t.number = ${number} AND t.requester_id IS NOT NULL AND t.requester_id IS NOT ${actorId}`))
     }
   }
   return statements
 }
 
 /** A Public Comment goes to the Requester and the assignee. An Internal Comment goes to the assignee only. */
-export function noticeComment(db: Db, actorId: string, number: number, commentId: string, visibility: 'public' | 'internal') {
+export function noticeComment(db: Db, actorId: string | null, number: number, commentId: string, visibility: 'public' | 'internal') {
   if (visibility === 'internal') {
     return insertSelect(db, sql`
       SELECT NULL, t.assignee_id, 'internal_comment', t.number, ${commentId}, ${actorId}, NULL, NULL, ${Date.now()}
-      FROM ticket t WHERE t.number = ${number} AND t.assignee_id IS NOT NULL AND t.assignee_id != ${actorId}`)
+      FROM ticket t WHERE t.number = ${number} AND t.assignee_id IS NOT NULL AND t.assignee_id IS NOT ${actorId}`)
   }
   return insertSelect(db, sql`
     SELECT NULL, r.id, 'public_comment', ${number}, ${commentId}, ${actorId}, NULL, NULL, ${Date.now()}
     FROM (
       SELECT requester_id AS id FROM ticket WHERE number = ${number}
-      UNION SELECT assignee_id FROM ticket WHERE number = ${number} AND assignee_id IS NOT NULL
-    ) r WHERE r.id != ${actorId}`)
+      UNION SELECT assignee_id FROM ticket WHERE number = ${number}
+    ) r WHERE r.id IS NOT NULL AND r.id IS NOT ${actorId}`)
 }
 
 export interface AdminNotice {
@@ -87,14 +89,14 @@ export async function notifyAdmins(db: Db, kind: Extract<NotificationKind, 'webh
 // Reading
 
 /** The Internal Comment notice is for staff only, even if a User lost the role after it was written. */
-function mine(principal: Principal): SQL {
+function mine(principal: UserPrincipal): SQL {
   return and(
     eq(notification.userId, principal.userId),
-    canSeeInternal(principal) ? undefined : ne(notification.kind, 'internal_comment'),
+    canReadInternalComments(principal) ? undefined : ne(notification.kind, 'internal_comment'),
   )!
 }
 
-export async function unreadCount(db: Db, principal: Principal): Promise<number> {
+export async function unreadCount(db: Db, principal: UserPrincipal): Promise<number> {
   const [row] = await db.select({ n: count() }).from(notification).where(and(mine(principal), isNull(notification.readAt)))
   return row?.n ?? 0
 }
@@ -115,7 +117,7 @@ const EXCERPT = 200
 
 const name = (p: { name: string, email: string }) => p.name.trim() || p.email
 
-export async function listNotices(db: Db, principal: Principal, options: { unreadOnly?: boolean, cursor?: number, limit?: number } = {}) {
+export async function listNotices(db: Db, principal: UserPrincipal, options: { unreadOnly?: boolean, cursor?: number, limit?: number } = {}) {
   const limit = Math.min(options.limit ?? NOTICE_PAGE, 100)
   const where = and(mine(principal), options.unreadOnly ? isNull(notification.readAt) : undefined, options.cursor ? lt(notification.id, options.cursor) : undefined)
   const actor = alias(user, 'actor')
@@ -135,16 +137,20 @@ export async function listNotices(db: Db, principal: Principal, options: { unrea
     commentBody: comment.body,
     actorName: actor.name,
     actorEmail: actor.email,
+    // A notice without an actor on a Contact's ticket came from its Application: it acts only on its own tickets.
+    applicationName: application.name,
   }).from(notification)
     .leftJoin(ticket, eq(ticket.number, notification.ticketNumber))
     .leftJoin(ticketType, eq(ticketType.id, ticket.ticketTypeId))
     .leftJoin(comment, eq(comment.id, notification.commentId))
     .leftJoin(actor, eq(actor.id, notification.actorId))
+    .leftJoin(contact, eq(contact.id, ticket.contactId))
+    .leftJoin(application, eq(application.id, contact.applicationId))
     .where(where).orderBy(desc(notification.id)).limit(limit + 1)
 
   const page = rows.slice(0, limit)
   const data: NoticeView[] = page.map((r) => {
-    const who = r.actorName === null ? 'Someone' : name({ name: r.actorName, email: r.actorEmail! })
+    const who = r.actorName !== null ? name({ name: r.actorName, email: r.actorEmail! }) : r.applicationName ?? 'Someone'
     const tref = r.number === null ? '' : `${r.prefix}-${r.number}`
     const excerpt = (r.commentBody ?? '').slice(0, EXCERPT)
     const base = { id: r.id, kind: r.kind, read: r.readAt !== null, created_at: r.createdAt.toISOString() }
@@ -162,12 +168,12 @@ export async function listNotices(db: Db, principal: Principal, options: { unrea
   return { data, nextCursor: rows.length > limit ? page.at(-1)!.id : null, unreadCount: await unreadCount(db, principal) }
 }
 
-export async function markAllRead(db: Db, principal: Principal) {
+export async function markAllRead(db: Db, principal: UserPrincipal) {
   await db.update(notification).set({ readAt: new Date() }).where(and(eq(notification.userId, principal.userId), isNull(notification.readAt)))
 }
 
 /** False when the User has no such notice (or it is not theirs). */
-export async function markRead(db: Db, principal: Principal, id: number): Promise<boolean> {
+export async function markRead(db: Db, principal: UserPrincipal, id: number): Promise<boolean> {
   const [row] = await db.update(notification).set({ readAt: sql`COALESCE(${notification.readAt}, ${Date.now()})` })
     .where(and(eq(notification.id, id), eq(notification.userId, principal.userId))).returning({ id: notification.id })
   return !!row
@@ -187,7 +193,7 @@ export function preferenceKeysFor(role: string): PreferenceKey[] {
 
 export interface PreferenceView { key: PreferenceKey, enabled: boolean, locked: boolean }
 
-export async function getPreferences(db: Db, principal: Principal): Promise<PreferenceView[]> {
+export async function getPreferences(db: Db, principal: UserPrincipal): Promise<PreferenceView[]> {
   const rows = await db.select().from(notificationPreference).where(eq(notificationPreference.userId, principal.userId))
   const stored = new Map(rows.map(r => [r.key, r.enabled]))
   return preferenceKeysFor(principal.role).map(key => ({ key, enabled: key === 'assigned' ? true : stored.get(key) ?? DEFAULTS[key], locked: key === 'assigned' }))
@@ -200,7 +206,7 @@ export class PreferenceError extends Error {
   }
 }
 
-export async function setPreferences(db: Db, principal: Principal, input: unknown): Promise<PreferenceView[]> {
+export async function setPreferences(db: Db, principal: UserPrincipal, input: unknown): Promise<PreferenceView[]> {
   if (typeof input !== 'object' || input === null || Array.isArray(input) || Object.keys(input).length === 0) {
     throw new PreferenceError('body', 'Send an object such as { "public_comment": true }.')
   }

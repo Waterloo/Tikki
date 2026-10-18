@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { PRIORITIES } from '../../../db/schema'
+import { authorizeList } from '../../../utils/policy'
 import { apiError, restPrincipal, ticketError, validationFailed } from '../../../utils/rest'
 import { db } from '../../../utils/services'
 import { FIELD_KEY, listTickets, MAX_LIMIT, MAX_SEARCH_LENGTH, type ListFilter } from '../../../utils/tickets'
@@ -23,13 +24,21 @@ const query = z.object({
 /**
  * Filters: `requester=me`, `assignee=me|none|<User ID>`, `q` (words, or a Ticket Reference), `type`, `priority`,
  * `field=<key>:<value>` (any Schema Version), `open=true`. Paging: `limit`, `cursor` (the `next_cursor` of the last page).
+ * The requester and assignee filters are for Users. An Application gets the tickets it created.
  */
 export default defineEventHandler(async (event) => {
   const principal = await restPrincipal(event)
   if (principal instanceof Response) return principal
+  const refusal = authorizeList(principal)
+  if (refusal) return apiError(refusal.status, refusal.code, refusal.message)
   const parsed = query.safeParse(getQuery(event))
   if (!parsed.success) return validationFailed(parsed.error.issues)
   const { field = [], ...q } = parsed.data
+  if (principal.kind === 'application' && (q.requester !== undefined || q.assignee !== undefined)) {
+    return apiError(422, 'VALIDATION_FAILED', 'The request has invalid values.', [
+      { key: 'requester', label: 'Requester', reason: 'The requester and assignee filters are only for Users. An Application gets the tickets it created.' },
+    ])
+  }
 
   const fields: NonNullable<ListFilter['fields']> = []
   for (const f of field) {

@@ -64,7 +64,9 @@ export const ticket = sqliteTable('ticket', {
   priority: text('priority', { enum: PRIORITIES }).notNull().default('normal'),
   /** Field values keyed by Field Key. */
   fields: text('fields', { mode: 'json' }).$type<FieldValues>().notNull().default({}),
-  requesterId: text('requester_id').notNull().references(() => user.id),
+  // The Requester is a User or a Contact, never both and never neither (the CHECK below).
+  requesterId: text('requester_id').references(() => user.id),
+  contactId: integer('contact_id').references(() => contact.id),
   channel: text('channel', { enum: ['web', 'ai', 'api'] }).notNull(),
   // Nullable only because SQLite cannot add a NOT NULL column with a foreign key. Every ticket has a Status.
   status: text('status').references(() => status.key),
@@ -79,6 +81,9 @@ export const ticket = sqliteTable('ticket', {
   index('ticket_status_updated_idx').on(t.status, t.updatedAt),
   index('ticket_type_idx').on(t.ticketTypeId),
   index('ticket_assignee_idx').on(t.assigneeId),
+  index('ticket_contact_idx').on(t.contactId),
+  // Plain column names: drizzle-kit qualifies `${t.col}` with the temporary table name of its table rebuild.
+  check('ticket_one_requester', sql`(requester_id IS NULL) <> (contact_id IS NULL)`),
 ])
 
 /** The one row of organization settings. `id` is always 1 (the migration inserts it). */
@@ -107,13 +112,19 @@ export const comment = sqliteTable('comment', {
   // A UUID made by the code, so the comment and its audit entry go into one db.batch.
   id: text('id').primaryKey(),
   ticketNumber: integer('ticket_number').notNull().references(() => ticket.number),
-  authorId: text('author_id').notNull().references(() => user.id),
+  // The author is a User or an Application (issue 12), exactly one (the CHECK below).
+  authorId: text('author_id').references(() => user.id),
+  applicationId: integer('application_id').references(() => application.id),
   channel: text('channel', { enum: ['web', 'ai', 'api'] }).notNull(),
   visibility: text('visibility', { enum: COMMENT_VISIBILITIES }).notNull(),
   /** Personal data. Erasure clears it. */
   body: text('body').notNull(),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(() => new Date()),
-}, t => [index('comment_ticket_idx').on(t.ticketNumber, t.createdAt)])
+}, t => [
+  index('comment_ticket_idx').on(t.ticketNumber, t.createdAt),
+  // Plain column names: drizzle-kit qualifies `${t.col}` with the temporary table name of its table rebuild.
+  check('comment_one_author', sql`(author_id IS NULL) <> (application_id IS NULL)`),
+])
 
 export const AUDIT_ACTIONS = ['ticket_created', 'status_changed', 'priority_changed', 'assignee_changed', 'field_changed', 'comment_added', 'type_changed', 'description_changed', 'ticket_cancelled', 'ticket_reopened', 'attachment_added',
   // Admin changes with no ticket (subject = ticket type, user, invite or team)
@@ -140,7 +151,9 @@ export const auditLog = sqliteTable('audit_log', {
   subjectType: text('subject_type', { enum: AUDIT_SUBJECT_TYPES }),
   /** The id of the type, User, invite or Team. No foreign key: the subject may be deleted and its entry stays. */
   subjectId: text('subject_id'),
-  principalId: text('principal_id').notNull().references(() => user.id),
+  // The Principal is a User or an Application (issue 12), exactly one (the CHECK below).
+  principalId: text('principal_id').references(() => user.id),
+  applicationId: integer('application_id').references(() => application.id),
   channel: text('channel', { enum: ['web', 'ai', 'api'] }).notNull(),
   action: text('action', { enum: AUDIT_ACTIONS }).notNull(),
   /** The Field Key, for `field_changed`. */
@@ -156,8 +169,10 @@ export const auditLog = sqliteTable('audit_log', {
   index('audit_log_ticket_idx').on(t.ticketNumber, t.id),
   index('audit_log_subject_idx').on(t.subjectType, t.subjectId, t.id),
   // Exactly one subject: a ticket, or a thing without a ticket.
-  check('audit_log_one_subject', sql`(${t.ticketNumber} IS NOT NULL AND ${t.subjectType} IS NULL AND ${t.subjectId} IS NULL)
-    OR (${t.ticketNumber} IS NULL AND ${t.subjectType} IS NOT NULL AND ${t.subjectId} IS NOT NULL)`),
+  // Plain column names: drizzle-kit qualifies `${t.col}` with the temporary table name of its table rebuild.
+  check('audit_log_one_subject', sql`(ticket_number IS NOT NULL AND subject_type IS NULL AND subject_id IS NULL)
+    OR (ticket_number IS NULL AND subject_type IS NOT NULL AND subject_id IS NOT NULL)`),
+  check('audit_log_one_principal', sql`(principal_id IS NULL) <> (application_id IS NULL)`),
 ])
 
 // Issue 16: attachments
@@ -168,12 +183,18 @@ export const auditLog = sqliteTable('audit_log', {
 export const attachment = sqliteTable('attachment', {
   id: text('id').primaryKey(),
   ticketNumber: integer('ticket_number').references(() => ticket.number),
-  uploaderId: text('uploader_id').notNull().references(() => user.id),
+  // The uploader is a User or an Application (issue 12), exactly one (the CHECK below).
+  uploaderId: text('uploader_id').references(() => user.id),
+  applicationId: integer('application_id').references(() => application.id),
   filename: text('filename').notNull(),
   contentType: text('content_type').notNull(),
   size: integer('size').notNull(),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(() => new Date()),
-}, t => [index('attachment_ticket_idx').on(t.ticketNumber)])
+}, t => [
+  index('attachment_ticket_idx').on(t.ticketNumber),
+  // Plain column names: drizzle-kit qualifies `${t.col}` with the temporary table name of its table rebuild.
+  check('attachment_one_uploader', sql`(uploader_id IS NULL) <> (application_id IS NULL)`),
+])
 
 // Issue 20: people and teams
 
@@ -251,3 +272,62 @@ export const uploadLink = sqliteTable('upload_link', {
   usedAt: integer('used_at', { mode: 'timestamp_ms' }),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(() => new Date()),
 })
+
+// Issue 12: Applications, API keys, and Contacts
+
+export const APPLICATION_PERMISSIONS = ['tickets:create', 'tickets:read', 'tickets:update', 'comments:create'] as const
+export type ApplicationPermission = typeof APPLICATION_PERMISSIONS[number]
+
+/** Another system that uses the REST API with its own keys. It sees only the tickets it created (3.11). */
+export const application = sqliteTable('application', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  name: text('name').notNull().unique(),
+  description: text('description').notNull().default(''),
+  // JSON lists, so one row read gives the whole Principal on each API request. The Admin routes check the values.
+  permissions: text('permissions', { mode: 'json' }).$type<ApplicationPermission[]>().notNull().default([]),
+  ticketTypeIds: text('ticket_type_ids', { mode: 'json' }).$type<number[]>().notNull().default([]),
+  // Null while enabled. A disabled Application's keys are refused at once.
+  disabledAt: integer('disabled_at', { mode: 'timestamp_ms' }),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(() => new Date()),
+})
+
+/** Only the SHA-256 of the key is kept. The full key is shown once, when it is created (3.9). */
+export const apiKey = sqliteTable('api_key', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  applicationId: integer('application_id').notNull().references(() => application.id),
+  name: text('name').notNull(),
+  /** Hex SHA-256 of the full key. */
+  keyHash: text('key_hash').notNull().unique(),
+  /** The first characters of the key, for the Admin list. */
+  prefix: text('prefix').notNull(),
+  createdBy: text('created_by').notNull().references(() => user.id),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(() => new Date()),
+  lastUsedAt: integer('last_used_at', { mode: 'timestamp_ms' }),
+  // Revoked keys stay, so the list of who had access is not lost.
+  revokedAt: integer('revoked_at', { mode: 'timestamp_ms' }),
+}, t => [index('api_key_application_idx').on(t.applicationId)])
+
+/** An external person an Application creates tickets for. Unique on (Application, external ID) (3.8). */
+export const contact = sqliteTable('contact', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  applicationId: integer('application_id').notNull().references(() => application.id),
+  externalId: text('external_id').notNull(),
+  name: text('name').notNull(),
+  email: text('email').notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(() => new Date()),
+  updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(() => new Date()),
+}, t => [uniqueIndex('contact_application_external_unique').on(t.applicationId, t.externalId)])
+
+/** The first result of a create with an `Idempotency-Key`, for 24 hours (6.3). */
+export const idempotencyKey = sqliteTable('idempotency_key', {
+  applicationId: integer('application_id').notNull().references(() => application.id),
+  key: text('key').notNull(),
+  /** Hex SHA-256 of the request body, so the same key with another body is refused. */
+  requestHash: text('request_hash').notNull(),
+  ticketNumber: integer('ticket_number').notNull().references(() => ticket.number),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+}, t => [
+  // The primary key is the guard against two concurrent creates with one key: the second batch fails as a whole.
+  primaryKey({ columns: [t.applicationId, t.key] }),
+  index('idempotency_key_created_idx').on(t.applicationId, t.createdAt),
+])

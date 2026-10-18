@@ -7,7 +7,7 @@ import { emailDomainAllowed, type Config } from './config'
 import type { MailTransport } from './mail'
 import { assertCanDeactivate, assertCanManagePeople, canJoinTeam } from './policy'
 import { getOrganization } from './settings'
-import type { Principal } from './tickets'
+import type { UserPrincipal } from './tickets'
 
 /** A pending invite is valid for 30 days. An Admin can resend it, which starts the 30 days again. */
 export const INVITE_TTL_MS = 30 * 24 * 60 * 60 * 1000
@@ -111,7 +111,7 @@ const LAST_ADMIN = new PeopleError(409, 'LAST_ADMIN', 'There must be at least on
  * Changes the Role of a User. The last-Admin check is in the UPDATE itself, so two Admins who
  * demote each other at the same time cannot both succeed. A Requester cannot be in a Team (see `canJoinTeam`).
  */
-export async function changeRole(db: Db, principal: Principal, targetId: string, role: Role): Promise<void> {
+export async function changeRole(db: Db, principal: UserPrincipal, targetId: string, role: Role): Promise<void> {
   assertCanManagePeople(principal)
   const target = await findUser(db, targetId)
   if (target.role === role) return
@@ -129,7 +129,7 @@ export async function changeRole(db: Db, principal: Principal, targetId: string,
     ])
   } catch (error) {
     // The entry is refused when the guard is false, which rolls the batch back.
-    if (String((error as Error).cause ?? error).includes('audit_log.principal_id')) throw LAST_ADMIN
+    if (String((error as Error).cause ?? error).includes('audit_log_one_principal')) throw LAST_ADMIN
     throw error
   }
 }
@@ -139,7 +139,7 @@ export async function changeRole(db: Db, principal: Principal, targetId: string,
  * valid until they expire, so the MCP endpoint also checks `deactivated_at` on every call (ADR 0003).
  * Team memberships go too, so a deactivated User does not appear in a Team.
  */
-export async function deactivateUser(db: Db, principal: Principal, targetId: string): Promise<void> {
+export async function deactivateUser(db: Db, principal: UserPrincipal, targetId: string): Promise<void> {
   assertCanDeactivate(principal, targetId)
   const target = await findUser(db, targetId)
   if (target.deactivatedAt) return
@@ -154,7 +154,7 @@ export async function deactivateUser(db: Db, principal: Principal, targetId: str
 }
 
 /** The User signs in again and connects Claude again. Old tokens and Team memberships do not come back. */
-export async function reactivateUser(db: Db, principal: Principal, targetId: string): Promise<void> {
+export async function reactivateUser(db: Db, principal: UserPrincipal, targetId: string): Promise<void> {
   assertCanManagePeople(principal)
   const target = await findUser(db, targetId)
   if (!target.deactivatedAt) return
@@ -173,7 +173,7 @@ interface InviteMail {
   config: Config
 }
 
-async function sendInviteMail({ mail, config }: InviteMail, db: Db, inviter: Principal, email: string) {
+async function sendInviteMail({ mail, config }: InviteMail, db: Db, inviter: UserPrincipal, email: string) {
   const [org, [who]] = await Promise.all([
     getOrganization(db),
     db.select({ name: user.name, email: user.email }).from(user).where(eq(user.id, inviter.userId)).limit(1),
@@ -192,7 +192,7 @@ async function sendInviteMail({ mail, config }: InviteMail, db: Db, inviter: Pri
 }
 
 /** Invites emails outside the allowed domains (3.16). All or none: any problem rejects the whole list. */
-export async function createInvites(db: Db, deps: InviteMail, principal: Principal, rawEmails: string[], now = Date.now()): Promise<string[]> {
+export async function createInvites(db: Db, deps: InviteMail, principal: UserPrincipal, rawEmails: string[], now = Date.now()): Promise<string[]> {
   assertCanManagePeople(principal)
   const emails = [...new Set(rawEmails.map(e => e.trim().toLowerCase()).filter(Boolean))]
   if (emails.length === 0) throw new PeopleError(422, 'VALIDATION_FAILED', 'The request has invalid values.', [{ key: 'emails', reason: 'Enter at least one email.' }])
@@ -243,7 +243,7 @@ async function pendingInvite(db: Db, id: number) {
   return row
 }
 
-export async function resendInvite(db: Db, deps: InviteMail, principal: Principal, id: number, now = Date.now()): Promise<void> {
+export async function resendInvite(db: Db, deps: InviteMail, principal: UserPrincipal, id: number, now = Date.now()): Promise<void> {
   assertCanManagePeople(principal)
   const row = await pendingInvite(db, id)
   const expiresAt = new Date(now + INVITE_TTL_MS)
@@ -254,7 +254,7 @@ export async function resendInvite(db: Db, deps: InviteMail, principal: Principa
   await sendInviteMail(deps, db, principal, row.email)
 }
 
-export async function revokeInvite(db: Db, principal: Principal, id: number): Promise<void> {
+export async function revokeInvite(db: Db, principal: UserPrincipal, id: number): Promise<void> {
   assertCanManagePeople(principal)
   const row = await pendingInvite(db, id)
   await db.batch([
@@ -290,7 +290,7 @@ async function teamViews(db: Db, only?: number): Promise<TeamView[]> {
   }))
 }
 
-export async function listTeams(db: Db, principal: Principal): Promise<TeamView[]> {
+export async function listTeams(db: Db, principal: UserPrincipal): Promise<TeamView[]> {
   assertCanManagePeople(principal)
   return teamViews(db)
 }
@@ -303,7 +303,7 @@ async function getTeam(db: Db, id: number): Promise<TeamView> {
 
 const nameTaken = (name: string) => new PeopleError(409, 'TEAM_NAME_TAKEN', `A Team named “${name}” already exists.`)
 
-export async function createTeam(db: Db, principal: Principal, name: string): Promise<TeamView> {
+export async function createTeam(db: Db, principal: UserPrincipal, name: string): Promise<TeamView> {
   assertCanManagePeople(principal)
   try {
     const [[row]] = await db.batch([
@@ -317,7 +317,7 @@ export async function createTeam(db: Db, principal: Principal, name: string): Pr
   }
 }
 
-export async function renameTeam(db: Db, principal: Principal, id: number, name: string): Promise<TeamView> {
+export async function renameTeam(db: Db, principal: UserPrincipal, id: number, name: string): Promise<TeamView> {
   assertCanManagePeople(principal)
   const [found] = await db.select({ name: team.name }).from(team).where(eq(team.id, id))
   if (!found) throw notFound('Team')
@@ -335,7 +335,7 @@ export async function renameTeam(db: Db, principal: Principal, id: number, name:
 }
 
 /** A Team that owns Ticket Types cannot go: every type has a Team (4.13). */
-export async function deleteTeam(db: Db, principal: Principal, id: number): Promise<void> {
+export async function deleteTeam(db: Db, principal: UserPrincipal, id: number): Promise<void> {
   assertCanManagePeople(principal)
   const [found] = await db.select({ name: team.name, owned: count(ticketType.id) }).from(team)
     .leftJoin(ticketType, eq(ticketType.teamId, team.id)).where(eq(team.id, id)).groupBy(team.id)
@@ -350,7 +350,7 @@ export async function deleteTeam(db: Db, principal: Principal, id: number): Prom
   ])
 }
 
-export async function addTeamMember(db: Db, principal: Principal, teamId: number, userId: string): Promise<TeamView> {
+export async function addTeamMember(db: Db, principal: UserPrincipal, teamId: number, userId: string): Promise<TeamView> {
   assertCanManagePeople(principal)
   const current = await getTeam(db, teamId)
   const target = await findUser(db, userId)
@@ -364,7 +364,7 @@ export async function addTeamMember(db: Db, principal: Principal, teamId: number
   return getTeam(db, teamId)
 }
 
-export async function removeTeamMember(db: Db, principal: Principal, teamId: number, userId: string): Promise<TeamView> {
+export async function removeTeamMember(db: Db, principal: UserPrincipal, teamId: number, userId: string): Promise<TeamView> {
   assertCanManagePeople(principal)
   const current = await getTeam(db, teamId)
   if (!current.members.some(m => m.id === userId)) return current

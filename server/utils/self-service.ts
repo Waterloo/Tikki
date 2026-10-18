@@ -1,5 +1,6 @@
 import { and, desc, eq, sql } from 'drizzle-orm'
 import { auditLog, comment, ticket } from '../db/schema'
+import { commentAuthor } from './activity'
 import { auditEntry } from './audit'
 import type { Db } from './auth'
 import { applyChange, getTicket, loadFor, type Principal, type TicketDetail } from './tickets'
@@ -18,7 +19,7 @@ export async function cancelTicket(db: Db, principal: Principal, number: number,
   const row = await loadFor(db, principal, 'cancel', number)
   const id = crypto.randomUUID()
   await applyChange(db, principal, number, { status: 'closed' }, [{ action: 'ticket_cancelled', before: row.statusKey, after: 'closed' }], [
-    db.insert(comment).values({ id, ticketNumber: number, authorId: principal.userId, channel: principal.channel, visibility: 'public', body: `Ticket ${CANCEL_REASON}.`, createdAt: now }),
+    db.insert(comment).values({ id, ticketNumber: number, ...commentAuthor(principal), channel: principal.channel, visibility: 'public', body: `Ticket ${CANCEL_REASON}.`, createdAt: now }),
     auditEntry(db, principal, { ticketNumber: number, action: 'comment_added', commentId: id }),
   ], now)
   return getTicket(db, principal, number)
@@ -51,7 +52,9 @@ export async function reopenTicket(db: Db, principal: Principal, number: number,
       description: row.description,
       priority: row.priority,
       fields: row.fields,
-      requesterId: principal.userId,
+      // The policy lets only the Requester reopen, so this is the Principal's own Requester row.
+      requesterId: row.requesterId,
+      contactId: row.contactId,
       channel: principal.channel,
       status: 'open',
       reopenedFrom: number,

@@ -280,7 +280,7 @@ onBeforeUnmount(() => clearTimeout(typing))
                   <span class="row-start-3 col-span-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 min-w-0 xl:contents">
                     <span class="flex items-center gap-2 min-w-0">
                       <span class="text-sm truncate text-(--ui-text)">{{ displayName(t.requester) }}</span>
-                      <SourceChip v-if="t.channel !== 'web'" :channel="t.channel" />
+                      <SourceChip v-if="t.channel !== 'web'" :channel="t.channel" :application="t.application?.name" />
                     </span>
                     <span class="flex items-center gap-2 min-w-0 text-sm">
                       <template v-if="t.assignee">

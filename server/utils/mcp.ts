@@ -15,7 +15,7 @@ import { NOT_FOUND, PolicyRefusal } from './policy'
 import { db, useAuth } from './services'
 import { getTicketTypeWithFields, listTicketTypes } from './ticket-types'
 import { changeTicketType } from './ticket-type-change'
-import { createTicket, FIELD_KEY, getTicket, listTickets, MAX_SEARCH_LENGTH, parseTicketReference, TicketValidationError, updateTicket, type ListFilter, type Principal, type TicketSummary } from './tickets'
+import { createTicket, FIELD_KEY, getTicket, listTickets, MAX_SEARCH_LENGTH, parseTicketReference, TicketValidationError, updateTicket, type ListFilter, type TicketSummary, type UserPrincipal } from './tickets'
 import { createUploadLink } from './upload-links'
 import { UNTRUSTED_NOTICE, untrusted, untrustedDeep } from './untrusted'
 
@@ -25,9 +25,9 @@ const MAX_PAGE_SIZE = 50
 // Newest comments first in the result; older ones are counted, not sent.
 const COMMENT_LIMIT = 20
 
-const name = (p: { name: string, email: string }) => p.name || p.email
+const name = (p: { name: string, email?: string }) => p.name || p.email || ''
 
-function buildServer(principal: Principal) {
+function buildServer(principal: UserPrincipal) {
   const server = new McpServer({ name: 'ticketing', version: '0.1.0' })
 
   const readOnly = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }
@@ -290,7 +290,7 @@ function buildServer(principal: Principal) {
 // Each request builds its own server, so no MCP session state exists (stateless Streamable HTTP).
 // `legacy: 'stateless'` keeps serving the 2025 protocol, because Claude does not list 2026-07-28 yet.
 const handler = createMcpHandler(({ authInfo }) => {
-  const principal = authInfo?.extra?.principal as Principal | undefined
+  const principal = authInfo?.extra?.principal as UserPrincipal | undefined
   if (!principal) throw new Error('MCP request reached the server without a verified principal')
   return buildServer(principal)
 }, { legacy: 'stateless', responseMode: 'json' })
@@ -335,7 +335,7 @@ export async function handleMcpRequest(request: Request): Promise<Response> {
   // The JWT is valid until it expires, so a deactivated User must be stopped here (3.18, ADR 0003).
   if (row.deactivatedAt) return challenge('user is deactivated')
 
-  const principal: Principal = { userId: row.id, role: row.role as Role, channel: 'ai' }
+  const principal: UserPrincipal = { kind: 'user', userId: row.id, role: row.role as Role, channel: 'ai' }
   return handler.fetch(request, {
     authInfo: {
       token: match[1]!,

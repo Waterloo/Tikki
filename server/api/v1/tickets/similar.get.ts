@@ -1,3 +1,4 @@
+import { authorizeList } from '../../../utils/policy'
 import { apiError, restPrincipal } from '../../../utils/rest'
 import { db } from '../../../utils/services'
 import { MAX_SEARCH_LENGTH, similarTickets } from '../../../utils/tickets'
@@ -6,6 +7,8 @@ import { MAX_SEARCH_LENGTH, similarTickets } from '../../../utils/tickets'
 export default defineEventHandler(async (event) => {
   const principal = await restPrincipal(event)
   if (principal instanceof Response) return principal
+  const refusal = authorizeList(principal)
+  if (refusal) return apiError(refusal.status, refusal.code, refusal.message)
   const title = getQuery(event).title
   if (typeof title !== 'string' || title.length > MAX_SEARCH_LENGTH) {
     return apiError(422, 'VALIDATION_FAILED', 'The request has invalid values.', [
