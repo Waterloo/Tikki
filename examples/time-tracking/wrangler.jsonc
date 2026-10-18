@@ -1,4 +1,4 @@
-// Example Ticket App: time tracking. A separate Worker with its own D1. See README.md here.
+// Example Ticket App: time tracking, with sidebar, tab and page views. A separate Worker with its own D1. See README.md here.
 // Run from the repository root (it uses the root node_modules for `jose`):
 //   pnpm exec wrangler d1 migrations apply TIME --local -c examples/time-tracking/wrangler.jsonc
 //   pnpm exec wrangler dev -c examples/time-tracking/wrangler.jsonc --port 5174 --var TIKKI_ORIGIN:http://localhost:8787
@@ -9,6 +9,8 @@
   "compatibility_date": "2026-10-01",
   // src/page.js sends a function to the browser with toString(); kept names would add a server-only `__name` helper.
   "keep_names": false,
+  // The app icons are files, so issue 40's manifest can point to them; the Worker imports them as text.
+  "rules": [{ "type": "Text", "globs": ["**/*.svg"], "fallthrough": true }],
   "vars": { "TIKKI_ORIGIN": "http://localhost:8787" },
   "d1_databases": [
     { "binding": "TIME", "database_name": "tikki-time", "database_id": "00000000-0000-0000-0000-000000000000", "migrations_dir": "migrations" }

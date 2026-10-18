@@ -96,7 +96,7 @@ A **Ticket App** is your own web page, shown inside a ticket as a sidebar card, 
 Requesters never see Ticket Apps. Your page needs no SDK: about 20 lines of JavaScript.
 
 - Developer guide: [docs/ticket-apps.md](docs/ticket-apps.md) (messages, context, token check, API calls, security checklist).
-- Example app: [time tracking](examples/time-tracking/README.md). Agents log time on a ticket and can add it as an internal note.
+- Example app: [time tracking](examples/time-tracking/README.md). Agents log time in a sidebar card or a ticket tab; a timesheet page shows the time across tickets.
 - Minimal example with a backend token check: [examples/ticket-app/server.mjs](examples/ticket-app/server.mjs). Run `node examples/ticket-app/server.mjs` and add `http://localhost:5173/` as the Sidebar URL of a Ticket App on your local Tikki.
 
 ## Stack
