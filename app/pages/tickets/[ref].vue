@@ -87,20 +87,27 @@ async function load() {
   }
 }
 
-// `tikki:refresh` from a Ticket App. Quiet, so the app frames stay loaded. One at a time, so an app cannot flood the API.
-let refreshing = false
-async function refreshTicket() {
-  if (refreshing || !ticket.value) return
-  refreshing = true
-  try {
-    ticket.value = await $fetch<TicketDetail>(`/api/v1/tickets/${encodeURIComponent(ticket.value.ref)}`)
-    activityVersion.value++
-  } catch {
-    await load()
-  } finally {
-    refreshing = false
-  }
+// `tikki:refresh` from a Ticket App. Quiet, so the app frames stay loaded. At most one reload in REFRESH_GAP_MS:
+// the reloads count in the Agent's own web limit, and any app, also a `read` one, can send the message in a loop.
+const REFRESH_GAP_MS = 3000
+let lastRefresh = 0
+let refreshTimer: ReturnType<typeof setTimeout> | undefined
+function refreshTicket() {
+  if (refreshTimer) return
+  refreshTimer = setTimeout(async () => {
+    // Cleared first, so a message during the fetch schedules one more reload.
+    refreshTimer = undefined
+    lastRefresh = Date.now()
+    try {
+      if (ticket.value) ticket.value = await $fetch<TicketDetail>(`/api/v1/tickets/${encodeURIComponent(ticket.value.ref)}`)
+      activityVersion.value++
+    } catch (e) {
+      // The ticket is gone for this Agent: show the same page as on a load. Other errors keep the shown ticket.
+      if ((e as { status?: number }).status === 404) state.value = 'not-found'
+    }
+  }, Math.max(0, lastRefresh + REFRESH_GAP_MS - Date.now()))
 }
+onBeforeUnmount(() => clearTimeout(refreshTimer))
 
 async function loadAttachments(ref: string) {
   attachmentsState.value = 'loading'

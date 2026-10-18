@@ -16,6 +16,7 @@ Nuxt 4 on one Cloudflare Worker. D1 (SQLite), R2 (files), Cron Trigger. Free pla
 - A ticket of an Application has a Contact as Requester, not a User. `requesterId` is null.
 - Narrow with `principal.kind` before you read `userId`. Use `actorId(principal)` for "the User id or null".
 - Get a Principal from `restPrincipal(event)` (API key, else session) or `sessionPrincipal(event)` (User only), both in [`rest.ts`](../server/utils/rest.ts). MCP builds a `UserPrincipal` with `channel: 'ai'` in [`mcp.ts`](../server/utils/mcp.ts). `adminPrincipal` and `peoplePrincipal` add the Admin check.
+- A Ticket App's context token (issue 35) is a `UserPrincipal` with `channel: 'app'` and a `ticketApp` grant: one ticket and one access level. `restPrincipal` accepts it only on the routes of `isTicketAppRoute` in `policy.ts`. The policy refuses any other ticket (`NOT_FOUND`) and any action outside the access (`FORBIDDEN`). A new route for Ticket Apps goes into `APP_ROUTES` and `APP_ACTIONS` there.
 - Why: a bad API key must never fall back to a cookie, and an Application must never reach a User-only route.
 
 ## Read rule

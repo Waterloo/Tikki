@@ -13,6 +13,7 @@ import { allowedActions, assertAllowed, assertMayCreate, assertMayCreateWithVisi
 import type { StatusView } from './statuses'
 import { loadTicketType } from './ticket-types'
 import { changedKey, withEvent } from './outbox'
+import { TICKET_REFERENCE } from '../../shared/ticket-type-rules'
 
 export type { Channel }
 
@@ -168,9 +169,11 @@ export class TicketValidationError extends Error {
   }
 }
 
+const REFERENCE = new RegExp(`^${TICKET_REFERENCE}$`)
+
 /** A Ticket Reference (`BUG-12`) or a bare number. Lookup uses only the number, so every earlier prefix still works (4.9a). */
 export function parseTicketReference(value: string): number | null {
-  const match = /^(?:[A-Za-z]{2,5}-)?([1-9]\d{0,15})$/.exec(value.trim())
+  const match = REFERENCE.exec(value.trim())
   return match ? Number(match[1]) : null
 }
 

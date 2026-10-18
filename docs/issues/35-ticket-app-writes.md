@@ -74,6 +74,7 @@ A Ticket App can add a comment or change the ticket it is open on, for example "
 
 - Tikki has no live updates, so "Tikki also refreshes when it gets the change Event" is not built. The page reloads on `tikki:refresh` only; another viewer sees the change on the next load.
 - The 429 at the Agent's web limit is not tested end to end; the test checks that a token call counts in `user:{id}`.
+- `e2e/self-service.spec.ts` failed in 2 of 3 full e2e runs (the Reopen button is still there after 5 s) and passed 4 of 4 runs alone. This issue does not change that flow; it looks like a timing flake under load.
 - `revertible` in the Activity of a token with `update` access can be true, but the revert route refuses the token (403). A Ticket App does not show Activity buttons, so nothing uses it.
 
 ## Decisions made here
@@ -91,7 +92,8 @@ A Ticket App can add a comment or change the ticket it is open on, for example "
 - **`ticket_app_id` on `comment` too**, not only on `audit_log`. The comment list then needs one join, not a lookup of each comment's audit entry (no index on `audit_log.comment_id`). Neither column has a foreign key: the app may be deleted and the entry stays (append-only audit log). Both are facts, not personal data; the Erasure scan test passes unchanged.
 - **API shape**: comments and Activity events get `ticket_app: { id, name } | null`. Null for an Application viewer (the app name is staff data, like staff names) and after the app is deleted; then `channel: 'app'` with `ticket_app: null` means "a Ticket App". The Event `actor` gets `ticket_app` only for `channel: 'app'`; `applicationView` already replaces a User actor with `support`.
 - **UI text**: Activity shows "Sam Lee (via Orders)", like "(via Claude)". A comment shows the chip "via Orders" (icon `app-window`). The guide's "What people see" matches.
-- **`tikki:refresh`** is new in `TicketAppFrame.vue` (34 did not handle it). The page reloads the ticket quietly (no loading state, so the frames stay) and bumps the timeline. One reload at a time, so an app cannot flood the Agent's web limit.
+- **`tikki:refresh`** is new in `TicketAppFrame.vue` (34 did not handle it). The page reloads the ticket quietly (no loading state, so the frames stay) and bumps the timeline. At most one reload in 3 s, with a trailing one: the reloads count in the Agent's web limit, and any app (also `read`) can send the message in a loop. A 404 shows the not-found page.
+- **One ticket-reference pattern**: `TICKET_REFERENCE` in `shared/ticket-type-rules.ts`, used by `parseTicketReference` and the route allow-list. `canBeAssignee`, `canJoinTeam` and the token check use `isStaffRole`.
 - **Migration** `0024_issue_35_ticket_app_writes.sql`: three `ALTER TABLE ADD` (`audit_log.ticket_app_id`, `comment.ticket_app_id`, `ticket_app.access DEFAULT 'read'`). No rebuild. `CHANNELS` in `schema.ts` gets `app`; the `channel` columns have no CHECK.
 - **Erasure**: the insert-select of `ticket_erased` names every `audit_log` column in order, so it gets the new column.
 - **MCP**: no change. Its views do not show `channel`; a context token never reaches `/mcp`.

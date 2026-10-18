@@ -1,5 +1,6 @@
 import { and, eq, isNull, ne, or, sql, type SQL } from 'drizzle-orm'
 import { contact, ticket, ticketParticipant, ticketType, type ApplicationPermission, type StatusCategory, type TicketAppAccess, type TicketVisibility } from '../db/schema'
+import { TICKET_REFERENCE } from '../../shared/ticket-type-rules'
 import type { ApplicationPrincipal, Principal, UserPrincipal } from './tickets'
 
 /**
@@ -93,7 +94,7 @@ function viaApp(principal: Principal): boolean {
  * is closed to Ticket Apps until it is added here. Which ticket and which action is `authorize`.
  */
 // A Ticket Reference or a bare number, so `/tickets/deleted` and `/tickets/similar` do not match.
-const REF = String.raw`(?:[A-Za-z]{2,5}-)?[1-9]\d{0,15}`
+const REF = TICKET_REFERENCE
 const APP_ROUTES: readonly [string, RegExp][] = [
   ['GET', new RegExp(`^/api/v1/tickets/${REF}$`)],
   ['PATCH', new RegExp(`^/api/v1/tickets/${REF}$`)],
@@ -123,7 +124,7 @@ function missing(permission: ApplicationPermission): Refusal {
 
 /** Only a User who works on tickets can own one. */
 export function canBeAssignee(role: string) {
-  return STAFF_ROLES.includes(role)
+  return isStaffRole(role)
 }
 
 /** The Requester, the assignee, or an added User (glossary: Participant). */
@@ -350,5 +351,5 @@ export function assertCanDeactivate(principal: Principal, targetId: string): voi
 
 /** A Team member must be an Agent or an Admin, because a Team is a group of Agents. */
 export function canJoinTeam(role: string) {
-  return STAFF_ROLES.includes(role)
+  return isStaffRole(role)
 }

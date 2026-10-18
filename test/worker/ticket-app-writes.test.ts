@@ -1,8 +1,9 @@
 import { env } from 'cloudflare:workers'
 import { beforeAll, describe, expect, it } from 'vitest'
+import { assertMayCreate, authorize, authorizeAttach, authorizeAttachmentRead, authorizeList, authorizeListAssignees, authorizeTicketApps, authorizeUnattachedUpload, canSeeTicketType, isAdmin, isTicketAppRoute, type PolicyTicket } from '../../server/utils/policy'
 import { db } from '../../server/utils/services'
 import { contextToken } from '../../server/utils/ticket-apps'
-import { getTicket } from '../../server/utils/tickets'
+import { getTicket, type UserPrincipal } from '../../server/utils/tickets'
 import { adminAuditOf, call, createRestrictedType, getMcpToken, postJson, signInAs, typeId } from './helpers'
 
 // Issue 35: a Ticket App's backend changes its ticket through the REST API with the context token.
@@ -281,5 +282,50 @@ describe('Ticket App writes: what is recorded', () => {
     // The Application's REST view hides the app too.
     const comments = (await (await call(`/api/v1/tickets/${t.ref}/comments`, { headers: bearer(key) })).json() as { data: Record<string, any>[] }).data
     expect(comments.at(-1)).toMatchObject({ channel: 'app', ticket_app: null, author: { kind: 'support' } })
+    const activity = (await (await call(`/api/v1/tickets/${t.ref}/activity`, { headers: bearer(key) })).json() as { data: Record<string, any>[] }).data
+    expect(activity.find(i => i.type === 'comment' && i.comment.channel === 'app')!.comment).toMatchObject({ ticket_app: null, author: { kind: 'support' } })
+  })
+})
+
+describe('Ticket App writes: the policy without the route allow-list', () => {
+  // The allow-list in restPrincipal refuses first, so these rules are checked here directly.
+  const admin: UserPrincipal = { kind: 'user', userId: 'u1', role: 'admin', channel: 'app', ticketApp: { id: 1, ticketNumber: 7, access: 'update' } }
+  const facts = (number: number): PolicyTicket => ({ number, requesterId: 'u2', applicationId: null, assigneeId: null, visibility: 'requester', participantIds: [], statusKey: 'open', statusCategory: 'open', deleted: false })
+
+  it('limits a token to its ticket and its access, and refuses lists, people, admin, create, types and files', () => {
+    expect(authorize(admin, 'read', facts(7))).toBeNull()
+    expect(authorize(admin, 'change_status', facts(7))).toBeNull()
+    expect(authorize(admin, 'read', facts(8))?.code).toBe('NOT_FOUND')
+    for (const action of ['move_team', 'change_type', 'edit_description', 'delete', 'manage_participants', 'cancel', 'reopen'] as const) {
+      expect(authorize(admin, action, facts(7))?.status, action).toBe(403)
+    }
+    const reader: UserPrincipal = { ...admin, ticketApp: { ...admin.ticketApp, access: 'read' } }
+    expect(authorize(reader, 'comment', facts(7))?.status).toBe(403)
+
+    expect(isAdmin(admin)).toBe(false)
+    expect(authorizeList(admin)?.status).toBe(403)
+    expect(authorizeListAssignees(admin)?.status).toBe(403)
+    expect(authorizeTicketApps(admin)?.status).toBe(403)
+    expect(() => assertMayCreate(admin)).toThrow()
+    expect(canSeeTicketType(admin, 1)).toBe(false)
+    expect(authorizeAttach(admin, facts(7))?.status).toBe(403)
+    expect(authorizeAttach(admin, facts(8))?.status).toBe(404)
+    expect(authorizeUnattachedUpload(admin)?.status).toBe(403)
+    expect(authorizeAttachmentRead(admin, { uploaderId: 'u1', ticket: null })?.status).toBe(404)
+
+    const web: UserPrincipal = { kind: 'user', userId: 'u1', role: 'admin', channel: 'web' }
+    expect(isAdmin(web)).toBe(true)
+    expect(authorizeList(web)).toBeNull()
+  })
+
+  it('allows only the five routes of the guide', () => {
+    expect(isTicketAppRoute('GET', '/api/v1/tickets/GEN-12')).toBe(true)
+    expect(isTicketAppRoute('PATCH', '/api/v1/tickets/12')).toBe(true)
+    expect(isTicketAppRoute('POST', '/api/v1/tickets/gen-12/comments')).toBe(true)
+    expect(isTicketAppRoute('GET', '/api/v1/tickets/GEN-12/activity')).toBe(true)
+    for (const [method, path] of [['GET', '/api/v1/tickets/deleted'], ['GET', '/api/v1/tickets/similar'], ['DELETE', '/api/v1/tickets/GEN-12'],
+      ['PUT', '/api/v1/tickets/GEN-12/type'], ['POST', '/api/v1/tickets/GEN-12/activity/3/revert'], ['GET', '/api/v1/tickets/GEN-12/comments/x'], ['', '']]) {
+      expect(isTicketAppRoute(method!, path!), `${method} ${path}`).toBe(false)
+    }
   })
 })
