@@ -1,6 +1,7 @@
-# Tikki
-
-A small, complete ticketing system for one team. It runs as one Cloudflare Worker.
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/readme-cover-dark.png">
+  <img alt="Tikki: a small, complete ticketing system for one team. It runs as one Cloudflare Worker." src="docs/assets/readme-cover.png">
+</picture>
 
 People raise a ticket in three ways:
 

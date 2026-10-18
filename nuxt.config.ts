@@ -7,6 +7,13 @@ export default defineNuxtConfig({
   modules: ['@nuxt/ui'],
   css: ['~/assets/css/main.css'],
   devtools: { enabled: false },
+  app: {
+    head: {
+      link: [
+        { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' },
+      ],
+    },
+  },
   // Icons are bundled into the client, so the browser never calls the Iconify API and the Worker serves no icon route.
   icon: {
     provider: 'none',
