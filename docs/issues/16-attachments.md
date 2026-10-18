@@ -24,8 +24,8 @@ People and Applications attach files to tickets, and only people who can see the
   Evidence: "hides the files of a ticket from a User who cannot read it...": download, list, and upload all answer 404 `NOT_FOUND`, the same as for an ID that does not exist. An Agent can download. "lets a Requester read a file of a "visible to all" ticket" covers the other side of the same rule.
 - [x] REST test: every download has `Content-Disposition: attachment`.
   Evidence: "serves every download as an attachment with nosniff, and never as script": HTML, SVG, PNG, and an invalid type all get `attachment`, `nosniff`, and `no-store`. HTML, SVG, and unknown types are served as `application/octet-stream`.
-- [ ] REST test: an Application can upload to its own ticket only.
-  Not done: Applications come with issue 12. `authorizeAttach` in `policy.ts` equals the read rule, so issue 12 adds the Application principal to `canRead` ("only the tickets it created") and this criterion follows. Then add the test.
+- [x] REST test: an Application can upload to its own ticket only.
+  Evidence (added at the merge of issue 12): "lets an Application upload to and read its own ticket only" in `test/worker/applications.test.ts`. An API key uploads to its own ticket (201, `application_id` set, `uploader_id` null) and downloads the file; another Application's ticket and a User's ticket answer 404 for upload and list; another key gets 404 for the file; an unattached upload and an Upload Link answer 403 for a key.
 - [ ] The CPU budget check (issue 02) covers a 25 MB upload.
   Pending: issue 02 is not built. The upload path was made for it: no body read, no parsing, one R2 `put`, one D1 insert. A 25 MB upload and download ran against `wrangler dev` (not timed for CPU).
 
