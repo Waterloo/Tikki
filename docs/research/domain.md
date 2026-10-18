@@ -83,3 +83,16 @@ Search was done on 2026-10-18. This is not legal advice. I did not search the US
 - RDAP "not found" means unregistered today. Another person can register the name before you.
 - Prices change. .com wholesale prices may rise on 2026-11-01 (one source says so).
 - Cloudflare may reject a name at checkout for reasons I cannot see from outside (premium or reserved).
+
+## Other registrars (added 2026-10-18)
+
+Source: [domainoffer.net](https://domainoffer.net/tld/run), a price tracker. Prices change. Confirm at checkout.
+
+| TLD | Cloudflare | Cheapest first year | Cheapest renewal |
+|---|---|---|---|
+| .run | $21.20 / $21.20 | Spaceship $2.79 (promo $2.44), Porkbun $3.12; renews at about $25 | eUKhost $17.74, CodeHost $20.11, Cloudflare $21.20 |
+| .sh | $45 / $45 | not listed | CodeHost $33.19; Cloudflare $45 |
+| .so | not seen | Dynadot $57.50 | Dynadot $57.50 |
+
+- Low first-year prices for .run (under $4) rise to $20 or more at renewal. Cloudflare has no such jump, so it is the better choice for a long-term name.
+- tikki.so costs at least $57.50 per year at the cheapest registrar. This is too much for no benefit.
