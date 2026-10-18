@@ -281,10 +281,10 @@ Before implementation, confirm that the Cloudflare rate-limiting binding is avai
 
 ## 11. Production baseline (Q23, Decided)
 
-- Two environments, `staging` and `production`, each with its own D1, R2 and secrets.
-- Forward-only Drizzle migrations. CI runs them before each deploy.
+- ~~Two environments, `staging` and `production`.~~ Changed 2026-10-18 (owner): **production only** for now (`env.production` in `wrangler.jsonc`: Worker `tikki`, D1 `tikki`, R2 `tikki-files`, `https://tikki.jithinsha.in`). Add staging when there are real users.
+- Forward-only Drizzle migrations. The deploy command runs them before each deploy.
 - D1 Time Travel for restore, plus a nightly export to R2.
-- Deploys only from GitHub Actions on merge. No manual deploy to production.
+- ~~Deploys only from GitHub Actions on merge.~~ Changed 2026-10-18 (owner): **Cloudflare Workers Builds** deploys `main`. The gate is GitHub branch protection: `main` takes changes only through pull requests with the `test` and `e2e` checks green. GitHub Actions runs the tests and holds no Cloudflare token. Workers Builds settings: build command `pnpm install --frozen-lockfile && pnpm build`; deploy command `pnpm exec wrangler d1 migrations apply DB --env production --remote && pnpm exec wrangler deploy --env production`; non-production branch builds off (a branch build must never run a migration). `BETTER_AUTH_SECRET` is set once with `wrangler secret put --env production`. The first deploy, which creates the Worker, was run once from a terminal.
 - Workers Logs, plus Sentry for errors. For self-hosters, Sentry is on only when a DSN is set.
 - Rate limits as in section 10.
 

@@ -1,5 +1,5 @@
 // One Worker serves the SPA (static assets), the REST API, OAuth, and the MCP endpoint.
-// The top level is local development (`pnpm dev`). `env.staging` is deployed by CI on merge to main.
+// The top level is local development (`pnpm dev`). `env.production` is deployed by Workers Builds from main.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "ticketing",
@@ -29,23 +29,22 @@
   // Private bucket. Files are served only through the Worker (7.1). Local dev and tests use the local R2 simulation.
   "r2_buckets": [{ "binding": "FILES", "bucket_name": "ticketing-files-dev" }],
   "env": {
-    "staging": {
-      "name": "ticketing-staging",
+    // Deployed by Cloudflare Workers Builds from `main` (DECISIONS 11.x). Self-hosters: change these values.
+    "production": {
+      "name": "tikki",
+      "routes": [{ "pattern": "tikki.jithinsha.in", "custom_domain": true }],
       "vars": {
-        "APP_ENV": "staging",
+        "APP_ENV": "production",
+        "APP_URL": "https://tikki.jithinsha.in",
         "MAIL_TRANSPORT": "cloudflare",
-        // CI sets these from the GitHub "staging" environment with --var. Empty values stop the Worker at startup.
-        "APP_URL": "",
-        "MAIL_FROM": "",
-        "ALLOWED_EMAIL_DOMAINS": "",
-        "ADMIN_EMAIL": ""
+        "MAIL_FROM": "noreply@tikki.jithinsha.in",
+        "ALLOWED_EMAIL_DOMAINS": "jithinsha.in",
+        "ADMIN_EMAIL": "hello@jithinsha.in"
       },
       "d1_databases": [
-        // CI replaces this id with the STAGING_D1_DATABASE_ID repository variable before it deploys.
-        { "binding": "DB", "database_name": "ticketing-staging", "database_id": "STAGING_D1_DATABASE_ID", "migrations_dir": "migrations" }
+        { "binding": "DB", "database_name": "tikki", "database_id": "93e85fbc-8333-463f-8b9a-7d0dc18f77dd", "migrations_dir": "migrations" }
       ],
-      // The bucket must exist before the deploy: `wrangler r2 bucket create ticketing-files-staging`.
-      "r2_buckets": [{ "binding": "FILES", "bucket_name": "ticketing-files-staging" }],
+      "r2_buckets": [{ "binding": "FILES", "bucket_name": "tikki-files" }],
       "send_email": [{ "name": "EMAIL" }]
     }
   }
