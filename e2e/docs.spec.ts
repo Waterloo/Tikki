@@ -19,6 +19,18 @@ test('every docs page is public and cannot be framed', async ({ request }) => {
   expect(await md.text()).toContain('# Build a Ticket App')
 })
 
+test('docs pages and the app shell have a share card that loads', async ({ request }) => {
+  for (const path of [...PAGES, '/']) {
+    const page = await (await request.get(path)).text()
+    const image = /<meta property="og:image" content="([^"]+)"/.exec(page)?.[1]
+    expect(image, path).toBeTruthy()
+    expect(page, path).toContain('<meta name="twitter:card" content="summary_large_image">')
+    const res = await request.get(new URL(image!, 'http://x').pathname)
+    expect(res.status(), image).toBe(200)
+    expect(res.headers()['content-type'], image).toBe('image/png')
+  }
+})
+
 test('the old guide address redirects to the docs', async ({ request }) => {
   const res = await request.get('/api/docs/ticket-apps.md', { maxRedirects: 0 })
   expect(res.status()).toBe(301)

@@ -173,6 +173,17 @@ To connect a local MCP client, use `http://localhost:8787/mcp`. Web-based assist
 
 Bindings: `DB` (D1), `FILES` (R2), `EMAIL` (`send_email`), `ASSETS`.
 
+### Build variable
+
+| Variable | Required | Meaning |
+|---|---|---|
+| `DOCS_SITE_URL` | for a deploy build | The public origin, for example `https://tikki.jithinsha.in`. The build writes it into the share cards (Open Graph and Twitter tags) of the docs and of the app. Social sites need absolute URLs. Without it, the build makes relative URLs and prints a warning. |
+
+It is read when the site is built, not when the Worker runs, so set it where `pnpm build` runs:
+
+- **Workers Builds:** in the Worker's settings, Build, Variables and secrets, add `DOCS_SITE_URL` as a build variable. A runtime variable in `wrangler.jsonc` does not reach the build.
+- **A deploy from a terminal:** `DOCS_SITE_URL=https://tikki.jithinsha.in pnpm build`, then `pnpm exec wrangler deploy --env production`.
+
 ## Tests
 
 ```bash

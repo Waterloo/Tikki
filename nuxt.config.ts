@@ -1,7 +1,17 @@
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createJiti } from 'jiti'
+import { siteUrlFrom } from './scripts/docs-site/site-url'
+
+// The public origin, for absolute Open Graph URLs in the docs and the app shell (README, "Developer docs").
+const SITE_URL = siteUrlFrom(process.env.DOCS_SITE_URL)
+if (!SITE_URL) console.warn('DOCS_SITE_URL is not set: Open Graph URLs are relative, and most sites show no card for them. Set it for a deploy build, for example DOCS_SITE_URL=https://tikki.example.com.')
+const SHELL = {
+  title: 'Tikki',
+  description: 'A small, complete ticketing system for one team. It runs as one Cloudflare Worker.',
+  image: '/og/tikki.png',
+}
 
 export default defineNuxtConfig({
   compatibilityDate: '2026-10-01',
@@ -11,8 +21,23 @@ export default defineNuxtConfig({
   devtools: { enabled: false },
   app: {
     head: {
+      title: SHELL.title,
       link: [
         { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' },
+      ],
+      // The SPA shell is one static page, so a shared link to any page shows this card.
+      meta: [
+        { name: 'description', content: SHELL.description },
+        { property: 'og:site_name', content: 'Tikki' },
+        { property: 'og:type', content: 'website' },
+        { property: 'og:title', content: SHELL.title },
+        { property: 'og:description', content: SHELL.description },
+        ...(SITE_URL ? [{ property: 'og:url', content: `${SITE_URL}/` }] : []),
+        { property: 'og:image', content: SITE_URL + SHELL.image },
+        { property: 'og:image:width', content: '1280' },
+        { property: 'og:image:height', content: '640' },
+        { property: 'og:image:alt', content: 'Tikki: a small, complete ticketing system for one team. It runs as one Cloudflare Worker.' },
+        { name: 'twitter:card', content: 'summary_large_image' },
       ],
     },
   },
@@ -61,7 +86,10 @@ export default defineNuxtConfig({
         const jiti = createJiti(import.meta.url)
         const { buildOpenApiDocument } = await jiti.import<typeof import('./server/utils/openapi')>('./server/utils/openapi')
         const { buildDocsSite } = await jiti.import<typeof import('./scripts/docs-site/build')>('./scripts/docs-site/build')
-        const files = await buildDocsSite(fileURLToPath(new URL('.', import.meta.url)), buildOpenApiDocument())
+        const root = fileURLToPath(new URL('.', import.meta.url))
+        const files = await buildDocsSite(root, buildOpenApiDocument(), { siteUrl: SITE_URL })
+        // The card image of the app shell (app.head above): the README cover.
+        files.set(SHELL.image.slice(1), readFileSync(join(root, 'docs/assets/readme-cover.png')))
         for (const [path, content] of files) {
           const target = join(nitro.options.output.publicDir, path)
           mkdirSync(dirname(target), { recursive: true })
