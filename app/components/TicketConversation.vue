@@ -94,6 +94,9 @@ function describe(e: Extract<ActivityItem, { type: 'event' }>): { text: string, 
   // No values: the Requester reopened it after 14 days, and a new ticket took over.
   if (e.action === 'ticket_reopened') return [{ text: e.after === null ? `${who} reopened this ticket as a new ticket` : `${who} reopened this ticket` }]
   if (e.action === 'attachment_added') return [{ text: `${who} attached ` }, { text: '', strong: after ?? 'a file' }]
+  if (e.action === 'ticket_deleted') return [{ text: `${who} deleted this ticket` }]
+  if (e.action === 'ticket_restored') return [{ text: `${who} restored this ticket` }]
+  if (e.action === 'ticket_erased') return [{ text: `${who} erased the personal data of this ticket` }]
   if (e.erased) return [{ text: `${prefix}changed ${label}` }]
   if (e.action === 'assignee_changed') {
     return after === null ? [{ text: `${prefix}unassigned this ticket` }] : [{ text: `${prefix}assigned this ticket to ` }, { text: '', strong: after }]

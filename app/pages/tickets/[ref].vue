@@ -218,6 +218,27 @@ async function selfService(action: 'cancel' | 'reopen') {
   }
 }
 
+// Issue 22: soft delete (Admins). Restore is in Settings › Privacy.
+const deleteOpen = ref(false)
+const deleting = ref(false)
+async function softDelete() {
+  if (!ticket.value) return
+  deleting.value = true
+  try {
+    // A plain string: the typed routes read `/tickets/${ref}` as the GET-only `/tickets/deleted`.
+    const url: string = `/api/v1/tickets/${ticket.value.ref}`
+    await $fetch(url, { method: 'DELETE' })
+    toast.add({ title: `${ticket.value.ref} deleted`, description: 'Restore it from Settings › Privacy.', color: 'success' })
+    deleteOpen.value = false
+    await navigateTo(back.value.to)
+  } catch (e) {
+    const err = e as { data?: { error?: { message?: string } } }
+    toast.add({ title: 'The ticket was not deleted.', description: err.data?.error?.message ?? 'Check your connection, then try again.', color: 'error' })
+  } finally {
+    deleting.value = false
+  }
+}
+
 function isEmptyValue(value: unknown) {
   return value === undefined || value === null || value === '' || (Array.isArray(value) && value.length === 0)
 }
@@ -267,7 +288,7 @@ onMounted(load)
         :subtitle="`Opened ${timeAgo(ticket.created_at)} by ${displayName(ticket.requester)}, from ${SOURCE[ticket.channel]}.`"
         :breadcrumb="[back, { label: ticket.ref }]"
       >
-        <template v-if="(canEdit && !editing) || can('cancel') || can('reopen')" #actions>
+        <template v-if="(canEdit && !editing) || can('cancel') || can('reopen') || can('delete')" #actions>
           <UButton v-if="canEdit && !editing" variant="outline" color="neutral" icon="i-lucide-pencil" @click="startEdit">
             Edit
           </UButton>
@@ -276,6 +297,9 @@ onMounted(load)
           </UButton>
           <UButton v-if="can('cancel')" variant="outline" color="error" icon="i-lucide-x" :disabled="acting !== null" @click="cancelOpen = true">
             Cancel ticket
+          </UButton>
+          <UButton v-if="can('delete')" variant="ghost" color="error" icon="i-lucide-trash-2" @click="deleteOpen = true">
+            Delete
           </UButton>
         </template>
         <template #eyebrow>
@@ -499,6 +523,19 @@ onMounted(load)
           </UButton>
           <UButton color="error" :loading="acting === 'cancel'" :disabled="acting !== null" @click="selfService('cancel')">
             Cancel ticket
+          </UButton>
+        </div>
+      </template>
+    </UModal>
+
+    <UModal v-model:open="deleteOpen" title="Delete this ticket?" description="It is hidden from every list, search, API and webhook. An Admin can restore it from Settings › Privacy.">
+      <template #footer>
+        <div class="flex flex-wrap justify-end gap-2 w-full">
+          <UButton variant="outline" color="neutral" :disabled="deleting" @click="deleteOpen = false">
+            Keep ticket
+          </UButton>
+          <UButton color="error" :loading="deleting" @click="softDelete">
+            Delete ticket
           </UButton>
         </div>
       </template>

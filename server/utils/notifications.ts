@@ -93,6 +93,8 @@ function mine(principal: UserPrincipal): SQL {
   return and(
     eq(notification.userId, principal.userId),
     canReadInternalComments(principal) ? undefined : ne(notification.kind, 'internal_comment'),
+    // A soft-deleted ticket is hidden everywhere (issue 22); its notices come back with it.
+    sql`NOT EXISTS (SELECT 1 FROM ${ticket} WHERE ${ticket.number} = ${notification.ticketNumber} AND ${ticket.deletedAt} IS NOT NULL)`,
   )!
 }
 

@@ -183,6 +183,7 @@ const summaryColumns = {
   typeIcon: ticketType.icon,
   typeColor: ticketType.color,
   visibleToAll: ticketType.visibleToAll,
+  deletedAt: ticket.deletedAt,
   requesterName: requester.name,
   requesterEmail: requester.email,
   assigneeId: assignee.id,
@@ -258,9 +259,9 @@ function toSummary(row: SummaryRow): TicketSummary {
   }
 }
 
-export function policyFacts(row: Pick<SummaryRow, 'requesterId' | 'applicationId' | 'visibleToAll' | 'statusKey' | 'statusCategory'>): PolicyTicket {
+export function policyFacts(row: Pick<SummaryRow, 'requesterId' | 'applicationId' | 'visibleToAll' | 'statusKey' | 'statusCategory' | 'deletedAt'>): PolicyTicket {
   if (row.statusKey === null || row.statusCategory === null) throw new Error('A ticket has no Status. Every ticket must have one (4.10).')
-  return { requesterId: row.requesterId, applicationId: row.applicationId, visibleToAll: row.visibleToAll, statusKey: row.statusKey, statusCategory: row.statusCategory }
+  return { requesterId: row.requesterId, applicationId: row.applicationId, visibleToAll: row.visibleToAll, statusKey: row.statusKey, statusCategory: row.statusCategory, deleted: row.deletedAt !== null }
 }
 
 /** The Fields of the Schema Version that the ticket is pinned to. */

@@ -7,7 +7,7 @@ import type { ApplicationPrincipal, Principal, UserPrincipal } from './tickets'
  * REST, MCP, and the UI (through `allowed_actions`) use it. No other code checks permissions.
  */
 
-export const TICKET_ACTIONS = ['read', 'change_status', 'change_priority', 'assign', 'edit_fields', 'edit_description', 'change_type', 'comment', 'comment_internal', 'cancel', 'reopen'] as const
+export const TICKET_ACTIONS = ['read', 'change_status', 'change_priority', 'assign', 'edit_fields', 'edit_description', 'change_type', 'comment', 'comment_internal', 'cancel', 'reopen', 'delete'] as const
 export type TicketAction = typeof TICKET_ACTIONS[number]
 
 /** The facts about a ticket that the rules use. */
@@ -19,6 +19,8 @@ export interface PolicyTicket {
   visibleToAll: boolean
   statusKey: string
   statusCategory: StatusCategory
+  /** Soft-deleted by an Admin (issue 22). Nobody can read it; only an Admin can restore it. */
+  deleted: boolean
 }
 
 /** Why an action is refused. Every channel returns these same values. */
@@ -49,6 +51,7 @@ const AGENT_ONLY: Record<Exclude<TicketAction, 'read'>, string> = {
   change_type: 'Only Agents can change the Ticket Type of a ticket.',
   comment: 'You cannot comment on this ticket.',
   comment_internal: 'Only Agents can write Internal Comments.',
+  delete: 'Only Admins can delete a ticket.',
 }
 
 /** Admins can do everything an Agent can (3.17). Agents see all tickets (3.5). */
@@ -72,6 +75,8 @@ export function canBeAssignee(role: string) {
 }
 
 function canRead(principal: Principal, t: PolicyTicket) {
+  // A deleted ticket is hidden from every channel, Admins included; they see it only in the deleted list.
+  if (t.deleted) return false
   // An Application sees only the tickets it created (3.11), and "visible to all" is for internal Users only.
   if (principal.kind === 'application') return t.applicationId === principal.applicationId
   // "Visible to all" is for internal tickets. A Contact's ticket holds customer data, so only staff see it.
@@ -106,6 +111,8 @@ export function authorize(principal: Principal, action: TicketAction, t: PolicyT
     case 'reopen':
       if (!isRequester) return forbidden(AGENT_ONLY.reopen)
       return t.statusKey === 'resolved' ? null : forbidden('Only a resolved ticket can be reopened.')
+    case 'delete':
+      return isAdmin(principal) ? null : forbidden(AGENT_ONLY.delete)
     default:
       return isStaff(principal) ? null : forbidden(AGENT_ONLY[action])
   }
@@ -169,12 +176,29 @@ export function allowedActions(principal: Principal, t: PolicyTicket): TicketAct
 
 /**
  * The `read` rule as a query condition, for lists. The query must join `contact` on `ticket.contact_id`. It must match `canRead`; the REST tests check both.
- * Undefined means every ticket.
+ * It always excludes deleted tickets.
  */
-export function readableTickets(principal: Principal): SQL | undefined {
-  if (principal.kind === 'application') return eq(contact.applicationId, principal.applicationId)
-  if (isStaff(principal)) return undefined
-  return or(eq(ticket.requesterId, principal.userId), and(eq(ticketType.visibleToAll, true), isNull(ticket.contactId)))
+export function readableTickets(principal: Principal): SQL {
+  const visible = isNull(ticket.deletedAt)
+  if (principal.kind === 'application') return and(visible, eq(contact.applicationId, principal.applicationId))!
+  if (isStaff(principal)) return visible
+  return and(visible, or(eq(ticket.requesterId, principal.userId), and(eq(ticketType.visibleToAll, true), isNull(ticket.contactId))))!
+}
+
+/** Restoring and listing deleted tickets is for Admins. Anyone else gets NOT_FOUND: for them the ticket does not exist. */
+export function authorizeRestore(principal: Principal): Refusal | null {
+  return isAdmin(principal) ? null : NOT_FOUND
+}
+
+export const NO_CONTACT: Refusal = { status: 404, code: 'NOT_FOUND', message: 'No Contact with this ID.' }
+
+/**
+ * Erasure of a Contact (9.2): an Admin, or the Application that owns the Contact. Another Application gets NOT_FOUND,
+ * so it cannot probe for Contacts. No permission is needed: a data request is the owning Application's right.
+ */
+export function authorizeErasure(principal: Principal, contactApplicationId: number): Refusal | null {
+  if (principal.kind === 'application') return principal.applicationId === contactApplicationId ? null : NO_CONTACT
+  return isAdmin(principal) ? null : { status: 403, code: 'FORBIDDEN', message: 'Only Admins can erase personal data.' }
 }
 
 // Attachments (issue 16). A file is as visible as its ticket (7.1).
