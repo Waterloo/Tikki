@@ -91,9 +91,14 @@
       items.forEach((li, i) => li.classList.toggle('step-on', i === n - 1))
       if (!n) return svg.removeAttribute('data-step')
       svg.dataset.step = n
-      motion.setAttribute('path', svg.querySelector(`.step-${n} [data-path]`).getAttribute('d'))
-      motion.setAttribute('dur', reduceMotion.matches ? '0.01s' : '1.1s')
-      motion.beginElement()
+      // A step without a wire (for example "no ticket") has no moving dot.
+      const wire = svg.querySelector(`.step-${n} [data-path]`)
+      svg.classList.toggle('no-packet', !wire)
+      if (wire) {
+        motion.setAttribute('path', wire.getAttribute('d'))
+        motion.setAttribute('dur', reduceMotion.matches ? '0.01s' : '1.1s')
+        motion.beginElement()
+      }
       // On a phone the figure scrolls sideways: bring the active step into view.
       const box = figure.getBoundingClientRect()
       const part = svg.querySelector(`.step-${n}`).getBoundingClientRect()

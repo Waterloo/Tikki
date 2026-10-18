@@ -75,7 +75,7 @@ export function isStaffRole(role: string) {
 }
 
 /**
- * The ticket actions of each Ticket App access level (docs/ticket-apps.md#scopes). Type change, Team move, description,
+ * The ticket actions of each Ticket App access level (docs/ticket-apps-reference.md#scopes). Type change, Team move, description,
  * Participants, cancel, reopen and delete are never allowed: people do those in Tikki.
  */
 const APP_ACTIONS: Record<TicketAppAccess, readonly TicketAction[]> = {
@@ -90,7 +90,7 @@ function viaApp(principal: Principal): boolean {
 }
 
 /**
- * The REST routes a context token may call (docs/ticket-apps.md#scopes). Every other route refuses it, so a new route
+ * The REST routes a context token may call (docs/ticket-apps-reference.md#scopes). Every other route refuses it, so a new route
  * is closed to Ticket Apps until it is added here. Which ticket and which action is `authorize`.
  */
 // A Ticket Reference or a bare number, so `/tickets/deleted` and `/tickets/similar` do not match.

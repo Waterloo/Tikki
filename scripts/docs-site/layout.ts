@@ -1,6 +1,6 @@
 import { escapeHtml, REPO, type Heading } from './markdown'
 
-export interface NavItem { label: string, href: string, badge?: string, external?: boolean }
+export interface NavItem { label: string, href: string, badge?: string, external?: boolean, nested?: boolean }
 export interface NavGroup { title: string, items: NavItem[] }
 
 export interface PageInput {
@@ -40,7 +40,7 @@ const THEME_SCRIPT = `try{var m=localStorage.getItem('nuxt-color-mode');if(m==='
 function navHtml(nav: NavGroup[], path: string): string {
   return nav.map(g => `<p class="nav-title">${escapeHtml(g.title)}</p><ul>${g.items.map((i) => {
     const current = i.href === path
-    return `<li><a href="${i.href}"${current ? ' aria-current="page"' : ''}${i.external ? ' target="_blank" rel="noopener"' : ''}>${i.badge ?? ''}<span>${escapeHtml(i.label)}</span>${i.external ? '<span class="ext" aria-hidden="true">↗</span>' : ''}</a></li>`
+    return `<li${i.nested ? ' class="nested"' : ''}><a href="${i.href}"${current ? ' aria-current="page"' : ''}${i.external ? ' target="_blank" rel="noopener"' : ''}>${i.badge ?? ''}<span>${escapeHtml(i.label)}</span>${i.external ? '<span class="ext" aria-hidden="true">↗</span>' : ''}</a></li>`
   }).join('')}</ul>`).join('')
 }
 

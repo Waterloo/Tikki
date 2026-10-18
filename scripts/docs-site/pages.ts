@@ -12,7 +12,7 @@ const CARDS = [
 
 const GOALS = [
   ['Show customer data next to a ticket', '/docs/ticket-apps', 'Ticket App', 'read'],
-  ['Add a note or resolve a ticket from your tool', '/docs/ticket-apps#change-the-ticket-from-your-backend', 'Ticket App', 'update'],
+  ['Add a note or resolve a ticket from your tool', '/docs/ticket-apps#change-the-ticket', 'Ticket App', 'update'],
   ['Your website creates tickets for its customers', '/docs/api#create-ticket', 'REST API', ''],
   ['Sync ticket changes back into your system', '/docs/webhooks#two-kinds-of-endpoint', 'Application webhook', ''],
   ['Post every change to Slack or n8n', '/docs/webhooks', 'Admin webhook', ''],

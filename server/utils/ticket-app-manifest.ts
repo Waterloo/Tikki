@@ -13,7 +13,7 @@ import {
 } from './ticket-apps'
 import type { UserPrincipal } from './tickets'
 
-// Issue 40: add a Ticket App from its manifest, and apply an update of it (ADR 0005, docs/ticket-apps.md#manifest).
+// Issue 40: add a Ticket App from its manifest, and apply an update of it (ADR 0005, docs/ticket-apps-reference.md#manifest).
 
 export const MANIFEST_MAX_BYTES = 64 * 1024
 

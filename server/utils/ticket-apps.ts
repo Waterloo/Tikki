@@ -314,7 +314,7 @@ export async function appsForType(db: Db, typeId: number): Promise<TicketAppFram
   return rows.map(r => ({ id: r.id, name: r.name, urls: urlsOf(r), icon: iconOf(r) }))
 }
 
-/** The context of the guide (docs/ticket-apps.md#the-context), without `theme`: the browser adds it. */
+/** The context of the guide (docs/ticket-apps-reference.md#the-context), without `theme`: the browser adds it. */
 export interface AppContext {
   version: 1
   app: { id: number, name: string, placement: FramePlacement }
@@ -436,7 +436,7 @@ export async function appPageShownTo(db: Db, principal: UserPrincipal, id: numbe
   return await db.$count(ticketApp, and(eq(ticketApp.id, id), pageShownTo(principal))) > 0
 }
 
-/** The context of an app page (docs/ticket-apps.md#the-page-context), without `theme`. No ticket and no requester. */
+/** The context of an app page (docs/ticket-apps-reference.md#the-page-context), without `theme`. No ticket and no requester. */
 export interface PageContext {
   version: 1
   app: { id: number, name: string, placement: 'page' }

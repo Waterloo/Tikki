@@ -97,7 +97,8 @@ export function renderMarkdown(hl: Highlighter, source: string, opts: RenderOpti
   const dir = posix.dirname(opts.file)
 
   const href = (link: string) => {
-    if (link.startsWith('#') || /^(https?|mailto):/i.test(link)) return link
+    // `#anchor`, a site path such as `/docs/api`, and web links stay as they are.
+    if (link.startsWith('#') || (link.startsWith('/') && !link.startsWith('//')) || /^(https?|mailto):/i.test(link)) return link
     if (/^[a-z][a-z0-9+.-]*:/i.test(link)) throw new Error(`Docs: ${opts.file} links to "${link}". Only http, https and mailto links are allowed.`)
     const [path = '', hash] = link.split('#')
     const target = posix.normalize(posix.join(dir, path))
@@ -181,10 +182,30 @@ export function renderMarkdown(hl: Highlighter, source: string, opts: RenderOpti
     lead = marked.parseInline(after[leadAt]!.raw.trim()) as string
     after.splice(leadAt, 1)
   }
+  checkStepLists(opts, after)
   const body = groupTabs(hl, after) as Token[] & { links: Record<string, never> }
   body.links = Object.create(null)
   const html = marked.parser(body)
   return { title, lead, html, headings }
+}
+
+/**
+ * A step-through figure (an SVG with `data-steps="N"`) is driven by the numbered list right after it (docs.js). Fails
+ * the build when that list is missing or has another number of items, so the figure and its text cannot drift apart.
+ */
+function checkStepLists(opts: RenderOptions, tokens: Token[]) {
+  const content = tokens.filter(t => t.type !== 'space')
+  content.forEach((t, i) => {
+    const image = t.type === 'paragraph' && (t as Tokens.Paragraph).tokens.length === 1 ? (t as Tokens.Paragraph).tokens[0] : undefined
+    if (image?.type !== 'image') return
+    const target = posix.normalize(posix.join(posix.dirname(opts.file), (image as Tokens.Image).href))
+    const steps = /<svg[^>]*\sdata-steps="(\d+)"/.exec(readFileSync(join(opts.root, target), 'utf8'))?.[1]
+    if (!steps) return
+    const list = content[i + 1] as Tokens.List | undefined
+    if (list?.type !== 'list' || !list.ordered || list.items.length !== Number(steps)) {
+      throw new Error(`Docs: ${opts.file}: ${target} has ${steps} steps, so a numbered list of ${steps} items must follow it.`)
+    }
+  })
 }
 
 /** Inline Markdown (backticks, links) in OpenAPI descriptions. */

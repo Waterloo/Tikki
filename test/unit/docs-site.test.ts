@@ -150,20 +150,34 @@ describe('docs site', () => {
     expect(table('Tools in the page')).toEqual(page)
   })
 
-  it('puts the SVG diagrams inline, with a text for screen readers', () => {
-    const page = html('docs/ticket-apps.html')
-    expect(page).toMatch(/<figure class="diagram" data-scroll-x><svg role="img" aria-label="The Tikki ticket page[^"]*"/)
-    // Inline styles reach the whole page, so each diagram scopes its rules to its own class.
-    for (const [, css] of page.matchAll(/<figure class="diagram"[\s\S]*?<style>([\s\S]*?)<\/style>/g)) {
-      for (const [, selector] of css!.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}@]+)\{/g)) {
-        if (selector!.includes('prefers-color-scheme')) continue
-        expect(selector!.trim(), 'diagram CSS').toMatch(/^\.tkd\b/)
+  it('puts the SVG diagrams inline, with a text for screen readers and styles of their own', () => {
+    let figures = 0
+    for (const page of PAGES) {
+      for (const [figure, cls, css] of html(page).matchAll(/<figure class="diagram" data-scroll-x><svg role="img" aria-label="[^"]{20,}"[^>]*class="(\w+)"[\s\S]*?<style>([\s\S]*?)<\/style>/g)) {
+        figures++
+        // Inline styles reach the whole page, so each figure scopes its rules to its own class.
+        for (const [, selector] of css!.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}@]+)\{/g)) {
+          if (selector!.includes('prefers-color-scheme')) continue
+          for (const one of selector!.split(',')) expect(one.trim(), `${page} ${figure.slice(0, 80)}`).toMatch(new RegExp(`^\\.${cls}\\b`))
+        }
       }
+      expect(html(page)).not.toMatch(/<figure class="diagram" data-scroll-x><svg (?!role="img" aria-label=")/)
+    }
+    expect(figures).toBeGreaterThanOrEqual(5)
+  })
+
+  it('has no element id twice on a page', () => {
+    for (const page of PAGES) {
+      const all = [...html(page).matchAll(/ id="([^"]+)"/g)].map(m => m[1])
+      expect(all.filter((id, i) => all.indexOf(id) !== i), page).toEqual([])
     }
   })
 
-  it('gives each guide a table of errors and edge cases', () => {
-    for (const g of GUIDES) expect(ids(`docs/${g.slug}.html`).has('errors-and-edge-cases'), g.file).toBe(true)
+  it('gives each guide, or the reference under it, a table of errors and edge cases', () => {
+    for (const g of GUIDES.filter(g => !g.parent)) {
+      const family = GUIDES.filter(c => c === g || c.parent === g.slug)
+      expect(family.some(c => ids(`docs/${c.slug}.html`).has('errors-and-edge-cases')), g.file).toBe(true)
+    }
   })
 
   it('indexes every section for search', () => {

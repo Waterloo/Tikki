@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test'
 import { ADMIN_STATE } from './sign-in'
 
 // The developer docs are static files from the build (scripts/docs-site), served by Workers static assets.
-const PAGES = ['/docs/', '/docs/ticket-apps', '/docs/webhooks', '/docs/ai', '/docs/api']
+const PAGES = ['/docs/', '/docs/ticket-apps', '/docs/ticket-apps-reference', '/docs/webhooks', '/docs/ai', '/docs/api']
 
 // Public: no session.
 test.use({ storageState: { cookies: [], origins: [] } })
@@ -85,6 +85,17 @@ test('the How it works figure steps through the numbered list', async ({ page })
   await steps.nth(2).hover()
   await expect(svg).toHaveAttribute('data-step', '3')
   await expect(steps.nth(2)).toHaveClass(/step-on/)
+})
+
+test('every step-through figure gets its Play button and its list', async ({ page }) => {
+  await page.goto('/docs/ticket-apps')
+  const figures = page.locator('figure.diagram svg[data-steps]')
+  await expect(figures).toHaveCount(4)
+  await expect(page.getByRole('button', { name: 'Play the steps' })).toHaveCount(4)
+  const reach = page.locator('svg.tkr')
+  await page.locator('figure:has(svg.tkr) + .diagram-play + ol > li').nth(1).hover()
+  await expect(reach).toHaveAttribute('data-step', '2')
+  await expect(reach).toHaveClass(/no-packet/)
 })
 
 test('the theme switch holds, with the same key as the web app', async ({ page }) => {

@@ -2,7 +2,7 @@ import { expect, test, type APIRequestContext } from '@playwright/test'
 import { ADMIN_STATE, signInAsAdmin } from './sign-in'
 import { APP_ORIGIN, APP_PORT, appFrame } from './ticket-app'
 
-// Issue 40: add a Ticket App from its manifest, and apply an update (docs/ticket-apps.md#manifest).
+// Issue 40: add a Ticket App from its manifest, and apply an update (docs/ticket-apps-reference.md#manifest).
 
 let admin: APIRequestContext
 const created: number[] = []

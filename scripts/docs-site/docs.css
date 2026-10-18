@@ -104,6 +104,7 @@ kbd { font-size: 11px; font-weight: 500; border: 1px solid var(--ui-border); bor
 .sidebar a:hover { background: var(--app-hover); text-decoration: none; }
 .sidebar a[aria-current="page"] { background: var(--ui-bg-accented); color: var(--ui-text-highlighted); font-weight: 500; }
 .sidebar .ext { margin-left: auto; color: var(--ui-text-muted); }
+.sidebar .nested a { margin-left: 12px; padding-left: 12px; border-left: 1px solid var(--ui-border); border-radius: 0 6px 6px 0; }
 
 main { flex: 1 1 auto; min-width: 0; }
 main.page { display: flex; gap: 48px; padding: 40px 48px 96px; }
@@ -166,6 +167,7 @@ body.wide .content { max-width: 1180px; }
 .diagram { margin: 0 0 18px; overflow-x: auto; }
 .diagram svg { display: block; width: 100%; min-width: 600px; height: auto; }
 .diagram { margin-bottom: 10px; }
+.diagram svg.no-packet .packet { visibility: hidden; }
 .diagram-play { margin-bottom: 14px; }
 .diagram-play .play-icon { font-size: 10px; }
 .prose li.step-on { color: var(--ui-text-highlighted); }

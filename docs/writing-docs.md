@@ -22,6 +22,7 @@ A developer comes with a task and little time. Good docs get them to a working r
 |---|---|
 | `/docs/` | `scripts/docs-site/pages.ts` (the home page) |
 | `/docs/ticket-apps` | [docs/ticket-apps.md](ticket-apps.md) |
+| `/docs/ticket-apps-reference` | [docs/ticket-apps-reference.md](ticket-apps-reference.md) |
 | `/docs/webhooks` | [docs/webhooks.md](webhooks.md) |
 | `/docs/ai` | [docs/ai-assistants.md](ai-assistants.md) |
 | `/docs/api` | `buildOpenApiDocument()` in `server/utils/openapi.ts`, with its examples |

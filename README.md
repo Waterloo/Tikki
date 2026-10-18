@@ -95,7 +95,7 @@ A **Ticket App** is your own web page, shown inside a ticket as a sidebar card, 
 
 Requesters never see Ticket Apps. Your page needs no SDK: about 20 lines of JavaScript.
 
-- Developer guide: [docs/ticket-apps.md](docs/ticket-apps.md), also at `/docs/ticket-apps` on your Tikki (messages, context, token check, API calls, security checklist).
+- Developer guide: [docs/ticket-apps.md](docs/ticket-apps.md), also at `/docs/ticket-apps` on your Tikki: a 2-minute start, then one section for each task. The exact values (messages, context, token claims, scopes, manifest, security checklist, errors) are in [docs/ticket-apps-reference.md](docs/ticket-apps-reference.md).
 - Example app: [time tracking](examples/time-tracking/README.md). Agents log time in a sidebar card or a ticket tab; a timesheet page shows the time across tickets.
 - Minimal example with a backend token check: [examples/ticket-app/server.mjs](examples/ticket-app/server.mjs). Run `node examples/ticket-app/server.mjs` and add `http://localhost:5173/` as the Sidebar URL of a Ticket App on your local Tikki.
 
@@ -106,6 +106,7 @@ Every Tikki serves its developer docs at `/docs`, without sign-in. For this inst
 | Page | Source |
 |---|---|
 | [Ticket Apps](docs/ticket-apps.md) | `docs/ticket-apps.md` |
+| [Ticket Apps reference](docs/ticket-apps-reference.md) | `docs/ticket-apps-reference.md` |
 | [Webhooks](docs/webhooks.md) | `docs/webhooks.md` |
 | [AI assistants (MCP)](docs/ai-assistants.md) | `docs/ai-assistants.md` |
 | REST API reference | The OpenAPI document (`server/utils/openapi.ts`) |

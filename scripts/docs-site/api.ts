@@ -211,7 +211,7 @@ export function renderApiReference(hl: Highlighter, doc: OpenApiDocument, limits
 <section class="card"><h2 id="authentication">Authentication</h2><p>${inline(auth)} An Admin makes the key on the <strong>Applications</strong> page. Tikki shows it once.</p>${codeBlock(hl, 'Authorization: Bearer gt_live_...', 'http')}</section>
 <section class="card"><h2 id="base-url">Base URL</h2><p>All paths are on your Tikki origin. The OpenAPI document is at <a href="/api/v1/openapi.json"><code>/api/v1/openapi.json</code></a>: load it in Postman, Insomnia or a code generator.</p>${codeBlock(hl, EXAMPLE_ORIGIN, 'text')}</section>
 </div>
-<div class="callout callout-note" role="note"><p>These routes use the API key of an Application. A Ticket App's backend uses its context token on a few other routes. See <a href="/docs/ticket-apps#change-the-ticket-from-your-backend">Change the ticket from your backend</a>.</p></div>`
+<div class="callout callout-note" role="note"><p>These routes use the API key of an Application. A Ticket App's backend uses its context token on a few other routes. See <a href="/docs/ticket-apps#change-the-ticket">Change the ticket</a>.</p></div>`
 
   const body = groups.map(g => {
     const tag = doc.tags!.find(t => t.name === g.tag)!
