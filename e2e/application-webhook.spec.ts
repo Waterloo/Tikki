@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { expectToast } from './toast'
 import { signInAsAdmin } from './sign-in'
 
 test('an Admin adds the webhook of an Application, sees the secret once, and a failed test event shows as Failing', async ({ page }) => {
@@ -25,7 +26,7 @@ test('an Admin adds the webhook of an Application, sees the secret once, and a f
   await expect(hook.getByText('ticket.created', { exact: true })).toBeVisible()
   await expect(hook.getByText('comment.created', { exact: true })).toBeVisible()
   await hook.getByRole('button', { name: 'Send test event' }).click()
-  await expect(page.getByText('Test event failed', { exact: true })).toBeVisible()
+  await expectToast(page, 'Test event failed')
   await expect(hook.getByText('Failing', { exact: true })).toBeVisible()
   await expect(hook.getByRole('button', { name: 'Retry now' })).toBeVisible()
   await expect(hook.getByText('Test event', { exact: true })).toBeVisible()

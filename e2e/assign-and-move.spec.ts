@@ -1,4 +1,5 @@
 import { expect, test, type Browser, type Page } from '@playwright/test'
+import { expectToast } from './toast'
 import { signIn, signInAsAdmin } from './sign-in'
 
 /** A new User who signs in, and whom the Admin then makes an Agent. */
@@ -38,7 +39,7 @@ test('a Support Agent moves a ticket to Development and assigns it to a Developm
   // Move to Development. The type's Team is untouched: a second ticket of the type still starts in Support.
   await panel.getByRole('combobox', { name: 'Team' }).click()
   await support.page.getByRole('option', { name: devName }).click()
-  await expect(support.page.getByText(`Moved to ${devName}`, { exact: true })).toBeVisible()
+  await expectToast(support.page, `Moved to ${devName}`)
   await expect(support.page.getByRole('listitem').filter({ hasText: `Support to ${devName}` })).toBeVisible()
 
   // "Me (you)" is first, then the members of the ticket's Team.
@@ -48,7 +49,7 @@ test('a Support Agent moves a ticket to Development and assigns it to a Developm
   await expect(options.nth(1)).toContainText(`e2e-dev-${stamp}@example.com`)
   await expect(support.page.getByText(`${devName} members`)).toBeVisible()
   await options.filter({ hasText: `e2e-dev-${stamp}@example.com` }).click()
-  await expect(support.page.getByText(`Assigned to e2e-dev-${stamp}@example.com`, { exact: true })).toBeVisible()
+  await expectToast(support.page, `Assigned to e2e-dev-${stamp}@example.com`)
 
   // The Development Agent finds it under "Assigned to me", and was told of the move.
   await dev.page.goto('/tickets?filter=mine')

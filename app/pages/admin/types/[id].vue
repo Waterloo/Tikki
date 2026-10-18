@@ -255,13 +255,13 @@ watch(id, load)
           No fields. New tickets ask only for a title, a description and a priority.
         </p>
         <div v-else class="overflow-x-auto">
-          <div class="min-w-[760px]">
-            <div class="grid grid-cols-[minmax(200px,1.4fr)_minmax(200px,1.2fr)_150px_100px_96px] items-center gap-3.5 px-3 min-h-[38px] text-[13px] text-(--ui-text-muted)">
+          <div class="min-w-[700px]">
+            <div class="grid grid-cols-[minmax(160px,1.4fr)_minmax(160px,1.2fr)_130px_90px_80px] items-center gap-3.5 px-3 min-h-[38px] text-[13px] text-(--ui-text-muted)">
               <span>Label</span><span>Key</span><span>Data type</span><span>Required</span><span />
             </div>
             <template v-for="f in activeFields" :key="f.key">
               <div
-                class="grid grid-cols-[minmax(200px,1.4fr)_minmax(200px,1.2fr)_150px_100px_96px] items-center gap-3.5 px-3 min-h-[52px] border-t border-(--ui-border-muted) rounded-lg text-sm"
+                class="grid grid-cols-[minmax(160px,1.4fr)_minmax(160px,1.2fr)_130px_90px_80px] items-center gap-3.5 px-3 min-h-[52px] border-t border-(--ui-border-muted) rounded-lg text-sm"
                 :class="f.isNew ? 'bg-[#f5fbf7] dark:bg-[#12201a]' : ''"
               >
                 <span class="flex items-center gap-2 min-w-0">

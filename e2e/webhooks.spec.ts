@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { expectToast } from './toast'
 import { signIn } from './sign-in'
 
 test('an Admin adds an endpoint, sees the secret once, and a failed test event shows as Failing', async ({ browser, baseURL }) => {
@@ -22,7 +23,7 @@ test('an Admin adds an endpoint, sees the secret once, and a failed test event s
   const card = admin.getByRole('region', { name })
   await expect(card.getByText('Healthy', { exact: true })).toBeVisible()
   await card.getByRole('button', { name: 'Send test event' }).click()
-  await expect(admin.getByText('Test event failed', { exact: true })).toBeVisible()
+  await expectToast(admin, 'Test event failed')
   await expect(card.getByText('Failing', { exact: true })).toBeVisible()
   await expect(card.getByRole('button', { name: 'Retry now' })).toBeVisible()
 

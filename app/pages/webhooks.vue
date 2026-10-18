@@ -354,7 +354,7 @@ const resultClass = (d: Delivery) => d.state === 'delivered' ? GREEN : d.attempt
           No deliveries yet. Events show here when a ticket changes, or send a test event.
         </p>
         <div v-else class="overflow-x-auto">
-          <div class="min-w-[760px]" role="table" aria-labelledby="log-h">
+          <div class="min-w-[780px]" role="table" aria-labelledby="log-h">
             <div role="row" class="grid items-center gap-3.5 px-3.5 min-h-9 text-[13px] text-(--ui-text-muted)" :class="LOG_COLUMNS">
               <span role="columnheader">Result</span><span role="columnheader">Event</span><span role="columnheader">Ticket</span><span role="columnheader">Try</span><span role="columnheader">Time</span><span role="columnheader"><span class="sr-only">Payload</span></span>
             </div>

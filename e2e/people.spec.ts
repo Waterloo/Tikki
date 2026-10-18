@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { expect, test, type Browser } from '@playwright/test'
+import { expectToast } from './toast'
 import { logSize } from './mail'
 import { signIn, signInAsAdmin } from './sign-in'
 
@@ -43,7 +44,7 @@ test('an Admin invites, creates a Team and deactivates a User', async ({ browser
   const row = page.getByRole('listitem').filter({ hasText: email })
   await row.getByRole('combobox', { name: `Role of ${email}` }).click()
   await page.getByRole('option', { name: 'Agent' }).click()
-  await expect(page.getByText(`${email} is now an agent`, { exact: true })).toBeVisible()
+  await expectToast(page, `${email} is now an agent`)
 
   await page.getByRole('article').filter({ hasText: teamName }).getByRole('button', { name: `Edit ${teamName}` }).click()
   await page.getByRole('dialog').getByRole('combobox', { name: 'Add an agent' }).click()
@@ -64,7 +65,7 @@ test('an Admin invites, creates a Team and deactivates a User', async ({ browser
   await page.goto('/settings')
   const mailFrom = logSize()
   await page.getByRole('button', { name: 'Send test email' }).click()
-  await expect(page.getByText('Test email sent to admin@example.com', { exact: true })).toBeVisible()
+  await expectToast(page, 'Test email sent to admin@example.com')
   await expect(page.getByText('The last email did not go out')).toHaveCount(0)
   await expect(async () => {
     expect(readFileSync(new URL('./.server.log', import.meta.url)).subarray(mailFrom).toString('utf8')).toContain('Subject: Test email')

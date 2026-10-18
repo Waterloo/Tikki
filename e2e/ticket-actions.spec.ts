@@ -1,4 +1,5 @@
 import { expect, test, type Browser, type Page } from '@playwright/test'
+import { expectToast } from './toast'
 import { signIn, signInAsAdmin } from './sign-in'
 
 test.use({ storageState: { cookies: [], origins: [] } })
@@ -61,7 +62,7 @@ test('cancelling needs the menu item and the dialog button; Keep ticket changes 
   await page.getByRole('button', { name: 'More actions' }).click()
   await page.getByRole('menuitem', { name: 'Cancel this ticket…' }).click()
   await dialog.getByRole('button', { name: 'Cancel ticket' }).click()
-  await expect(page.getByText('Ticket cancelled', { exact: true })).toBeVisible()
+  await expectToast(page, 'Ticket cancelled')
   await expect(status).toHaveText(/Closed/)
 })
 
@@ -75,7 +76,7 @@ test('an Admin deletes a ticket and Undo in the toast restores it', async ({ pag
   await page.getByRole('dialog').getByRole('button', { name: 'Delete ticket' }).click()
   await expect(page).toHaveURL(/\/tickets$/)
   await page.getByRole('button', { name: 'Undo' }).click()
-  await expect(page.getByText(`${ref} restored`, { exact: true })).toBeVisible()
+  await expectToast(page, `${ref} restored`)
   await expect(page).toHaveURL(new RegExp(`/tickets/${ref}$`))
   await expect(page.getByRole('heading', { name: title })).toBeVisible()
 })
@@ -100,15 +101,15 @@ test('an Agent assigns themself from the select and from the small link', async 
   await panel.getByRole('button', { name: 'Assignee' }).click()
   await expect(agent.getByRole('option').first()).toHaveText('Me (you)')
   await agent.getByRole('option', { name: 'Me (you)' }).click()
-  await expect(agent.getByText('Assigned to you', { exact: true })).toBeVisible()
+  await expectToast(agent, 'Assigned to you')
   // Assigned: the link is gone, and "Nobody" unassigns.
   await expect(panel.getByRole('button', { name: 'Assign to me' })).toHaveCount(0)
   await panel.getByRole('button', { name: 'Assignee' }).click()
   await agent.getByRole('option', { name: 'Nobody' }).click()
-  await expect(agent.getByText('Unassigned', { exact: true }).first()).toBeVisible()
+  await expectToast(agent, 'Unassigned')
 
   await agent.goto(`/tickets/${second}`)
   await panel.getByRole('button', { name: 'Assign to me' }).click()
-  await expect(agent.getByText('Assigned to you', { exact: true })).toBeVisible()
+  await expectToast(agent, 'Assigned to you')
   await expect(panel.getByRole('button', { name: 'Assign to me' })).toHaveCount(0)
 })
