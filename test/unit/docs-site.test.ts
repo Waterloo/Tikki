@@ -2,6 +2,8 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { appTokens, buildDocsSite, GUIDES, type SearchEntry } from '../../scripts/docs-site/build'
+import { siteUrlFrom } from '../../scripts/docs-site/site-url'
+import { ogSvg, wrap } from '../../scripts/docs-site/og'
 import { EXAMPLE_ORIGIN, operationAnchor, type OpenApiDocument } from '../../scripts/docs-site/api'
 import { loadHighlighter, renderMarkdown, REPO } from '../../scripts/docs-site/markdown'
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
@@ -179,6 +181,51 @@ describe('docs site', () => {
     expect(() => render('![Two steps](assets/two.svg)\n\nNo list.\n')).toThrow(/2 steps/)
     expect(() => render('- ![Two steps](assets/two.svg)\n\n1. One\n2. Two\n')).toThrow(/inside other text/)
   }, 30_000)
+
+  it('gives every page Open Graph tags and its own 1200×630 card image, with relative URLs by default', () => {
+    for (const page of PAGES) {
+      const meta = (p: string) => new RegExp(`<meta property="${p}" content="([^"]*)">`).exec(html(page))?.[1]
+      for (const p of ['og:site_name', 'og:type', 'og:title', 'og:description', 'og:image', 'og:image:alt']) expect(meta(p), `${page} ${p}`).toBeTruthy()
+      // og:url must be absolute, so it waits for the site URL.
+      expect(meta('og:url'), page).toBeUndefined()
+      expect(meta('og:description')!.length, page).toBeLessThan(400)
+      expect(meta('og:site_name')).toBe('Tikki Docs')
+      expect(html(page)).toContain('<meta name="twitter:card" content="summary_large_image">')
+      expect(html(page)).not.toContain('rel="canonical"')
+      const image = meta('og:image')!
+      expect(image, page).toMatch(/^\/docs\/og\/[\w-]+\.png$/)
+      const png = files.get(image.slice(1)) as Buffer
+      // The PNG signature, then the IHDR chunk with the width and the height.
+      expect(png.subarray(1, 4).toString(), image).toBe('PNG')
+      expect([png.readUInt32BE(16), png.readUInt32BE(20)], image).toEqual([1200, 630])
+    }
+  })
+
+  it('makes the Open Graph URLs absolute with the site URL', async () => {
+    const site = await buildDocsSite(ROOT, doc, { siteUrl: 'https://tikki.example.com' })
+    const page = String(site.get('docs/webhooks.html'))
+    expect(page).toContain('<meta property="og:url" content="https://tikki.example.com/docs/webhooks">')
+    expect(page).toContain('<meta property="og:image" content="https://tikki.example.com/docs/og/webhooks.png">')
+    expect(page).toContain('<link rel="canonical" href="https://tikki.example.com/docs/webhooks">')
+    expect(siteUrlFrom('https://tikki.example.com/')).toBe('https://tikki.example.com')
+    expect(siteUrlFrom(undefined)).toBe('')
+    expect(() => siteUrlFrom('https://tikki.example.com/docs')).toThrow(/no path/)
+    expect(() => siteUrlFrom('tikki.example.com')).toThrow(/origin/)
+  }, 30_000)
+
+  it('wraps a card title at spaces and marks cut text', () => {
+    expect(wrap('Build a Ticket App', 22, 2)).toEqual(['Build a Ticket App'])
+    expect(wrap('one two three four five six', 9, 2)).toEqual(['one two', 'three…'])
+    expect(() => ogSvg({ title: 'A title that is much too long for the card to show well', description: '' }, Buffer.alloc(0))).toThrow(/too long/)
+    expect(ogSvg({ title: 'Tom & <Jerry>', description: '"Quotes"' }, Buffer.alloc(0))).toContain('Tom &amp; &lt;Jerry&gt;')
+  })
+
+  it('states the size of the app shell card as the cover file has it', () => {
+    const png = readFileSync(join(ROOT, 'docs/assets/readme-cover.png'))
+    const config = readFileSync(join(ROOT, 'nuxt.config.ts'), 'utf8')
+    expect(config).toContain(`content: '${png.readUInt32BE(16)}'`)
+    expect(config).toContain(`content: '${png.readUInt32BE(20)}'`)
+  })
 
   it('has no element id twice on a page', () => {
     for (const page of PAGES) {

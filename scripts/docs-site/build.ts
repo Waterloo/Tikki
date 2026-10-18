@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { methodBadge, operationAnchor, operations, renderApiReference, requestSamples, type OpenApiDocument } from './api'
 import { renderPage, type NavGroup, type NavItem, type PageInput } from './layout'
 import { loadHighlighter, renderMarkdown } from './markdown'
+import { renderOg } from './og'
 import { homeBody } from './pages'
 
 /**
@@ -68,7 +69,18 @@ function apiLimits(root: string) {
   return { requests: read('DEFAULT_REQUEST_LIMIT'), creates: read('DEFAULT_CREATE_LIMIT') }
 }
 
-export async function buildDocsSite(root: string, openapi: OpenApiDocument): Promise<Map<string, string | Buffer>> {
+export interface BuildOptions {
+  /** The site origin, for example `https://tikki.jithinsha.in`, for absolute Open Graph URLs. Empty: relative URLs. */
+  siteUrl: string
+}
+
+/** The first paragraph of Markdown as plain text, for a page description. */
+const plainParagraph = (md: string) => md.split(/\n\s*\n/)[0]!.replace(/[`*_]/g, '').replace(/\s+/g, ' ').trim()
+
+/** The first sentence of a lead, for the image: a cut sentence reads badly. */
+const firstSentence = (text: string) => /^.*?[.!?](?=\s|$)/.exec(text)?.[0] ?? text
+
+export async function buildDocsSite(root: string, openapi: OpenApiDocument, options: BuildOptions = { siteUrl: '' }): Promise<Map<string, string | Buffer>> {
   const read = (path: string) => readFileSync(join(root, path), 'utf8')
   const hl = await loadHighlighter()
   const files = new Map<string, string | Buffer>()
@@ -117,14 +129,18 @@ export async function buildDocsSite(root: string, openapi: OpenApiDocument): Pro
       lead: g.lead, body: g.html, headings: g.headings, nav, source: g.file, markdown: `/docs/${g.slug}.md`, ...around(g.url),
     })),
     {
-      file: 'docs/api.html', path: '/docs/api', wide: true, title: 'REST API', description: openapi.info.description,
+      file: 'docs/api.html', path: '/docs/api', wide: true, title: 'REST API', description: plainParagraph(openapi.info.description),
       lead: openapi.info.description, body: api.html, headings: api.headings, nav, source: 'server/utils/openapi.ts', ...around('/docs/api'),
     },
   ]
 
   const search: SearchEntry[] = []
   for (const p of pages) {
-    files.set(p.file, renderPage(p, mark))
+    const slug = p.file.replace(/^docs\//, '').replace(/\.html$/, '')
+    const image = `/docs/og/${slug}.png`
+    const title = p.home ? 'Build on Tikki' : p.title
+    files.set(image.slice(1), renderOg(root, { title, description: firstSentence(p.description), address: options.siteUrl ? `${new URL(options.siteUrl).host}${p.path}` : undefined }))
+    files.set(p.file, renderPage(p, mark, { siteUrl: options.siteUrl, image, imageAlt: `${title}: Tikki Docs` }))
     search.push(...searchEntries(p.title, p.path, p.home ? p.body : `<h1>${p.title}</h1>${p.lead}${p.body}`))
   }
   for (const g of guides) files.set(`docs/${g.slug}.md`, g.md)

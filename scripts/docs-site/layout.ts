@@ -1,4 +1,5 @@
 import { escapeHtml, REPO, type Heading } from './markdown'
+import { OG_HEIGHT, OG_WIDTH } from './og'
 
 export interface NavItem { label: string, href: string, badge?: string, external?: boolean, nested?: boolean }
 export interface NavGroup { title: string, items: NavItem[] }
@@ -48,7 +49,30 @@ function tocHtml(headings: Heading[]): string {
   return headings.map(h => `<li class="toc-${h.depth}"><a href="#${h.id}">${escapeHtml(h.text)}</a></li>`).join('')
 }
 
-export function renderPage(p: PageInput, mark: string): string {
+/** The Open Graph and Twitter tags of a page. `siteUrl` is the origin, or empty: then the URLs are relative. */
+export interface PageMeta { siteUrl: string, image: string, imageAlt: string }
+
+export function socialTags(p: Pick<PageInput, 'path' | 'title' | 'description' | 'home'>, meta: PageMeta): string {
+  const tag = (property: string, content: string) => `<meta property="${property}" content="${escapeHtml(content)}">`
+  const name = (n: string, content: string) => `<meta name="${n}" content="${escapeHtml(content)}">`
+  const url = meta.siteUrl + p.path
+  return [
+    meta.siteUrl ? `<link rel="canonical" href="${escapeHtml(url)}">` : '',
+    tag('og:site_name', 'Tikki Docs'),
+    tag('og:type', p.home ? 'website' : 'article'),
+    tag('og:title', p.title),
+    tag('og:description', p.description),
+    // Open Graph needs an absolute og:url; without the site URL it is left out, as the canonical link.
+    meta.siteUrl ? tag('og:url', url) : '',
+    tag('og:image', meta.siteUrl + meta.image),
+    tag('og:image:width', String(OG_WIDTH)),
+    tag('og:image:height', String(OG_HEIGHT)),
+    tag('og:image:alt', meta.imageAlt),
+    name('twitter:card', 'summary_large_image'),
+  ].filter(Boolean).join('\n')
+}
+
+export function renderPage(p: PageInput, mark: string, meta: PageMeta): string {
   const toc = !p.wide && !p.home && p.headings.length
     ? tocHtml(p.headings) : ''
   const actions = p.markdown
@@ -70,6 +94,7 @@ ${actions}
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${escapeHtml(p.home ? 'Tikki developer docs' : `${p.title} · Tikki docs`)}</title>
 <meta name="description" content="${escapeHtml(p.description)}">
+${socialTags(p, meta)}
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="preload" href="/docs/assets/Geist-Variable.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/docs/assets/docs.css">

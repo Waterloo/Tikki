@@ -27,7 +27,7 @@ A developer comes with a task and little time. Good docs get them to a working r
 | `/docs/ai` | [docs/ai-assistants.md](ai-assistants.md) |
 | `/docs/api` | `buildOpenApiDocument()` in `server/utils/openapi.ts`, with its examples |
 
-Each page is also at `/docs/<page>.md`. The sidebar and "On this page" come from the `##` and `###` headings.
+Each page is also at `/docs/<page>.md`, and has a share card image at `/docs/og/<page>.png` (`scripts/docs-site/og.ts`): the page title and the first sentence of its lead. Keep that first sentence short. Absolute URLs in the share tags need `DOCS_SITE_URL` (README, Build variable). The sidebar and "On this page" come from the `##` and `###` headings.
 
 ## Markdown conventions
 
