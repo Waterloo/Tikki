@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { Visibility } from '~/utils/visibility'
 import type { AdminType, AdminTypeDetail, AdminTypeList, DraftField, FieldDef, Problem } from '~/types/ticket-types'
 
 definePageMeta({ roles: ['admin'] })
@@ -19,7 +20,7 @@ const prefix = ref('')
 const icon = ref('')
 const color = ref('')
 const teamId = ref<number | undefined>()
-const visibleToAll = ref(false)
+const visibility = ref<Visibility>('requester')
 const fields = ref<DraftField[]>([])
 const editingKey = ref<string | null>(null)
 const adding = ref(false)
@@ -46,7 +47,7 @@ const fieldsDirty = computed(() => type.value ? JSON.stringify(plain(fields.valu
 const settingsDirty = computed(() => {
   const t = type.value
   return !!t && (name.value.trim() !== t.name || description.value.trim() !== t.description || prefix.value !== t.prefix || icon.value !== t.icon
-    || color.value.toUpperCase() !== t.color.toUpperCase() || teamId.value !== t.team.id || visibleToAll.value !== t.visible_to_all)
+    || color.value.toUpperCase() !== t.color.toUpperCase() || teamId.value !== t.team.id || visibility.value !== t.visibility)
 })
 const dirty = computed(() => fieldsDirty.value || settingsDirty.value)
 const invalid = computed(() => !!nameError.value || !!prefixError.value || description.value.trim() === '')
@@ -60,7 +61,7 @@ function reset(t: AdminTypeDetail) {
   icon.value = t.icon
   color.value = t.color
   teamId.value = t.team.id
-  visibleToAll.value = t.visible_to_all
+  visibility.value = t.visibility
   fields.value = t.fields.map(f => ({ ...f, ...(f.options ? { options: f.options.map(o => ({ ...o })) } : {}) }))
   editingKey.value = null
   adding.value = false
@@ -103,7 +104,7 @@ async function save() {
   serverProblems.value = []
   failure.value = null
   const body: Record<string, unknown> = {}
-  if (settingsDirty.value) Object.assign(body, { name: name.value, description: description.value, prefix: prefix.value, icon: icon.value, color: color.value, team_id: teamId.value, visible_to_all: visibleToAll.value })
+  if (settingsDirty.value) Object.assign(body, { name: name.value, description: description.value, prefix: prefix.value, icon: icon.value, color: color.value, team_id: teamId.value, visibility: visibility.value })
   if (fieldsDirty.value) Object.assign(body, { base_version: type.value.schema_version, fields: plain(fields.value) })
   try {
     const before = type.value.schema_version
@@ -231,12 +232,8 @@ watch(id, load)
         <div class="rounded-[14px] border border-(--ui-border) bg-(--ui-bg) p-4 flex flex-col gap-2">
           <TypeAppearance v-model:icon="icon" v-model:color="color" only="color" :used-colors="usedColors" class="!flex flex-col gap-2" />
         </div>
-        <div class="rounded-[14px] border border-(--ui-border) bg-(--ui-bg) p-4 flex items-center justify-between gap-3">
-          <label for="vis" class="flex flex-col gap-1 cursor-pointer">
-            <span class="text-sm font-medium text-(--ui-text-highlighted)">Visible to all internal users</span>
-            <span class="text-[13px] text-(--ui-text-muted)">Off: requesters see only their own tickets.</span>
-          </label>
-          <USwitch id="vis" v-model="visibleToAll" />
+        <div class="rounded-[14px] border border-(--ui-border) bg-(--ui-bg) p-4">
+          <TypeVisibility id="vis" v-model="visibility" />
         </div>
       </section>
 

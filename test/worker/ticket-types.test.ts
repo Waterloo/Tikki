@@ -3,7 +3,7 @@ import { env } from 'cloudflare:workers'
 import { describe, expect, it } from 'vitest'
 import { call, signIn, uniqueEmail } from './helpers'
 
-interface TypeView { id: number, name: string, prefix: string, description: string, icon: string, color: string, team: { name: string }, visible_to_all: boolean }
+interface TypeView { id: number, name: string, prefix: string, description: string, icon: string, color: string, team: { name: string }, visibility: string }
 
 describe('Ticket Types REST API', () => {
   it('needs a session', async () => {
@@ -25,7 +25,7 @@ describe('Ticket Types REST API', () => {
       expect(t.description).not.toBe('')
       expect(t.icon).toMatch(/^i-lucide-/)
       expect(t.color).toMatch(/^#[0-9A-F]{6}$/)
-      expect(t.visible_to_all).toBe(false)
+      expect(t.visibility).toBe('requester')
     }
   })
 

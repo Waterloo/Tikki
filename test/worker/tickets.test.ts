@@ -53,6 +53,7 @@ describe('tickets REST API', () => {
       comment_count: 0,
       reopened_from: null,
       allowed_actions: ['edit_fields', 'edit_description', 'comment', 'cancel'],
+      restricted: false,
       channel: 'web',
       application: null,
       created_at: expect.any(String),

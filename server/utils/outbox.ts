@@ -125,6 +125,7 @@ function applicationView(payload: SQL): SQL {
  */
 function fanOut(db: Db, id: string, type: string, now: Date) {
   const app = WEBHOOK_EVENTS as readonly string[]
+  const restricted = sql`EXISTS (SELECT 1 FROM ticket t JOIN ticket_type tt ON tt.id = t.ticket_type_id WHERE t.number = ev.ticket_number AND tt.visibility = 'participants')`
   return db.insert(webhookDelivery).select(sql`SELECT NULL, ${id}, e.id, 'pending', 0, ${now.getTime()}, NULL, NULL, NULL, ev.created_at,
       CASE WHEN e.owner = 'application' THEN ${applicationView(sql`ev.payload`)} END
     FROM webhook_endpoint e
@@ -132,8 +133,9 @@ function fanOut(db: Db, id: string, type: string, now: Date) {
     WHERE e.enabled = 1
       AND EXISTS (SELECT 1 FROM json_each(e.events) WHERE value = ${type})
       AND (
-        (e.owner = 'admin' AND (e.include_internal = 1 OR ev.internal = 0))
-        OR (e.owner = 'application' AND ev.internal = 0 AND ${type} IN (${sql.join(app.map(t => sql`${t}`), sql`, `)})
+        -- A Restricted ticket counts as internal data: its title must not reach a team channel (8.31).
+        (e.owner = 'admin' AND (e.include_internal = 1 OR (ev.internal = 0 AND NOT ${restricted})))
+        OR (e.owner = 'application' AND ev.internal = 0 AND NOT ${restricted} AND ${type} IN (${sql.join(app.map(t => sql`${t}`), sql`, `)})
           AND EXISTS (SELECT 1 FROM ticket t JOIN contact c ON c.id = t.contact_id
             WHERE t.number = ev.ticket_number AND c.application_id = e.application_id))
       )`)

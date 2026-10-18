@@ -3,7 +3,7 @@
 export type Priority = 'low' | 'normal' | 'high' | 'urgent'
 export type Channel = 'web' | 'ai' | 'api'
 export type StatusCategory = 'open' | 'active' | 'waiting' | 'done'
-export type TicketAction = 'change_status' | 'change_priority' | 'assign' | 'edit_fields' | 'edit_description' | 'change_type' | 'comment' | 'comment_internal' | 'cancel' | 'reopen' | 'delete'
+export type TicketAction = 'change_status' | 'change_priority' | 'assign' | 'edit_fields' | 'edit_description' | 'change_type' | 'comment' | 'comment_internal' | 'cancel' | 'reopen' | 'delete' | 'manage_participants'
 
 export interface Status {
   key: string
@@ -53,6 +53,14 @@ export interface TicketDetail extends TicketSummary {
   comment_count: number
   reopened_from: { number: number, ref: string } | null
   allowed_actions: TicketAction[]
+  /** Only its Participants and Admins see it. */
+  restricted: boolean
+}
+
+/** A Participant of a ticket (server/utils/participants.ts). */
+export interface Participant extends Person {
+  by_rule: 'requester' | 'assignee' | null
+  added: boolean
 }
 
 export interface TicketList {
@@ -76,7 +84,7 @@ export type ActivityItem =
     type: 'event'
     id: string
     at: string
-    action: 'ticket_created' | 'status_changed' | 'priority_changed' | 'assignee_changed' | 'field_changed' | 'type_changed' | 'description_changed' | 'ticket_cancelled' | 'ticket_reopened' | 'attachment_added' | 'ticket_deleted' | 'ticket_restored' | 'ticket_erased'
+    action: 'ticket_created' | 'status_changed' | 'priority_changed' | 'assignee_changed' | 'field_changed' | 'type_changed' | 'description_changed' | 'ticket_cancelled' | 'ticket_reopened' | 'attachment_added' | 'ticket_deleted' | 'ticket_restored' | 'ticket_erased' | 'participant_added' | 'participant_removed'
     principal: Actor
     channel: Channel
     field: { key: string, label: string } | null

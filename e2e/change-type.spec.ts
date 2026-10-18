@@ -12,7 +12,7 @@ test('an Agent changes Bug to Payment issue, and the header shows the new refere
   await signInAsAdmin(admin)
   const name = `Payment issue ${stamp}`
   const prefix = `P${String.fromCharCode(65 + (stamp % 26))}${String.fromCharCode(65 + (Math.floor(stamp / 26) % 26))}`
-  const made = await admin.request.post('/api/v1/ticket-types', { data: { name, prefix, description: 'Money problems.', visible_to_all: true } })
+  const made = await admin.request.post('/api/v1/ticket-types', { data: { name, prefix, description: 'Money problems.', visibility: 'internal' } })
   expect(made.ok(), await made.text()).toBe(true)
 
   const created = await page.request.post('/api/v1/tickets', { data: { ticket_type_id: bug.id, title: `E2E wrong type ${stamp}`, fields: { page_or_feature: 'Checkout' } } })

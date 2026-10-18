@@ -129,9 +129,12 @@ export class ApplicationInputError extends Error {
 async function checkTypeIds(db: Db, ids: number[]) {
   const unique = [...new Set(ids)]
   if (!unique.length) return unique
-  const found = await db.select({ id: ticketType.id }).from(ticketType).where(inArray(ticketType.id, unique))
+  const found = await db.select({ id: ticketType.id, name: ticketType.name, visibility: ticketType.visibility }).from(ticketType).where(inArray(ticketType.id, unique))
   const missingIds = unique.filter(id => !found.some(f => f.id === id))
   if (missingIds.length) throw new ApplicationInputError([{ key: 'ticket_type_ids', reason: `No Ticket Type has the ID ${missingIds.join(', ')}.` }])
+  // A Contact cannot be a Participant, so an Application cannot have Restricted tickets (3.32).
+  const restricted = found.filter(f => f.visibility === 'participants')
+  if (restricted.length) throw new ApplicationInputError([{ key: 'ticket_type_ids', reason: `${restricted.map(f => f.name).join(', ')} is Participants only. An Application cannot use it.` }])
   return unique
 }
 

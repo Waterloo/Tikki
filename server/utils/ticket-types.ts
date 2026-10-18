@@ -1,5 +1,5 @@
 import { asc, desc, eq, isNull } from 'drizzle-orm'
-import { schemaVersion, team, ticketType } from '../db/schema'
+import { schemaVersion, team, ticketType, type TicketVisibility } from '../db/schema'
 import type { Db } from './auth'
 import { activeOptions, type FieldDef, type FieldType } from './fields'
 
@@ -11,7 +11,8 @@ export interface TicketTypeView {
   color: string
   prefix: string
   team: { id: number, name: string }
-  visible_to_all: boolean
+  /** `requester`: the Requester and staff. `internal`: every internal User. `participants`: Restricted tickets (3.32). */
+  visibility: TicketVisibility
 }
 
 /** A Field as a Requester or Claude sees it on a new ticket: active Fields and active options only. */
@@ -36,7 +37,7 @@ const columns = {
   icon: ticketType.icon,
   color: ticketType.color,
   prefix: ticketType.prefix,
-  visibleToAll: ticketType.visibleToAll,
+  visibility: ticketType.visibility,
   archivedAt: ticketType.archivedAt,
   teamId: team.id,
   teamName: team.name,
@@ -58,7 +59,7 @@ export function toView(row: Row): TicketTypeView {
     color: row.color,
     prefix: row.prefix,
     team: { id: row.teamId, name: row.teamName },
-    visible_to_all: row.visibleToAll,
+    visibility: row.visibility,
   }
 }
 

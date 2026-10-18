@@ -98,6 +98,8 @@ function describe(e: Extract<ActivityItem, { type: 'event' }>): { text: string, 
   if (e.action === 'ticket_deleted') return [{ text: `${who} deleted this ticket` }]
   if (e.action === 'ticket_restored') return [{ text: `${who} restored this ticket` }]
   if (e.action === 'ticket_erased') return [{ text: `${who} erased the personal data of this ticket` }]
+  if (e.action === 'participant_added') return [{ text: `${who} added ` }, { text: '', strong: after ?? 'a User' }, { text: ' as a Participant' }]
+  if (e.action === 'participant_removed') return [{ text: `${who} removed ` }, { text: '', strong: before ?? 'a User' }, { text: ' from the Participants' }]
   if (e.erased) return [{ text: `${prefix}changed ${label}` }]
   if (e.action === 'assignee_changed') {
     return after === null ? [{ text: `${prefix}unassigned this ticket` }] : [{ text: `${prefix}assigned this ticket to ` }, { text: '', strong: after }]

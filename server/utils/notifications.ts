@@ -2,7 +2,7 @@ import { and, count, desc, eq, isNull, lt, ne, sql, type SQL } from 'drizzle-orm
 import { alias } from 'drizzle-orm/sqlite-core'
 import { application, comment, contact, notification, notificationPreference, PREFERENCE_KEYS, ticket, ticketType, user, type NotificationKind, type PreferenceKey } from '../db/schema'
 import type { Db } from './auth'
-import { canReadInternalComments } from './policy'
+import { canReadInternalComments, readableTickets } from './policy'
 import type { ChangeEntry, UserPrincipal } from './tickets'
 
 /*
@@ -34,9 +34,13 @@ export function noticeTicketCreated(db: Db, actorId: string | null) {
     JOIN ticket t ON t.number = a.ticket_number
     JOIN ticket_type tt ON tt.id = t.ticket_type_id
     WHERE a.id = last_insert_rowid() AND u.id IS NOT ${actorId} AND u.deactivated_at IS NULL AND u.role IN ('admin', 'agent')
-      AND (u.id IN (SELECT tm.user_id FROM team_member tm WHERE tm.team_id = tt.team_id)
-        -- A Team without members (a new install) must not drop the notice: then every Agent and Admin gets it.
-        OR NOT EXISTS (SELECT 1 FROM team_member tm WHERE tm.team_id = tt.team_id))`)
+      AND CASE WHEN tt.visibility = 'participants'
+        -- A Restricted ticket goes to its Participants only, not to the Team (8.31).
+        THEN u.id IS t.assignee_id OR EXISTS (SELECT 1 FROM ticket_participant p WHERE p.ticket_number = t.number AND p.user_id = u.id)
+        ELSE u.id IN (SELECT tm.user_id FROM team_member tm WHERE tm.team_id = tt.team_id)
+          -- A Team without members (a new install) must not drop the notice: then every Agent and Admin gets it.
+          OR NOT EXISTS (SELECT 1 FROM team_member tm WHERE tm.team_id = tt.team_id)
+      END`)
 }
 
 /** For the entries of `applyChange`: a new assignee is told, and the Requester is told of a new Status. */
@@ -57,19 +61,32 @@ export function noticesForChange(db: Db, actorId: string | null, number: number,
   return statements
 }
 
-/** A Public Comment goes to the Requester and the assignee. An Internal Comment goes to the assignee only. */
+/**
+ * The added Participants of a Restricted ticket (issue 27). Other tickets have none that count. `staffOnly` for an
+ * Internal Comment, which a Requester cannot read.
+ */
+function addedParticipants(number: number, staffOnly: boolean) {
+  return sql`SELECT p.user_id FROM ticket_participant p
+    JOIN ticket t ON t.number = p.ticket_number
+    JOIN ticket_type tt ON tt.id = t.ticket_type_id
+    JOIN user u ON u.id = p.user_id
+    WHERE p.ticket_number = ${number} AND tt.visibility = 'participants' AND u.deactivated_at IS NULL
+      ${staffOnly ? sql`AND u.role IN ('admin', 'agent')` : sql``}`
+}
+
+/**
+ * A Public Comment goes to the Requester and the assignee. An Internal Comment goes to the assignee only. On a
+ * Restricted ticket the added Participants get both too (staff only for an Internal Comment).
+ */
 export function noticeComment(db: Db, actorId: string | null, number: number, commentId: string, visibility: 'public' | 'internal') {
-  if (visibility === 'internal') {
-    return insertSelect(db, sql`
-      SELECT NULL, t.assignee_id, 'internal_comment', t.number, ${commentId}, ${actorId}, NULL, NULL, ${Date.now()}
-      FROM ticket t WHERE t.number = ${number} AND t.assignee_id IS NOT NULL AND t.assignee_id IS NOT ${actorId}`)
-  }
+  const kind = visibility === 'internal' ? 'internal_comment' : 'public_comment'
+  const byRule = visibility === 'internal'
+    ? sql`SELECT assignee_id AS id FROM ticket WHERE number = ${number}`
+    : sql`SELECT requester_id AS id FROM ticket WHERE number = ${number} UNION SELECT assignee_id FROM ticket WHERE number = ${number}`
   return insertSelect(db, sql`
-    SELECT NULL, r.id, 'public_comment', ${number}, ${commentId}, ${actorId}, NULL, NULL, ${Date.now()}
-    FROM (
-      SELECT requester_id AS id FROM ticket WHERE number = ${number}
-      UNION SELECT assignee_id FROM ticket WHERE number = ${number}
-    ) r WHERE r.id IS NOT NULL AND r.id IS NOT ${actorId}`)
+    SELECT NULL, r.id, ${kind}, ${number}, ${commentId}, ${actorId}, NULL, NULL, ${Date.now()}
+    FROM (${byRule} UNION ${addedParticipants(number, visibility === 'internal')}) r
+    WHERE r.id IS NOT NULL AND r.id IS NOT ${actorId}`)
 }
 
 export interface AdminNotice {
@@ -93,8 +110,12 @@ function mine(principal: UserPrincipal): SQL {
   return and(
     eq(notification.userId, principal.userId),
     canReadInternalComments(principal) ? undefined : ne(notification.kind, 'internal_comment'),
-    // A soft-deleted ticket is hidden everywhere (issue 22); its notices come back with it.
-    sql`NOT EXISTS (SELECT 1 FROM ${ticket} WHERE ${ticket.number} = ${notification.ticketNumber} AND ${ticket.deletedAt} IS NOT NULL)`,
+    // Only notices of tickets the User can read now: a deleted ticket (issue 22) or a Restricted ticket the User was
+    // removed from (issue 27). They come back with the access.
+    sql`(${notification.ticketNumber} IS NULL OR EXISTS (SELECT 1 FROM ${ticket}
+      JOIN ${ticketType} ON ${ticketType.id} = ${ticket.ticketTypeId}
+      LEFT JOIN ${contact} ON ${contact.id} = ${ticket.contactId}
+      WHERE ${ticket.number} = ${notification.ticketNumber} AND ${readableTickets(principal)}))`,
   )!
 }
 

@@ -13,7 +13,7 @@ let counter = 0
 async function makeType(admin: Session, fields: Record<string, unknown>[], extra: Record<string, unknown> = {}): Promise<TypeDetail> {
   const n = counter++
   const prefix = `X${String.fromCharCode(65 + Math.floor(n / 26) % 26)}${String.fromCharCode(65 + n % 26)}`
-  const res = await postJson('/api/v1/ticket-types', { name: `Change test ${prefix}`, prefix, description: 'For tests.', visible_to_all: true, fields, ...extra }, { cookie: admin.cookie })
+  const res = await postJson('/api/v1/ticket-types', { name: `Change test ${prefix}`, prefix, description: 'For tests.', visibility: 'internal', fields, ...extra }, { cookie: admin.cookie })
   expect(res.status, await res.clone().text()).toBe(201)
   return await res.json() as TypeDetail
 }
@@ -126,7 +126,7 @@ describe('change Ticket Type', () => {
     expect((await read(requester, t.ref)).ref).toBe(t.ref)
 
     // A ticket the Requester cannot read answers 404, as for every other action.
-    const hidden = await makeType(admin, [], { visible_to_all: false })
+    const hidden = await makeType(admin, [], { visibility: 'requester' })
     const secret = await makeTicket(admin, hidden)
     expect((await changeType(requester, secret.ref, to.id)).status).toBe(404)
   })

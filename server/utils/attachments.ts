@@ -1,5 +1,5 @@
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm'
-import { attachment, contact, status, ticket, ticketType, type StatusCategory } from '../db/schema'
+import { attachment, contact, status, ticket, ticketParticipant, ticketType, type StatusCategory, type TicketVisibility } from '../db/schema'
 import { auditEntry } from './audit'
 import type { Db } from './auth'
 import type { FieldError } from './fields'
@@ -80,17 +80,28 @@ export function parseUploadHeaders(headers: Headers): UploadInfo {
   return { size, filename, contentType: /^[a-z0-9!#$&^_.+-]{1,60}\/[a-z0-9!#$&^_.+-]{1,60}$/.test(type) ? type : 'application/octet-stream' }
 }
 
-interface FactsRow { requesterId: string | null, applicationId: number | null, visibleToAll: boolean | null, statusKey: string | null, statusCategory: StatusCategory | null, deletedAt: Date | null }
+interface FactsRow { requesterId: string | null, applicationId: number | null, assigneeId: string | null, visibility: TicketVisibility | null, participantIds: string, statusKey: string | null, statusCategory: StatusCategory | null, deletedAt: Date | null }
 
 function policyTicket(row: FactsRow): PolicyTicket {
-  if (row.statusKey === null || row.statusCategory === null || row.visibleToAll === null) throw new Error('A ticket has no Status or type. Every ticket must have both.')
-  return { requesterId: row.requesterId, applicationId: row.applicationId, visibleToAll: row.visibleToAll, statusKey: row.statusKey, statusCategory: row.statusCategory, deleted: row.deletedAt !== null }
+  if (row.statusKey === null || row.statusCategory === null || row.visibility === null) throw new Error('A ticket has no Status or type. Every ticket must have both.')
+  return {
+    requesterId: row.requesterId,
+    applicationId: row.applicationId,
+    assigneeId: row.assigneeId,
+    visibility: row.visibility,
+    participantIds: JSON.parse(row.participantIds) as string[],
+    statusKey: row.statusKey,
+    statusCategory: row.statusCategory,
+    deleted: row.deletedAt !== null,
+  }
 }
 
 const factsColumns = {
   requesterId: ticket.requesterId,
   applicationId: contact.applicationId,
-  visibleToAll: ticketType.visibleToAll,
+  assigneeId: ticket.assigneeId,
+  visibility: ticketType.visibility,
+  participantIds: sql<string>`(SELECT json_group_array(${ticketParticipant.userId}) FROM ${ticketParticipant} WHERE ${ticketParticipant.ticketNumber} = ${ticket.number})`,
   statusKey: status.key,
   statusCategory: status.category,
   deletedAt: ticket.deletedAt,

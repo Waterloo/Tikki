@@ -178,10 +178,11 @@ export async function listActivity(db: Db, principal: Principal, number: number)
     pinnedFields(db, row),
   ])
 
-  // One query for the names of all assignees in the log.
+  // One query for the names of all assignees and Participants in the log.
+  const PERSON_ACTIONS: AuditAction[] = ['assignee_changed', 'participant_added', 'participant_removed']
   const assigneeIds = new Set<string>()
   for (const e of entries) {
-    if (e.action !== 'assignee_changed') continue
+    if (!PERSON_ACTIONS.includes(e.action)) continue
     for (const v of [e.before, e.after]) if (v !== null && typeof JSON.parse(v) === 'string') assigneeIds.add(JSON.parse(v))
   }
   const people = assigneeIds.size && principal.kind === 'user'
@@ -211,6 +212,8 @@ export async function listActivity(db: Db, principal: Principal, number: number)
       case 'priority_changed': return String(value)
       // An Application learns that someone was assigned, not who.
       case 'assignee_changed': return principal.kind === 'application' ? 'Support' : personNames.get(String(value)) ?? 'unknown User'
+      case 'participant_added':
+      case 'participant_removed': return personNames.get(String(value)) ?? 'unknown User'
       case 'type_changed': {
         const v = value as { type: string, ref: string }
         return `${v.type} (${v.ref})`

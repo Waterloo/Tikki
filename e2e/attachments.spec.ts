@@ -8,7 +8,7 @@ test.beforeAll(() => {
   const now = Date.now()
   const fields = JSON.stringify([{ key: 'screenshot', label: 'Screenshot', type: 'file', required: false, help: 'A picture of the problem.' }]).replaceAll('\'', '\'\'')
   const sql = [
-    `INSERT INTO ticket_type (name, prefix, description, team_id, visible_to_all, created_at) VALUES ('Screenshot request', 'SHOT', 'Needs a picture.', (SELECT id FROM team WHERE name = 'Support'), 0, ${now})`,
+    `INSERT INTO ticket_type (name, prefix, description, team_id, visibility, created_at) VALUES ('Screenshot request', 'SHOT', 'Needs a picture.', (SELECT id FROM team WHERE name = 'Support'), 'requester', ${now})`,
     `INSERT INTO schema_version (ticket_type_id, version, fields, created_at) VALUES ((SELECT id FROM ticket_type WHERE prefix = 'SHOT'), 1, '${fields}', ${now})`,
   ].join('; ')
   execFileSync('pnpm', ['exec', 'wrangler', 'd1', 'execute', 'DB', '--local', '--persist-to', `.wrangler/e2e-${PORT}`, '--command', sql], { stdio: 'pipe' })
