@@ -149,7 +149,7 @@ describe('invites', () => {
     expect((await send(admin, 'DELETE', `/api/v1/invites/${id}`)).status).toBe(404)
   })
 
-  it('refuses a list with an address that needs no invite, has an account, is invited, or is not an email', async () => {
+  it('refuses a list with an address that has an account, is invited, or is not an email', async () => {
     const admin = await signInAs('admin')
     const existing = await signIn('sam@example.org')
     const fresh = uniqueEmail('contractor.test')
@@ -157,12 +157,11 @@ describe('invites', () => {
     const again = uniqueEmail('contractor.test')
     await invite(admin, again)
 
-    const res = await invite(admin, fresh, 'colleague@example.com', existing.user.email, again, 'not-an-email')
+    const res = await invite(admin, fresh, existing.user.email, again, 'not-an-email')
     expect(res.status).toBe(422)
     const { details } = await errorOf(res)
     expect(details!.map(d => d.reason)).toEqual([
-      'colleague@example.com is already allowed to sign in by domain, so it needs no invite.',
-      'sam@example.org is already allowed to sign in by domain, so it needs no invite.',
+      'sam@example.org already has an account.',
       `${again} is already invited. Use Resend to send the invite again.`,
       'not-an-email is not a valid email address.',
     ])

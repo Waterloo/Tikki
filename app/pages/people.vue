@@ -19,7 +19,7 @@ const ROLES: { label: string, value: Role }[] = [
   { label: 'Requester', value: 'requester' },
 ]
 // One grid for the header and the rows. Below `lg` each row becomes a card.
-const COLUMNS = 'lg:grid-cols-[minmax(220px,1.6fr)_150px_minmax(120px,1fr)_110px_110px_150px]'
+const COLUMNS = 'lg:grid-cols-[minmax(220px,1.6fr)_150px_minmax(120px,1fr)_110px_110px_230px]'
 
 const toast = useToast()
 const { user: me } = useCurrentUser()
@@ -31,6 +31,7 @@ const state = ref<'loading' | 'ready' | 'error'>('loading')
 const busyId = ref<string | null>(null)
 
 const inviteOpen = ref(false)
+const editingInvite = ref<PersonRow | null>(null)
 const teamOpen = ref(false)
 const editing = ref<TeamView | null>(null)
 const deactivating = ref<PersonRow | null>(null)
@@ -110,6 +111,11 @@ function onInvited(count: number) {
   refresh()
 }
 
+function openInvite(p: PersonRow | null) {
+  editingInvite.value = p
+  inviteOpen.value = true
+}
+
 function openTeam(t: TeamView | null) {
   editing.value = t
   teamOpen.value = true
@@ -126,7 +132,7 @@ onMounted(load)
       :breadcrumb="[{ label: 'Admin' }, { label: 'Teams and users' }]"
     >
       <template #actions>
-        <UButton icon="i-lucide-user-plus" size="lg" color="neutral" @click="inviteOpen = true">
+        <UButton icon="i-lucide-user-plus" size="lg" color="neutral" @click="openInvite(null)">
           Invite people
         </UButton>
       </template>
@@ -185,7 +191,7 @@ onMounted(load)
                 class="w-[130px]"
                 @update:model-value="changeRole(p, $event as Role)"
               />
-              <span v-else class="text-(--ui-text-muted)">Requester</span>
+              <span v-else class="text-(--ui-text-muted)">{{ ROLES.find(r => r.value === p.role)?.label }}</span>
             </span>
             <span class="col-span-2 lg:col-span-1 flex flex-wrap gap-1">
               <template v-if="p.teams.length">
@@ -218,6 +224,9 @@ onMounted(load)
                 </UButton>
               </template>
               <template v-else>
+                <UButton color="neutral" variant="outline" size="sm" :disabled="busyId === rowKey(p)" :aria-label="`Edit invite to ${p.email}`" @click="openInvite(p)">
+                  Edit
+                </UButton>
                 <UButton color="neutral" variant="outline" size="sm" :loading="busyId === rowKey(p)" @click="resend(p)">
                   Resend
                 </UButton>
@@ -276,7 +285,7 @@ onMounted(load)
       </section>
     </template>
 
-    <InviteDialog v-model:open="inviteOpen" @invited="onInvited" />
+    <InviteDialog v-model:open="inviteOpen" :teams="teams" :invite="editingInvite" @invited="onInvited" @changed="refresh" />
     <TeamDialog v-model:open="teamOpen" :team="editing" :people="people" @changed="refresh" />
     <UModal v-model:open="deactivateOpen" :title="`Deactivate ${deactivating ? displayName(deactivating) : ''}?`" description="They are signed out at once, cannot sign in, and their Claude connections stop. Their tickets stay. You can reactivate them later.">
       <template #footer>

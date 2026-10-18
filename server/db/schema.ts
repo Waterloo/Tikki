@@ -135,6 +135,7 @@ export const AUDIT_ACTIONS = ['ticket_created', 'status_changed', 'priority_chan
   'type_created', 'type_settings_changed', 'schema_version_created', 'type_archived', 'type_restored',
   'role_changed', 'user_invited', 'invite_resent', 'invite_revoked', 'user_deactivated', 'user_reactivated',
   'team_created', 'team_renamed', 'team_removed', 'team_member_added', 'team_member_removed',
+  'invite_changed',
 ] as const
 
 /** What an Admin change without a ticket is about. A ticket entry has `ticketNumber` and no subject. */
@@ -222,6 +223,8 @@ export const invite = sqliteTable('invite', {
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
   expiresAt: integer('expires_at', { mode: 'timestamp_ms' }).notNull(),
   acceptedAt: integer('accepted_at', { mode: 'timestamp_ms' }),
+  /** The role the User gets at the first sign-in (issue 28). */
+  role: text('role', { enum: ['admin', 'agent', 'requester'] }).notNull().default('requester'),
 })
 
 // Issue 08: change prefix
@@ -439,3 +442,11 @@ export const rateCounter = sqliteTable('rate_counter', {
   window: integer('window').notNull(),
   count: integer('count').notNull(),
 }, t => [primaryKey({ columns: [t.key, t.window] })])
+
+// Issue 28: invite with a role and Teams
+
+/** The Teams that a pending invite gives at the first sign-in. Only for Agent and Admin invites. */
+export const inviteTeam = sqliteTable('invite_team', {
+  inviteId: integer('invite_id').notNull().references(() => invite.id, { onDelete: 'cascade' }),
+  teamId: integer('team_id').notNull().references(() => team.id),
+}, t => [primaryKey({ columns: [t.inviteId, t.teamId] })])

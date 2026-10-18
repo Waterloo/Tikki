@@ -26,13 +26,6 @@ test('an Admin invites, creates a Team and deactivates a User', async ({ browser
   const invited = page.getByRole('listitem').filter({ hasText: contractor })
   await expect(invited.getByText('Invited')).toBeVisible()
 
-  // A domain address needs no invite, and the dialog says so.
-  await page.getByRole('button', { name: 'Invite people' }).click()
-  await page.getByLabel('Email addresses').fill('someone@example.com')
-  await page.getByRole('button', { name: 'Send invite' }).click()
-  await expect(page.getByText('needs no invite')).toBeVisible()
-  await page.keyboard.press('Escape')
-
   // A new Team.
   const teamName = `Finance ${Date.now()}`
   await page.getByRole('button', { name: 'New team' }).click()
@@ -96,4 +89,40 @@ test('at 375 px the page has no horizontal scroll', async ({ browser }) => {
   await expect(page.getByRole('heading', { name: 'Users', exact: true })).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375)
   await context.close()
+})
+
+test('an Admin invites an Agent into a Team, and the People list shows them after the first sign-in', async ({ browser }) => {
+  const { context, page } = await adminPage(browser)
+  await page.goto('/people')
+  const teamName = `Onboarding ${Date.now()}`
+  await page.getByRole('button', { name: 'New team' }).click()
+  await page.getByLabel('Name').fill(teamName)
+  await page.getByRole('button', { name: 'Create' }).click()
+  await expect(page.getByRole('heading', { name: teamName })).toBeVisible()
+
+  const email = `e2e-invite-${Date.now()}@example.com`
+  await page.getByRole('button', { name: 'Invite people' }).click()
+  const dialog = page.getByRole('dialog')
+  await expect(dialog.getByRole('combobox')).toHaveCount(1)
+  await dialog.getByLabel('Email addresses').fill(email)
+  await dialog.getByRole('combobox').first().click()
+  await page.getByRole('option', { name: 'Agent' }).click()
+  await dialog.getByRole('button', { name: 'Teams' }).click()
+  await page.getByRole('option', { name: teamName }).click()
+  await page.keyboard.press('Escape')
+  await dialog.getByRole('button', { name: 'Send invite' }).click()
+  const row = page.getByRole('listitem').filter({ hasText: email })
+  await expect(row.getByText('Invited', { exact: true })).toBeVisible()
+  await expect(row.getByText('Agent', { exact: true })).toBeVisible()
+  await expect(row.getByText(teamName)).toBeVisible()
+
+  const other = await browser.newContext({ storageState: undefined })
+  await signIn(await other.newPage(), email)
+  await page.reload()
+  const active = page.getByRole('listitem').filter({ hasText: email })
+  await expect(active.getByText('Active', { exact: true })).toBeVisible()
+  await expect(active.getByRole('combobox', { name: `Role of ${email}` })).toContainText('Agent')
+  await expect(active.getByText(teamName)).toBeVisible()
+  await context.close()
+  await other.close()
 })

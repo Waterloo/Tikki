@@ -1,9 +1,9 @@
 import { and, asc, count, eq, inArray, max, sql } from 'drizzle-orm'
 import { z } from 'zod'
-import { invite, oauthAccessToken, oauthRefreshToken, session, team, teamMember, ticketType, user } from '../db/schema'
+import { invite, inviteTeam, oauthAccessToken, oauthRefreshToken, session, team, teamMember, ticketType, user } from '../db/schema'
 import { adminAuditEntry } from './audit'
 import type { Db, Role } from './auth'
-import { emailDomainAllowed, type Config } from './config'
+import type { Config } from './config'
 import type { MailTransport } from './mail'
 import { assertCanDeactivate, assertCanManagePeople, canJoinTeam } from './policy'
 import { getOrganization } from './settings'
@@ -42,6 +42,14 @@ export const inviteInput = z.strictObject({
   emails: z.array(z.string({ error: 'Must be text.' }), { error: 'Must be a list of emails.' })
     .min(1, 'Enter at least one email.')
     .max(MAX_INVITES_AT_ONCE, `Invite at most ${MAX_INVITES_AT_ONCE} people at once.`),
+  role: z.enum(ROLES, { error: 'Must be admin, agent or requester.' }).default('requester'),
+  team_ids: z.array(z.number({ error: 'Must be a Team id.' }).int('Must be a Team id.'), { error: 'Must be a list of Team ids.' }).default([]),
+})
+
+/** A change of a pending invite replaces the role and the Teams. */
+export const invitePatchInput = z.strictObject({
+  role: z.enum(ROLES, { error: 'Must be admin, agent or requester.' }),
+  team_ids: z.array(z.number({ error: 'Must be a Team id.' }).int('Must be a Team id.'), { error: 'Must be a list of Team ids.' }).default([]),
 })
 
 export const teamInput = z.strictObject({
@@ -65,14 +73,16 @@ export interface PersonRow {
   teams: { id: number, name: string }[]
 }
 
-/** Users, then pending invites. Four small queries in one round trip. */
+/** Users, then pending invites. Five small queries in one round trip. */
 export async function listPeople(db: Db, now = Date.now()): Promise<PersonRow[]> {
-  const [users, memberships, activity, invites] = await db.batch([
+  const [users, memberships, activity, invites, invitedTeams] = await db.batch([
     db.select({ id: user.id, name: user.name, email: user.email, role: user.role, deactivatedAt: user.deactivatedAt }).from(user).orderBy(asc(user.createdAt)),
     db.select({ userId: teamMember.userId, id: team.id, name: team.name }).from(teamMember).innerJoin(team, eq(team.id, teamMember.teamId)).orderBy(asc(team.name)),
     db.select({ userId: session.userId, at: max(session.updatedAt) }).from(session).groupBy(session.userId),
     db.select().from(invite).where(sql`${invite.acceptedAt} IS NULL`).orderBy(asc(invite.createdAt)),
+    db.select({ inviteId: inviteTeam.inviteId, id: team.id, name: team.name }).from(inviteTeam).innerJoin(team, eq(team.id, inviteTeam.teamId)).orderBy(asc(team.name)),
   ])
+  const inviteTeams = Map.groupBy(invitedTeams, t => t.inviteId)
   const teamsOf = Map.groupBy(memberships, m => m.userId)
   const lastActive = new Map(activity.map(a => [a.userId, a.at]))
   return [
@@ -91,10 +101,10 @@ export async function listPeople(db: Db, now = Date.now()): Promise<PersonRow[]>
       invite_id: i.id,
       name: '',
       email: i.email,
-      role: 'requester',
+      role: i.role,
       status: i.expiresAt.getTime() > now ? 'invited' : 'expired',
       last_active_at: null,
-      teams: [],
+      teams: (inviteTeams.get(i.id) ?? []).map(({ id, name }) => ({ id, name })),
     })),
   ]
 }
@@ -191,9 +201,26 @@ async function sendInviteMail({ mail, config }: InviteMail, db: Db, inviter: Use
   }
 }
 
-/** Invites emails outside the allowed domains (3.16). All or none: any problem rejects the whole list. */
-export async function createInvites(db: Db, deps: InviteMail, principal: UserPrincipal, rawEmails: string[], now = Date.now()): Promise<string[]> {
+/**
+ * Teams only for Agents and Admins, and every Team must exist (3.33). Returns the Team ids without duplicates.
+ */
+async function checkRoleAndTeams(db: Db, role: Role, rawTeamIds: number[]): Promise<number[]> {
+  const teamIds = [...new Set(rawTeamIds)]
+  if (teamIds.length === 0) return teamIds
+  if (!canJoinTeam(role)) {
+    throw new PeopleError(422, 'VALIDATION_FAILED', 'The request has invalid values.', [{ key: 'team_ids', reason: 'Only Agents and Admins can be in a Team. Remove the Teams or choose another role.' }])
+  }
+  const found = await db.$count(team, inArray(team.id, teamIds))
+  if (found !== teamIds.length) {
+    throw new PeopleError(422, 'VALIDATION_FAILED', 'The request has invalid values.', [{ key: 'team_ids', reason: 'A Team in the list does not exist.' }])
+  }
+  return teamIds
+}
+
+/** Invites emails (3.16, 3.33). All or none: any problem rejects the whole list. All get the same role and Teams. */
+export async function createInvites(db: Db, deps: InviteMail, principal: UserPrincipal, rawEmails: string[], role: Role = 'requester', rawTeamIds: number[] = [], now = Date.now()): Promise<string[]> {
   assertCanManagePeople(principal)
+  const teamIds = await checkRoleAndTeams(db, role, rawTeamIds)
   const emails = [...new Set(rawEmails.map(e => e.trim().toLowerCase()).filter(Boolean))]
   if (emails.length === 0) throw new PeopleError(422, 'VALIDATION_FAILED', 'The request has invalid values.', [{ key: 'emails', reason: 'Enter at least one email.' }])
 
@@ -207,13 +234,11 @@ export async function createInvites(db: Db, deps: InviteMail, principal: UserPri
   for (const email of emails) {
     const reason = !emailSchema.safeParse(email).success
       ? 'is not a valid email address.'
-      : emailDomainAllowed(deps.config, email)
-        ? 'is already allowed to sign in by domain, so it needs no invite.'
-        : hasAccount.has(email)
-          ? 'already has an account.'
-          : invited.has(email)
-            ? 'is already invited. Use Resend to send the invite again.'
-            : null
+      : hasAccount.has(email)
+        ? 'already has an account.'
+        : invited.has(email)
+          ? 'is already invited. Use Resend to send the invite again.'
+          : null
     if (reason) problems.push({ key: 'emails', reason: `${email} ${reason}` })
   }
   if (problems.length) throw new PeopleError(422, 'VALIDATION_FAILED', 'The request has invalid values.', problems)
@@ -224,12 +249,18 @@ export async function createInvites(db: Db, deps: InviteMail, principal: UserPri
       invitedBy: principal.userId,
       createdAt: new Date(now),
       expiresAt: new Date(now + INVITE_TTL_MS),
+      role,
     }))),
-    ...emails.map(email => adminAuditEntry(db, principal, {
-      subject: { type: 'invite', id: sql`(select id from invite where email = ${email})` },
-      action: 'user_invited',
-      values: { after: { email } },
-    })),
+    ...emails.flatMap(email => [
+      ...teamIds.map(teamId => db.insert(inviteTeam).select(
+        db.select({ inviteId: invite.id, teamId: sql<number>`${teamId}`.as('team_id') }).from(invite).where(eq(invite.email, email)),
+      )),
+      adminAuditEntry(db, principal, {
+        subject: { type: 'invite', id: sql`(select id from invite where email = ${email})` },
+        action: 'user_invited',
+        values: { after: { email, role, team_ids: teamIds } },
+      }),
+    ]),
   ])
   // The rows are saved first: a failed email can then be sent again with Resend.
   for (const email of emails) await sendInviteMail(deps, db, principal, email)
@@ -252,6 +283,24 @@ export async function resendInvite(db: Db, deps: InviteMail, principal: UserPrin
     adminAuditEntry(db, principal, { subject: { type: 'invite', id }, action: 'invite_resent', values: { before: { expires_at: row.expiresAt.toISOString() }, after: { expires_at: expiresAt.toISOString() } } }),
   ])
   await sendInviteMail(deps, db, principal, row.email)
+}
+
+/** Replaces the role and Teams of a pending invite. A used invite is a User now (409). */
+export async function changeInvite(db: Db, principal: UserPrincipal, id: number, role: Role, rawTeamIds: number[]): Promise<void> {
+  assertCanManagePeople(principal)
+  const row = await pendingInvite(db, id)
+  const teamIds = await checkRoleAndTeams(db, role, rawTeamIds)
+  const before = await db.select({ id: inviteTeam.teamId }).from(inviteTeam).where(eq(inviteTeam.inviteId, id)).orderBy(asc(inviteTeam.teamId))
+  await db.batch([
+    db.update(invite).set({ role }).where(and(eq(invite.id, id), sql`${invite.acceptedAt} IS NULL`)),
+    db.delete(inviteTeam).where(eq(inviteTeam.inviteId, id)),
+    ...teamIds.map(teamId => db.insert(inviteTeam).values({ inviteId: id, teamId })),
+    adminAuditEntry(db, principal, {
+      subject: { type: 'invite', id },
+      action: 'invite_changed',
+      values: { before: { role: row.role, team_ids: before.map(b => b.id) }, after: { role, team_ids: [...teamIds].sort((a, b) => a - b) } },
+    }),
+  ])
 }
 
 export async function revokeInvite(db: Db, principal: UserPrincipal, id: number): Promise<void> {
@@ -345,6 +394,7 @@ export async function deleteTeam(db: Db, principal: UserPrincipal, id: number): 
   }
   await db.batch([
     db.delete(teamMember).where(eq(teamMember.teamId, id)),
+    db.delete(inviteTeam).where(eq(inviteTeam.teamId, id)),
     db.delete(team).where(eq(team.id, id)),
     adminAuditEntry(db, principal, { subject: { type: 'team', id }, action: 'team_removed', values: { before: { name: found.name } } }),
   ])
