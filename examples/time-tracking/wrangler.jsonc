@@ -1,0 +1,14 @@
+// Example Ticket App: time tracking. A separate Worker with its own D1. See README.md here.
+// Run from the repository root (it uses the root node_modules for `jose`):
+//   pnpm exec wrangler d1 migrations apply TIME --local -c examples/time-tracking/wrangler.jsonc
+//   pnpm exec wrangler dev -c examples/time-tracking/wrangler.jsonc --port 5174 --var TIKKI_ORIGIN:http://localhost:8787
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "tikki-time",
+  "main": "src/index.js",
+  "compatibility_date": "2026-10-01",
+  "vars": { "TIKKI_ORIGIN": "http://localhost:8787" },
+  "d1_databases": [
+    { "binding": "TIME", "database_name": "tikki-time", "database_id": "00000000-0000-0000-0000-000000000000", "migrations_dir": "migrations" }
+  ]
+}

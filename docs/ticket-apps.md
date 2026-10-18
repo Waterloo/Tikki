@@ -123,6 +123,8 @@ Design for narrow widths in both positions. On a phone, the sidebar card is full
 
 Tikki follows the Agent's light or dark mode. You get the current mode in `context.theme` and can match it.
 
+Set `color-scheme` on your page to match `theme` (`:root { color-scheme: dark }` in dark mode). The browser paints a frame opaque when its color scheme differs from the page around it, so without it your card shows as a white box in dark mode.
+
 ## Messages
 
 All messages are plain objects with a `type`. Always pass Tikki's origin as the target origin, never `'*'`.
@@ -349,6 +351,8 @@ Errors use the Tikki API error format:
 3. In Tikki, open Ticket Apps and add `http://localhost:5173` (allowed only on a development or test instance).
 4. Open any ticket as the Admin (`admin@example.com`). Your app shows in the sidebar or as a tab.
 5. In your app, use `TIKKI_ORIGIN = 'http://localhost:8787'` and audience `http://localhost:5173`.
+
+A real example with a database, writes and dark mode is the time tracking app in [`examples/time-tracking/`](../examples/time-tracking/README.md).
 
 A complete example app with a backend token check is in [`examples/ticket-app/server.mjs`](../examples/ticket-app/server.mjs). Run it from the repository root:
 
