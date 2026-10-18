@@ -44,6 +44,11 @@ test('Conversation is the default tab; Activity holds the changes and Revert; th
   await expect(agent.getByRole('tab', { name: 'Activity' })).toHaveAttribute('aria-selected', 'true')
   await expect(line).toBeVisible()
 
+  // A link by bare number redirects to the reference and keeps the tab.
+  await agent.goto(`/tickets/${ref.split('-')[1]}?tab=activity`)
+  await expect(agent).toHaveURL(new RegExp(`/tickets/${ref}\\?tab=activity$`))
+  await expect(agent.getByRole('tab', { name: 'Activity' })).toHaveAttribute('aria-selected', 'true')
+
   // Arrow keys move between tabs, and Conversation drops the query.
   await agent.getByRole('tab', { name: 'Activity' }).focus()
   await agent.keyboard.press('ArrowLeft')

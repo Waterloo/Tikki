@@ -65,7 +65,7 @@ async function load() {
     loadAttachments(t.ref)
     if ((can('assign') || can('move_team')) && !people.value) loadPeople()
     // An old prefix or a bare number still opens the ticket (4.9a); the address then shows the current reference.
-    if (route.params.ref !== t.ref) router.replace(`/tickets/${t.ref}`)
+    if (route.params.ref !== t.ref) router.replace({ path: `/tickets/${t.ref}`, query: route.query })
   } catch (e) {
     const status = (e as { status?: number }).status
     if (status === 401) return navigateTo('/sign-in')
@@ -194,7 +194,7 @@ async function changeType() {
     typeChoice.value = null
     activityVersion.value++
     // The old reference still opens the ticket; the address shows the new one.
-    router.replace(`/tickets/${next.ref}`)
+    router.replace({ path: `/tickets/${next.ref}`, query: route.query })
     toast.add({ title: `Ticket Type changed. The reference is now ${next.ref}`, color: 'success', duration: 4000 })
   } catch (e) {
     const err = e as { status?: number, data?: { error?: { message?: string, details?: { reason: string }[] | null } } }

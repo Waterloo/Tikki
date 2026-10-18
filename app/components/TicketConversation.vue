@@ -140,7 +140,8 @@ onMounted(() => load())
 </script>
 
 <template>
-  <section aria-label="Conversation and activity" class="flex flex-col gap-3.5">
+  <section aria-labelledby="conversation-heading" class="flex flex-col gap-3.5">
+    <h2 id="conversation-heading" class="sr-only">Conversation and activity</h2>
     <UTabs v-model="tab" :items="tabs" variant="link" :unmount-on-hide="false" :ui="{ root: 'gap-3.5', content: 'flex flex-col gap-3.5' }">
       <template #conversation>
         <template v-if="state === 'ready'">
