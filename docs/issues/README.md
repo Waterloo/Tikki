@@ -47,7 +47,7 @@ Vertical slices of [the PRD](../PRD.md). Each slice goes through every layer and
 | 38 | [Ticket App icons, light and dark](38-ticket-app-icons.md) | AFK | 37 | Planned |
 | 39 | [App pages: an Apps menu in the main sidebar](39-app-pages.md) | AFK | 37 | Planned |
 | 40 | [Add a Ticket App from its manifest](40-ticket-app-manifest.md) | AFK | 38, 39 | Planned |
-| 42 | [Application read scope: own tickets or all tickets](42-application-read-scope.md) | AFK | — | Planned |
+| 42 | [Application scopes: own or all tickets, for each permission](42-application-read-scope.md) | AFK | — | Planned |
 
 All AFK issues except 02 are merged into `integration` on 2026-10-18. The cloud setup is deferred (issues 02, 24 and 25, and the staging checks).
 
