@@ -21,9 +21,12 @@ function findClipped() {
       const ox = getComputedStyle(a).overflowX
       if (ox === 'visible') continue
       const box = a.getBoundingClientRect()
-      // `auto` and `scroll` are intentional scroll areas (a wide table in a card): the element can be reached by scrolling,
-      // so only the area itself must fit. `hidden` and `clip` cut the element off.
-      if (ox === 'auto' || ox === 'scroll') { inside = box; break }
+      // A sideways scroll area that the author asked for (a wide table in a card) lets the element be reached by
+      // scrolling, so only the area itself must fit. Computed style cannot tell it apart: `overflow-y: auto` on a page
+      // panel also computes `overflow-x: auto`. So only the authored classes or `data-scroll-x` count; any other box
+      // that clips sideways cuts the element off.
+      const sideways = /(^|\s)overflow-(x-)?(auto|scroll)(\s|$)/.test(String(a.className)) || a.hasAttribute('data-scroll-x')
+      if ((ox === 'auto' || ox === 'scroll') && sideways) { inside = box; break }
       if (rect.left < box.left - slack || rect.right > box.right + slack) {
         out.push({ ...base, reason: `clipped by <${a.tagName.toLowerCase()} class="${String(a.className).slice(0, 60)}"> (${Math.round(rect.left)}..${Math.round(rect.right)} in ${Math.round(box.left)}..${Math.round(box.right)})` })
         break
