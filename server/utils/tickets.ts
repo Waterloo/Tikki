@@ -25,7 +25,7 @@ export interface TicketAppGrant {
 }
 
 /**
- * A User. `channel: 'ai'` is a User acting through Claude, with the same rights as the User (5.1). `channel: 'app'`
+ * A User. `channel: 'ai'` is a User acting through an AI assistant (`/mcp` or the WebMCP tools), with the same rights as the User (5.1). `channel: 'app'`
  * is a User acting through a Ticket App's backend; the policy limits it to the grant (issue 35).
  */
 export type UserPrincipal = { kind: 'user', userId: string, role: Role } & (

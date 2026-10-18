@@ -78,6 +78,15 @@ describe('X-Tikki-Channel: ai', () => {
     expect(((await res.json()) as { error: { code: string } }).error.code).toBe('INVALID_CHANNEL')
   })
 
+  it('answers 400 on a context-token request, before the token is checked', async () => {
+    // Any JWT form goes to the context-token check; the header must stop it first.
+    const jwt = 'eyJhbGciOiJFUzI1NiJ9.eyJzdWIiOiJ4In0.c2ln'
+    expect((await call('/api/v1/tickets/GEN-1', { headers: { authorization: `Bearer ${jwt}` } })).status).toBe(401)
+    const res = await call('/api/v1/tickets/GEN-1', { headers: { authorization: `Bearer ${jwt}`, ...AI } })
+    expect(res.status).toBe(400)
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe('INVALID_CHANNEL')
+  })
+
   it('puts writes under USER_MCP_WRITE_LIMIT: the 11th write in a minute answers RATE_LIMITED with Retry-After', async () => {
     const t = await raise()
     await freshWindow()

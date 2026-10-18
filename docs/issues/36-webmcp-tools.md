@@ -89,6 +89,8 @@ The stub also throws on a duplicate name, as the spec says, so a missing abort f
 - [x] `README.md`, "Use it from an AI assistant": one row for the ChatGPT desktop browser (WebMCP): open Tikki in the app's browser, and ChatGPT can search, open and update tickets in your tab with no connector. The `ai` source label change ("AI", not "Claude") is reflected wherever the README names the channel. The README named the channel only as "AI" already (Audit row); a new paragraph says changes show as "AI" in the Activity.
 - [x] Ticket Apps: the `<iframe>` has no `allow` attribute; `e2e/ticket-apps.spec.ts` (issue 34) tests it already.
 
+Evidence: `pnpm test` 438 passed; `pnpm typecheck` clean; `E2E_PORT=9836 pnpm e2e` 94 passed in each of two full runs. Seen in a browser on the dev server (ticket page with an `ai` ticket, comment and Status change) at 375 px and 1280 px, light and dark: the "AI" chip, "(via AI)" in Activity, "from an AI assistant" in the header; no horizontal scroll at 375 px. The reviewer found two items (rule 14a in the e2e spec; no test for the header with a context token); both are fixed.
+
 ## Blocked by
 
 None. Coordinate with issue 34 on the `allow="tools"` test.

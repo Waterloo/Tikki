@@ -32,7 +32,7 @@ export async function sessionPrincipal(event: H3Event): Promise<UserPrincipal | 
   const session = await useAuth().api.getSession({ headers: event.headers })
   if (!session) return apiError(401, 'UNAUTHENTICATED', 'Sign in first.')
   const userId = session.user.id
-  // The agent in the page gets the same budget as through `/mcp`.
+  // The MCP limits, counted per request. The upload routes pass no method, so an upload counts as a write.
   const limited = channel === 'ai'
     ? await takeToolSlot(db, userId, event.method !== 'GET' && event.method !== 'HEAD')
     : await takeSlot(db, `user:${userId}`, USER_WEB_LIMIT)

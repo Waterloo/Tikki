@@ -179,13 +179,13 @@ test('an Agent changes the Status; Activity says AI and Revert works. A Requeste
   await openTicket(agent, t.ref, title)
   const result = await call(agent, 'change_current_ticket_status', { status: 'in_progress' })
   expect(result.structuredContent).toMatchObject({ ref: t.ref, status: 'in_progress' })
-  await expect(agent.getByRole('combobox', { name: 'Status' })).toHaveText(/In progress/)
-  await agent.getByRole('tab', { name: 'Activity' }).click()
+  await expect(agent.getByRole('combobox', { name: 'Status', exact: true })).toHaveText(/In progress/)
+  await agent.getByRole('tab', { name: 'Activity', exact: true }).click()
   const line = agent.getByRole('listitem').filter({ hasText: 'changed Status from Open to In progress' })
   await expect(line).toContainText('(via AI)')
   await line.getByRole('button', { name: 'Revert', exact: true }).click()
   await expect(agent.getByRole('listitem').filter({ hasText: 'reverted a change: changed Status from In progress to Open' })).toBeVisible()
-  await expect(agent.getByRole('combobox', { name: 'Status' })).toHaveText(/Open/)
+  await expect(agent.getByRole('combobox', { name: 'Status', exact: true })).toHaveText(/Open/)
 
   // An unknown key is a tool result with the problem, not a thrown error.
   const unknown = await call(agent, 'change_current_ticket_status', { status: 'done-ish' })
