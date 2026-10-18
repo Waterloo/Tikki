@@ -1,137 +1,105 @@
 # WebMCP for Tikki
 
-> **Status:** research, 2026-10-18. No code. Recommendation for the owner.
+> **Status:** research, 2026-10-18, revised the same day after the owner's correction: ChatGPT calls WebMCP tools. Build: [issue 36](../issues/36-webmcp-tools.md).
 
 ## Summary
 
-WebMCP is a draft browser API. A web page registers tools with `document.modelContext.registerTool(...)`. An AI agent in the browser can then call these tools in the user's open tab, with the user's signed-in session.
+WebMCP is a draft browser API. A web page registers tools with `document.modelContext.registerTool(...)`. An AI agent in the browser calls these tools in the user's open tab, with the user's signed-in session.
 
-**Recommendation: do not build it now. Do not build it behind a flag.** Look at it again when all three triggers below are true. Then build the vertical slice in [Proposed scope](#proposed-scope).
+**Recommendation: build a small slice now, with no flag.** Feature detection is the gate: a browser without `document.modelContext` gets nothing. The tools call the existing REST API from the page with the session, so the server needs no new permission code. Build [issue 36](../issues/36-webmcp-tools.md).
 
-Why not now:
+Why now (this replaces the first version of this doc, which said "not now"):
 
-1. **No agent uses it in production.** Chrome runs an origin trial (Chrome 149 to 156). Google says Gemini in Chrome "will soon" call WebMCP tools. We found no evidence that Claude or ChatGPT call WebMCP tools. Only test extensions and community bridges do.
-2. **The API still changes.** It moved from `navigator.modelContext` to `document.modelContext`. `provideContext()` was removed. Code that we write now will break.
-3. **Only one engine.** WebKit opposes it. Mozilla is neutral. Edge has it behind a flag.
-4. **Tikki already has the important part.** The remote MCP server at `/mcp` gives Claude, ChatGPT and other clients all ticket tools with OAuth, the read rule, `applyChange`, the audit channel `ai`, rate limits and `untrusted()` text. WebMCP adds only "the ticket I look at now" and "no OAuth setup". Today a browser agent can already click the Tikki UI.
+1. **A mainstream agent uses it in production.** ChatGPT "site tools" call WebMCP tools in the built-in browser of the ChatGPT desktop app, since about 2026-08-25. OpenAI's own docs use `document.modelContext`. [OpenAI Help][oai-help], [OpenAI docs][oai-docs]
+2. **The cost is small.** One composable in the SPA. No server route, no migration, no new rule. The REST API already applies the read rule, `applyChange`, the audit entry and the notices.
+3. **The gain is real for ChatGPT users.** They get page-aware tools ("this ticket") with no connector setup. `/mcp` stays the path for Claude, for ChatGPT without the desktop browser, and for work with no tab open.
 
-Triggers to look again:
+The first version was wrong on point 1. Its other findings stay true: the API can still change, WebKit opposes it, Mozilla is neutral. That is why the slice is small and lives in one file.
 
-- WebMCP ships in stable Chrome (the Intent to Experiment plans Chrome 157).
-- A mainstream agent (Gemini in Chrome, Claude in Chrome, or similar) calls WebMCP tools in its stable release.
-- A Tikki user asks for it.
+### Where this plan differs from the owner's request
 
-One small action now, for issue 34: the Ticket App `<iframe>` must not get `allow="tools"`. See [Risks](#risks-and-how-to-control-them).
+The owner asked for: feature detection; REST from the page; current ticket get, comment, change Status; create ticket; search my tickets; `consequentialHint` on writes; `untrustedContentHint` on user text; a header for channel `ai`. We agree with all of it, with these changes:
+
+- **`create_ticket` needs the duplicate check and the Field schema.** `POST /api/v1/tickets` does not check for similar tickets; only the MCP tool and the web form do (5.17, 13.6). The page tool must call `/api/v1/tickets/similar` first and ask for `confirm_new`, as `/mcp` does. It also needs a read tool for the Ticket Type Fields, or the agent guesses Field values. Issue 36 adds `get_ticket_types`.
+- **Do not trust `consequentialHint` to get a confirmation.** OpenAI documents confirmation for purchases, deleting data, permission changes, sending messages and sharing personal data. It does not say it reads `consequentialHint`. A Status change is in none of these classes. We accept this: a Status change is visible, it shows in Activity with Revert, and the policy allows it only to Agents. Each tool description also tells the agent to confirm with the user, as the `/mcp` descriptions do.
+- **The "Claude" label is wrong.** `SourceChip.vue` shows channel `ai` as "Claude". ChatGPT already uses `/mcp`, and now uses the page tools too. The page cannot know which agent calls. Change the label to "AI".
+- **The channel header: keep it, with three limits.** See [Audit channel](#audit-channel). We found no better way: the browser does not tell the page or the server which agent calls.
 
 ## Findings
 
 ### What WebMCP is
 
-- **Spec:** "WebMCP", Draft Community Group Report, W3C Web Machine Learning Community Group, dated 2026-10-16. Editors from Microsoft and Google. It is not on the W3C Standards Track. [Spec][spec]
-- **Entry point:** `document.modelContext` (secure contexts, Window only). Older posts and bridges use `navigator.modelContext`; that spelling is old. [Spec][spec], [jangwook, DEV][devto]
-- **Imperative API:** `registerTool(tool, { signal, exposedTo })`. A tool has `name`, `description`, `title`, `inputSchema` (JSON Schema), `execute(input, { signal })` and `annotations`. Abort the `signal` to remove the tool. `getTools()` and `executeTool()` let an in-page agent find and run tools. [Spec][spec]
-- **Annotations:** `readOnlyHint`, `untrustedContentHint` (the result holds untrusted text), `consequentialHint` (the tool does a consequential action; a client can ask the user to confirm). [Spec][spec]
-- **Declarative API:** attributes on a normal HTML `<form>` make a tool. Chrome documents it; the spec text for it is still incomplete. [Chrome docs][chrome]
-- **User confirmation:** an Edge author describes `requestUserInteraction()`, so a tool can ask the browser for confirmation. We did not find it in the 2026-10-16 spec text. **Uncertain.** [Brosset, 2026-02-23][brosset]
-- **Scope:** WebMCP is the tool layer of MCP only. The browser does the transport and decides which agent gets the tools. [Brosset][brosset]
+- **Spec:** "WebMCP", Draft Community Group Report, W3C Web Machine Learning Community Group, 2026-10-16. Editors from Microsoft and Google. Not on the W3C Standards Track. [Spec][spec]
+- **Entry point:** `document.modelContext` (secure contexts, Window only). `navigator.modelContext` is the old spelling; `provideContext()` was removed. [Spec][spec], [DEV][devto]
+- **API:** `registerTool(tool, { signal })`. A tool has `name`, `description`, `inputSchema` (JSON Schema), `execute(input)` and `annotations`. Abort the `signal` to remove it. [Spec][spec]
+- **Annotations:** `readOnlyHint`, `untrustedContentHint` (the result holds untrusted text), `consequentialHint` (a client can ask the user to confirm). [Spec][spec]
+- **Frames:** the Permissions Policy feature `tools` defaults to `'self'`. A cross-origin iframe needs `allow="tools"`. [Spec][spec], [Chrome docs][chrome]
 
 ### Who implements it
 
 | Who | Status | Source |
 |---|---|---|
-| Chrome | DevTrial from 146, origin trial 149 to 156, ship planned in 157. Local flag `chrome://flags/#enable-webmcp-testing`. | [Intent to Experiment, 2026-05-16][i2e], [Chrome docs, updated 2026-10-07][chrome] |
-| Gemini in Chrome | "Will soon support WebMCP" (I/O, 2026-05-19). No date. | [Chrome at I/O 26][io] |
-| Edge | Co-author of the spec. Behind a flag, as reported by third parties. **Not confirmed in an Edge source.** | [Brosset][brosset] |
-| WebKit (Safari) | `position: oppose` (security, privacy, duplication, venue, consent). | [WebKit #670][webkit] |
-| Firefox | `position: neutral`. | [Mozilla #1412][mozilla] |
-| Claude, ChatGPT | No evidence of WebMCP use found. Community bridges (MCP-B, "WebMCP Bridge") forward page tools to Claude Code over a local server. Small user base. **Uncertain and moving fast.** | [MCPcat guide][mcpcat] |
+| **ChatGPT** | **In production.** Built-in browser of the ChatGPT desktop app, not ChatGPT in Chrome. For ChatGPT Work and Codex. Models GPT-5.6 Sol and GPT-6 Sol; off for GPT-5.6 Luna. Not in Edu workspaces; Enterprise admins must allow it by policy. Tools only from the top-level page, not from iframes. No declarative form API. | [OpenAI docs][oai-docs], [OpenAI Help, updated about 2026-08][oai-help] |
+| Chrome | DevTrial from 146, origin trial 149 to 156, ship planned in 157. Flag `chrome://flags/#enable-webmcp-testing`. | [Intent to Experiment, 2026-05-16][i2e], [Chrome docs, 2026-10-07][chrome] |
+| Gemini in Chrome | "Will soon support WebMCP" (2026-05-19). No date. | [Chrome at I/O 26][io] |
+| Edge | Co-author of the spec. Ship status not confirmed in an Edge source. | [Brosset, 2026-02-23][brosset] |
+| WebKit / Firefox | `oppose` / `neutral`. | [WebKit #670][webkit], [Mozilla #1412][mozilla] |
+| Claude | No evidence of WebMCP use found. **Uncertain.** | — |
 
-### Security model
+Secondary reports (SEJ and VKTR, 2026-08-27; AlphaSignal, 2026-08-25) say "not Enterprise". OpenAI's docs say Enterprise admins can allow it. We follow OpenAI. The OpenAI WebMCP Challenge (2026-08-25, with Chrome, Shopify, Cloudflare, Vercel, Netlify, Render) is reported by [AlphaSignal][alpha]; the OpenAI page returned 403 to us, so it is **not verified at the source**.
 
-- **Session:** tools run in the page, so they act with the user's cookies and session. The spec says this directly. [Spec][spec]
-- **Who may call:** the browser decides which agent gets the tools. The page cannot see which agent calls, or whether a human asked for the call. Chrome extensions can call tools through content scripts. [Spec][spec], [Chrome docs][chrome]
-- **Visible tab only:** tools work only in an open, visible tab. No headless use. "A human in the loop" is the design goal. [Chrome docs][chrome]
-- **Frames:** the Permissions Policy feature `tools` has the default allowlist `'self'`. A cross-origin iframe needs `allow="tools"`. `Permissions-Policy: tools=()` turns it off for the document and all its frames. [Spec][spec], [Chrome docs][chrome]
-- **Prompt injection:** the spec names tool poisoning and output injection as open problems with "no verification mechanism". The same-origin section is a TODO. [Spec][spec]
-- **Consent:** the Intent to Experiment says agents must pass sensitive data between origins only with the user's consent. That is a rule for the agent, not something the page can check. [i2e][i2e]
+### How ChatGPT controls tool calls
+
+From the [OpenAI Help article][oai-help]:
+
+- The user gives permission before ChatGPT interacts with a website. The user can turn site tools off in the app.
+- ChatGPT asks for confirmation before "sensitive activities": personal data, purchases, deleting data, permission changes, messages for the user.
+- "Instructions from a website or site tool cannot authorize" sensitive actions.
+- Before each call, ChatGPT reviews the tool and its input against the user's request.
+- The address bar shows which tools the page has, and whether each reads or changes data. The conversation logs each call.
+- The built-in browser has its own cookies. The user signs in to Tikki again there.
+
+Not documented: which annotations ChatGPT reads, and whether the page can learn that ChatGPT made the call.
 
 ## Fit for Tikki
 
-### What WebMCP adds beyond `/mcp`
+### Design
 
-| Need | `/mcp` today | WebMCP |
-|---|---|---|
-| Ticket tools for Claude, ChatGPT | Yes, 14 tools | Only for agents in the browser |
-| Setup | OAuth connect, one time | None: the open tab is signed in |
-| "The ticket I look at now" | The user names the reference | The page knows the open ticket |
-| Works with the tab closed | Yes | No |
-| Server rules (read rule, `applyChange`, audit, rate limits) | Yes | Only if the tools call the REST API |
+- **REST only.** Each `execute` calls `/api/v1/...` with `$fetch` and the session cookie. The server uses `restPrincipal`, the read rule, `applyChange` and the comment batch, as for a click. The browser holds no rule.
+- **One composable** owns every `registerTool` call. A rename of the API touches one file.
+- **Page-aware.** Current-ticket tools exist only while the ticket page shows a ticket, and act only on that ticket. They take no ticket argument.
+- **Results in the `/mcp` shape.** The same fields, the same `<untrusted_content>` wrap (5.12), the same notice. Move `server/utils/untrusted.ts` to `shared/`, so `app/` and `server/` use one wrapper.
 
-The real gain is small: no OAuth step, and page context. The OAuth step is one time. The page context saves the user from typing `BUG-12`.
+### Audit channel
 
-### How to build it, if we build it
+The SPA sends `X-Tikki-Channel: ai` only from inside `execute`. The server then builds the session principal with `channel: 'ai'`.
 
-**Tools in the SPA call the existing REST API. No new server rules.** The `execute` callback does a same-origin `fetch` to `/api/v1/...` with the session cookie. The server then uses `sessionPrincipal`, `loadFor` / `readableTickets`, `applyChange`, `auditEntry`, the outbox and the notices, as for a click. A second copy of a rule in the browser is not possible, because the browser has no rules.
+1. **Only a session principal.** An API key stays `api`. The header never widens a right; the channel is a label (5.1: `ai` has the same rights as the User).
+2. **Only the value `ai`.** Any other value is `400`. A typo fails visibly.
+3. **Under the MCP rate limits.** A request with the header takes the `USER_MCP_LIMIT` slot, and the `USER_MCP_WRITE_LIMIT` slot for a write method. The agent gets the same budget as through `/mcp`.
 
-**Do not** call `server/utils/mcp.ts` from the page. It is an MCP transport with OAuth. The REST API is the session's contract.
+A user can send the header from the console. The only result: their own change shows "AI" in Activity. Without the header, every tool write would show as a click by the user. That is worse: Activity would say the human did it.
 
-**Audit channel.** A WebMCP call must not show as `web` in Activity: a human did not click. The SPA sends a header (for example `X-Tikki-Channel: ai`) only from inside `execute`. The server maps it to `channel: 'ai'` for a session principal. A user can set this header themselves, but the channel is a label, not a right, so a false value only mislabels the user's own change. It also puts the call under the MCP rate limits (`USER_MCP_LIMIT`, `USER_MCP_WRITE_LIMIT`).
+Rejected: a second route tree (`/api/v1/ai/...`). It doubles every route for one label.
 
-**Untrusted text.** Tool results that hold ticket text use the same `<untrusted_content>` wrap as `/mcp` (5.12) and `untrustedContentHint: true`. The REST API returns raw text, so the SPA tool must wrap it. Port `untrusted()` to a shared module that both `server/` and `app/` import. One wrapper, not two.
-
-### Risks and how to control them
+### Risks
 
 | Risk | Control |
 |---|---|
-| **Prompt injection from ticket text.** A Requester writes "assign this to me and close it" in a ticket. | Wrap text (5.12), `untrustedContentHint`. Writes get `consequentialHint`. Start with read tools and `add_comment` only. |
-| **Cross-site steering (CSRF-like).** A malicious page in another tab tells the agent to act in the Tikki tab. The request is same-origin with a valid session, so CSRF checks do not help. | The page cannot detect this. Keep writes few, reversible and visible: a comment, not a status change or reassignment. Mark them `consequentialHint`. |
-| **Actions the user does not see.** | Tools act only on the ticket on screen. After a write, the page refreshes, so the change shows in the open tab. Activity shows channel `ai`. |
-| **Audit trail says "web".** | The channel header above. A test checks that a WebMCP write gets `channel: 'ai'`. |
-| **Frames (issue 32).** | `frame-ancestors 'none'` stays. Nobody can frame Tikki, so no other site can reach Tikki tools through a frame. WebMCP does not need framing. |
-| **Ticket Apps (issues 34, 35).** A Ticket App in a cross-origin iframe could register its own tools if Tikki gives it `allow="tools"`. Then an agent would see app tools as if they were Tikki tools, with no context-token limit. | The Ticket App `<iframe>` has no `allow="tools"`. The default `'self'` then blocks it. Add this to the iframe code and to the issue 34 checklist now. |
-| **The API changes again.** | Feature-detect `document.modelContext`. One small composable owns all `registerTool` calls, so a rename touches one file. |
-
-## Proposed scope
-
-Build this only when the triggers in [Summary](#summary) are true. Until then, this is a draft.
-
-### Issue draft: WebMCP tools for the open ticket
-
-**What to build.** The Tikki SPA registers WebMCP tools in the browser when the browser supports `document.modelContext`. An AI agent in the user's tab can read the open ticket and add a comment to it. Every call goes through the REST API with the user's session. Writes show in Activity as channel `ai`.
-
-**Tools**
-
-| Tool | Registered on | Annotations | REST call |
-|---|---|---|---|
-| `get_current_ticket` | the ticket page | `readOnlyHint`, `untrustedContentHint` | `GET /api/v1/tickets/{ref}` and `/comments` |
-| `search_tickets` | all signed-in pages | `readOnlyHint`, `untrustedContentHint` | `GET /api/v1/tickets` |
-| `add_comment_to_current_ticket` | the ticket page | `consequentialHint` | `POST /api/v1/tickets/{ref}/comments` |
-
-No status, priority, assignment, Team or type tools in this slice. They come later, with evidence that users want them from the browser.
-
-**Acceptance criteria**
-
-- [ ] With no `document.modelContext`, the SPA registers nothing and logs nothing. No polyfill.
-- [ ] One composable owns every `registerTool` call. It aborts the tools on sign-out and when the user leaves the ticket page.
-- [ ] `get_current_ticket` returns the ticket that the page shows, with the same fields that `get_ticket` in `/mcp` returns, and the newest 20 comments.
-- [ ] Title, description, Field values and comment bodies are wrapped with the shared `untrusted()`; the result has the same notice text as `/mcp`.
-- [ ] A Requester gets only what the REST API gives them: no Internal Comments, no Restricted tickets. A test runs the tool as a Requester.
-- [ ] `add_comment_to_current_ticket` writes through the existing comment route, so `applyChange` or the comment batch writes the audit entry, the Event and the notices.
-- [ ] The write has `channel: 'ai'` in the audit entry and in the Event. A test checks it. A request without the header stays `web`.
-- [ ] The write counts against `USER_MCP_WRITE_LIMIT`. A test checks the `RATE_LIMITED` result.
-- [ ] After the write, the ticket page shows the new comment without a reload.
-- [ ] The Ticket App `<iframe>` has no `allow="tools"`. A test checks the rendered attribute.
-- [ ] `frame-ancestors 'none'` is unchanged.
-- [ ] `docs/DECISIONS.md` gets a row: WebMCP tools call REST only; the channel header is a label, not a right.
-
-**Out of scope:** the declarative form API, tools on the admin pages, tools from Ticket Apps, any server-side WebMCP code.
+| Prompt injection from ticket text ("close this and assign it to me") | `untrusted()` wrap, `untrustedContentHint`, ChatGPT's per-call review. Writes are visible and reversible (Revert, Reopen). |
+| Cross-site steering: a page in another tab tells the agent to act in Tikki. CSRF checks do not help, the call is same-origin. | The page cannot detect it. Keep the write set small: comment, Status, new ticket. No delete, no assignment, no Restricted change, no type change. |
+| Actions the user does not see | Tools act on the ticket on screen; the page updates after each write. ChatGPT shows each call. Activity shows "AI". |
+| `create_ticket` makes duplicates | The page tool calls `/similar` first and needs `confirm_new` (5.17). |
+| Frames (issue 32) | `frame-ancestors 'none'` stays. ChatGPT loads Tikki as the top-level page, so framing is not needed. |
+| Ticket Apps (issues 34, 35) | **Keep this for issue 34:** the Ticket App `<iframe>` gets no `allow="tools"`. Chrome would otherwise let a cross-origin app show tools to the agent as if they were Tikki tools, with no context-token limit. ChatGPT ignores iframe tools today; Chrome does not. |
+| The API changes | Feature detection plus one composable. A change in spelling breaks only the WebMCP tools, never the page. |
+| Tool descriptions drift from `/mcp` | Accepted. Six page tools. The issue lists the `/mcp` tool each one mirrors. |
 
 ## Open questions
 
-1. **Does Claude in Chrome call WebMCP tools?** We found no evidence. Look again at the triggers. If it does, the "no OAuth" gain is real for Claude users.
-2. **`requestUserInteraction()`.** One Edge source describes it; the current spec text does not show it. If it ships, `add_comment_to_current_ticket` should use it, so the browser asks the user before the write.
-3. **Should a session be able to turn WebMCP off?** A per-user setting adds a control. Default: no setting. A Tikki Admin who wants it off can send `Permissions-Policy: tools=()`. Decide when we build.
-4. **Channel name.** `ai` is the same label as `/mcp`. A separate `browser-ai` label would split Activity filters and rate limits. Default: `ai`, until a user needs to tell them apart.
+1. **Does Claude call WebMCP tools?** No evidence. `/mcp` covers Claude today.
+2. **More tools** (Priority, assignment, attachments): only with evidence that users want them from the page.
+3. **Does ChatGPT read `consequentialHint`?** Not documented. If OpenAI documents it, nothing changes in Tikki; the hint is already set.
 
 ## Sources
 
@@ -145,14 +113,11 @@ All read on 2026-10-18.
 [webkit]: https://github.com/WebKit/standards-positions/issues/670
 [mozilla]: https://github.com/mozilla/standards-positions/issues/1412
 [devto]: https://dev.to/jangwook_kim_e31e7291ad98/webmcps-origin-trial-providecontext-is-already-gone-54j8
-[mcpcat]: https://mcpcat.io/guides/connect-webmcp-tools-claude-code-bridge-extension
+[oai-help]: https://help.openai.com/en/articles/20001423-using-site-tools-in-the-chatgpt-desktop-app
+[oai-docs]: https://learn.chatgpt.com/docs/webmcp
+[sej]: https://www.searchenginejournal.com/chatgpt-adds-webmcp-support/587237/
+[vktr]: https://www.vktr.com/ai-platforms/openai-adds-webmcp-to-chatgpts-browser/
+[alpha]: https://alphasignal.ai/news/openai-s-webmcp-challenge-lets-websites-talk-directly-to-ai-agents
 
-- [WebMCP spec, Draft CG Report, 2026-10-16][spec]
-- [Chrome for Developers: WebMCP, updated 2026-10-07][chrome]
-- [blink-dev: Intent to Experiment: WebMCP, 2026-05-16][i2e]
-- [Chrome at Google I/O 2026, 2026-05-19][io]
-- [Patrick Brosset (Edge): WebMCP updates, 2026-02-23][brosset]
-- [WebKit standards position #670: oppose][webkit]
-- [Mozilla standards position #1412: neutral][mozilla]
-- [DEV: provideContext is already gone (third party)][devto]
-- [MCPcat: WebMCP bridge to Claude Code (third party)][mcpcat]
+- Primary: [OpenAI Help: site tools][oai-help], [OpenAI docs: WebMCP][oai-docs], [WebMCP spec, 2026-10-16][spec], [Chrome docs][chrome], [Intent to Experiment][i2e], [Chrome at I/O 26][io], [WebKit #670][webkit], [Mozilla #1412][mozilla]
+- Secondary: [SEJ, 2026-08-27][sej], [VKTR, 2026-08-27][vktr], [AlphaSignal, 2026-08-25][alpha], [Brosset (Edge team), 2026-02-23][brosset], [DEV][devto]
