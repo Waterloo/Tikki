@@ -2,14 +2,14 @@ import { and, asc, count, desc, eq, gt, isNull, lt, lte, ne, or, sql, type SQL, 
 import { alias } from 'drizzle-orm/sqlite-core'
 import type { BatchItem } from 'drizzle-orm/batch'
 import { z } from 'zod'
-import { application, comment, contact, idempotencyKey, PRIORITIES, schemaVersion, status, team, ticket, ticketType, user, type ApplicationPermission, type AuditAction, type Priority } from '../db/schema'
+import { application, comment, contact, idempotencyKey, PRIORITIES, schemaVersion, status, team, ticket, ticketParticipant, ticketType, user, type ApplicationPermission, type AuditAction, type Priority } from '../db/schema'
 import { auditEntry } from './audit'
 import type { Db, Role } from './auth'
 import { checkFileRefs, claimUploads } from './attachments'
 import { activeOptions, validateFields, type FieldDef, type FieldError, type FieldType, type FieldValues } from './fields'
 import { noticeTicketCreated, noticesForChange } from './notifications'
 import { queueNoticeMail } from './notice-mail'
-import { allowedActions, assertAllowed, assertMayCreate, canBeAssignee, canReadInternalComments, NOT_FOUND, PolicyRefusal, readableTickets, type PolicyTicket, type TicketAction } from './policy'
+import { allowedActions, assertAllowed, assertMayCreate, assertMayCreateWithVisibility, canBeAssignee, canReadInternalComments, NOT_FOUND, PolicyRefusal, readableTickets, type PolicyTicket, type TicketAction } from './policy'
 import type { StatusView } from './statuses'
 import { loadTicketType } from './ticket-types'
 import { changedKey, withEvent } from './outbox'
@@ -103,6 +103,8 @@ export interface TicketDetail extends TicketSummary {
   reopened_from: { number: number, ref: string } | null
   /** What the Principal who asked may do now, from the policy function. */
   allowed_actions: TicketAction[]
+  /** A ticket of a "Participants only" type (3.32). Only its Participants and Admins see it. */
+  restricted: boolean
 }
 
 /** The title and description, the part of a new ticket that does not depend on its type. */
@@ -188,7 +190,7 @@ const summaryColumns = {
   prefix: ticketType.prefix,
   typeIcon: ticketType.icon,
   typeColor: ticketType.color,
-  visibleToAll: ticketType.visibleToAll,
+  visibility: ticketType.visibility,
   deletedAt: ticket.deletedAt,
   requesterName: requester.name,
   requesterEmail: requester.email,
@@ -205,6 +207,8 @@ const detailColumns = {
   reopenedFrom: ticket.reopenedFrom,
   teamId: team.id,
   teamName: team.name,
+  // JSON array text. Only the detail needs it: lists use the SQL form of the read rule.
+  participantIds: sql<string>`(SELECT json_group_array(${ticketParticipant.userId}) FROM ${ticketParticipant} WHERE ${ticketParticipant.ticketNumber} = ${ticket.number})`,
 }
 
 function selectSummaries(db: Db, where: SQL | undefined) {
@@ -271,9 +275,18 @@ function forViewer(principal: Principal, summary: TicketSummary): TicketSummary 
   return principal.kind === 'application' ? { ...summary, assignee: null } : summary
 }
 
-export function policyFacts(row: Pick<SummaryRow, 'requesterId' | 'applicationId' | 'visibleToAll' | 'statusKey' | 'statusCategory' | 'deletedAt'>): PolicyTicket {
+export function policyFacts(row: Pick<DetailRow, 'requesterId' | 'applicationId' | 'assigneeId' | 'visibility' | 'participantIds' | 'statusKey' | 'statusCategory' | 'deletedAt'>): PolicyTicket {
   if (row.statusKey === null || row.statusCategory === null) throw new Error('A ticket has no Status. Every ticket must have one (4.10).')
-  return { requesterId: row.requesterId, applicationId: row.applicationId, visibleToAll: row.visibleToAll, statusKey: row.statusKey, statusCategory: row.statusCategory, deleted: row.deletedAt !== null }
+  return {
+    requesterId: row.requesterId,
+    applicationId: row.applicationId,
+    assigneeId: row.assigneeId,
+    visibility: row.visibility,
+    participantIds: JSON.parse(row.participantIds) as string[],
+    statusKey: row.statusKey,
+    statusCategory: row.statusCategory,
+    deleted: row.deletedAt !== null,
+  }
 }
 
 /** The Fields of the Schema Version that the ticket is pinned to. */
@@ -308,6 +321,7 @@ async function toDetail(db: Db, principal: Principal, row: DetailRow): Promise<T
     comment_count: comments!.n,
     reopened_from: row.reopenedFrom === null ? null : { number: row.reopenedFrom, ref: `${origin?.prefix ?? '?'}-${row.reopenedFrom}` },
     allowed_actions: allowedActions(principal, policyFacts(row)),
+    restricted: row.visibility === 'participants',
   }
 }
 
@@ -338,6 +352,7 @@ async function checkNewTicket(db: Db, principal: Principal, input: unknown, extr
   if (target.success) assertMayCreate(principal, target.data.ticket_type_id)
 
   const found = target.success ? await loadTicketType(db, target.data.ticket_type_id) : null
+  if (found) assertMayCreateWithVisibility(principal, found.type.visibility)
   let values: FieldValues = {}
   let fileIds: string[] = []
   if (target.success && !found) {

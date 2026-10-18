@@ -6,6 +6,12 @@ definePageMeta({ roles: ['admin'] })
 // One grid for the header and the rows, so the columns line up (canvas: Ticket types).
 const COLUMNS = 'grid grid-cols-[minmax(320px,2fr)_80px_80px_110px_120px_150px_80px] items-center gap-4'
 
+const VISIBILITY_TONE = {
+  requester: 'bg-(--ui-bg-accented) text-(--ui-text-toned)',
+  internal: 'bg-[#e7f5ec] text-[#1b6136] dark:bg-[#12291b] dark:text-[#86d19f]',
+  participants: 'bg-[#fdf1e3] text-[#8a4a0b] dark:bg-[#2e1f0e] dark:text-[#f0b877]',
+} as const
+
 const toast = useToast()
 const types = ref<AdminType[]>([])
 const state = ref<'loading' | 'ready' | 'error'>('loading')
@@ -94,9 +100,9 @@ onMounted(load)
               <span class="truncate">{{ t.team.name }}</span>
               <span>
                 <span
-                  class="text-xs px-2.5 py-0.5 rounded-full"
-                  :class="t.visible_to_all ? 'bg-[#e7f5ec] text-[#1b6136] dark:bg-[#12291b] dark:text-[#86d19f]' : 'bg-(--ui-bg-accented) text-(--ui-text-toned)'"
-                >{{ t.visible_to_all ? 'All internal users' : 'Requester only' }}</span>
+                  class="inline-flex items-center gap-1 text-xs px-2.5 py-0.5 rounded-full"
+                  :class="VISIBILITY_TONE[t.visibility]"
+                ><UIcon v-if="t.visibility === 'participants'" name="i-lucide-lock" class="size-3 shrink-0" aria-hidden="true" />{{ visibilityLabel(t.visibility) }}</span>
               </span>
               <span class="text-[13px] text-(--ui-text-toned)">v{{ t.schema_version }}</span>
             </NuxtLink>

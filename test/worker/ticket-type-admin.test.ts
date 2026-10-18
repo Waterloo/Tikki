@@ -11,7 +11,7 @@ interface Detail {
   icon: string
   color: string
   team: { id: number, name: string }
-  visible_to_all: boolean
+  visibility: string
   archived_at: string | null
   schema_version: number
   field_count: number
@@ -97,7 +97,7 @@ describe('Ticket Type editor: create', () => {
     const admin = await signInAs('admin')
     const requester = await signInAs('requester')
     const type = await created(admin, { name: 'Access request', prefix: 'acc', description: 'You need access to a system.', fields: [system, until] })
-    expect(type).toMatchObject({ name: 'Access request', prefix: 'ACC', schema_version: 1, field_count: 2, open_tickets: 0, ticket_count: 0, archived_at: null, visible_to_all: false })
+    expect(type).toMatchObject({ name: 'Access request', prefix: 'ACC', schema_version: 1, field_count: 2, open_tickets: 0, ticket_count: 0, archived_at: null, visibility: 'requester' })
     expect(type.fields).toEqual([
       { key: 'system_or_tool', label: 'System or tool', type: 'single_select', required: true, help: 'The system you need access to.', options: [{ value: 'Wiki' }, { value: 'VPN' }] },
       { key: 'needed_until', label: 'Needed until', type: 'date', required: false, help: 'Leave empty if permanent.' },
@@ -291,9 +291,9 @@ describe('Ticket Type editor: Schema Versions', () => {
     const type = await created(admin, { fields: [] })
     const ticket = await (await createTicket(requester, type.id)).json() as { number: number, ref: string }
     const next = fresh().prefix
-    const res = await patch(admin, type.id, { prefix: next, name: `${type.name} v2`, description: 'New text.', color: '#1F5FD6', icon: 'i-lucide-key-round', visible_to_all: true })
+    const res = await patch(admin, type.id, { prefix: next, name: `${type.name} v2`, description: 'New text.', color: '#1F5FD6', icon: 'i-lucide-key-round', visibility: 'internal' })
     expect(res.status).toBe(200)
-    expect(await res.json()).toMatchObject({ prefix: next, name: `${type.name} v2`, description: 'New text.', color: '#1F5FD6', icon: 'i-lucide-key-round', visible_to_all: true, schema_version: 1 })
+    expect(await res.json()).toMatchObject({ prefix: next, name: `${type.name} v2`, description: 'New text.', color: '#1F5FD6', icon: 'i-lucide-key-round', visibility: 'internal', schema_version: 1 })
     const read = await call(`/api/v1/tickets/${ticket.ref}`, { headers: { cookie: requester.cookie } })
     expect(await read.json()).toMatchObject({ number: ticket.number, ref: `${next}-${ticket.number}` })
   })
@@ -343,7 +343,7 @@ describe('Ticket Type editor: Admin list', () => {
   it('lists prefix, Field count, open tickets, Team, visibility, version, and the Teams', async () => {
     const admin = await signInAs('admin')
     const requester = await signInAs('requester')
-    const type = await created(admin, { fields: [system, until], visible_to_all: true })
+    const type = await created(admin, { fields: [system, until], visibility: 'internal' })
     const a = await (await createTicket(requester, type.id, { system_or_tool: 'Wiki' })).json() as { number: number }
     await createTicket(requester, type.id, { system_or_tool: 'Wiki' })
     // A ticket in a done Status is not open.
@@ -353,7 +353,7 @@ describe('Ticket Type editor: Admin list', () => {
     const body = await res.json() as { data: Detail[], teams: { id: number, name: string }[] }
     expect(body.teams).toEqual(expect.arrayContaining([{ id: expect.any(Number), name: 'Support' }]))
     expect(body.data.find(t => t.id === type.id)).toMatchObject({
-      prefix: type.prefix, field_count: 2, open_tickets: 1, ticket_count: 2, team: { name: 'Support' }, visible_to_all: true, schema_version: 1, archived_at: null,
+      prefix: type.prefix, field_count: 2, open_tickets: 1, ticket_count: 2, team: { name: 'Support' }, visibility: 'internal', schema_version: 1, archived_at: null,
     })
     expect(body.data.find(t => t.prefix === 'BUG')).toMatchObject({ field_count: 3, schema_version: 1 })
   })

@@ -26,8 +26,8 @@ const numbers = (page: Page) => page.data.map(r => r.number).sort((a, b) => a - 
 async function branchType() {
   const prefix = `B${Array.from(crypto.getRandomValues(new Uint8Array(4)), b => String.fromCharCode(65 + (b % 26))).join('')}`
   const type = await env.DB.prepare(
-    `INSERT INTO ticket_type (name, prefix, description, team_id, visible_to_all, created_at)
-     VALUES (?, ?, 'Branch notices.', (SELECT id FROM team WHERE name = 'Support'), 1, ?) RETURNING id`,
+    `INSERT INTO ticket_type (name, prefix, description, team_id, visibility, created_at)
+     VALUES (?, ?, 'Branch notices.', (SELECT id FROM team WHERE name = 'Support'), 'internal', ?) RETURNING id`,
   ).bind(`Branch ${prefix}`, prefix, Date.now()).first<{ id: number }>()
   const branch = { key: 'branch', label: 'Branch', type: 'single_select', required: false, help: '', options: [{ value: 'Singapore' }, { value: 'Australia' }] }
   const tags = { key: 'tags', label: 'Tags', type: 'multi_select', required: false, help: '', options: [{ value: 'red' }, { value: 'blue' }] }

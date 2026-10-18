@@ -1,6 +1,6 @@
 import { asc, count, eq, or, sql } from 'drizzle-orm'
 import { z } from 'zod'
-import { schemaVersion, status, team, ticket, ticketType, ticketTypeOldPrefix } from '../db/schema'
+import { application, schemaVersion, status, team, ticket, ticketType, ticketTypeOldPrefix, TICKET_VISIBILITIES } from '../db/schema'
 import { FIELD_KEY_PATTERN, firstUnusedColor, keyFromLabel, PREFIX_PATTERN, RESERVED_FIELD_KEYS, suggestIcon, suggestPrefix, TYPE_COLORS, TYPE_ICONS } from '../../shared/ticket-type-rules'
 import { adminAuditEntry } from './audit'
 import type { Db } from './auth'
@@ -80,7 +80,7 @@ const settings = {
   icon: text().refine(v => ICONS.has(v), 'Choose one of the icons.'),
   color: text().refine(v => COLORS.has(v.toUpperCase()), 'Choose one of the colors.'),
   team_id: z.number({ error: 'Choose a Team.' }).int('Choose a Team.').positive('Choose a Team.'),
-  visible_to_all: z.boolean({ error: 'Must be true or false.' }),
+  visibility: z.enum(TICKET_VISIBILITIES, { error: `Must be one of: ${TICKET_VISIBILITIES.join(', ')}.` }),
 }
 
 const fieldsInput = z.array(fieldInput, { error: 'Must be a list of Fields.' }).max(MAX_FIELDS, `A type has at most ${MAX_FIELDS} Fields.`)
@@ -93,7 +93,7 @@ const createInput = z.strictObject({
   icon: settings.icon.optional(),
   color: settings.color.optional(),
   team_id: settings.team_id.optional(),
-  visible_to_all: settings.visible_to_all.optional(),
+  visibility: settings.visibility.optional(),
   fields: fieldsInput.optional(),
 }, { error: unknownKeys })
 
@@ -104,7 +104,7 @@ const updateInput = z.strictObject({
   icon: settings.icon.optional(),
   color: settings.color.optional(),
   team_id: settings.team_id.optional(),
-  visible_to_all: settings.visible_to_all.optional(),
+  visibility: settings.visibility.optional(),
   archived: z.boolean({ error: 'Must be true or false.' }).optional(),
   fields: fieldsInput.optional(),
   /** The `schema_version` the Admin edited. A save of Fields from an older version is refused. */
@@ -343,7 +343,7 @@ export async function createTicketType(db: Db, principal: UserPrincipal, input: 
         icon: data.icon ?? suggestIcon(data.name),
         color: (data.color ?? firstUnusedColor(colors.map(c => c.color))).toUpperCase(),
         teamId,
-        visibleToAll: data.visible_to_all ?? false,
+        visibility: data.visibility ?? 'requester',
       }).returning({ id: ticketType.id }),
       // Same batch, so a type never exists without version 1.
       db.insert(schemaVersion).values({ ticketTypeId: sql`(select id from ticket_type where prefix = ${prefix})`, version: 1, fields: built.fields }),
@@ -380,7 +380,15 @@ export async function updateTicketType(db: Db, principal: UserPrincipal, id: num
   if (data.description !== undefined && data.description !== current.description) set.description = data.description
   if (data.icon !== undefined && data.icon !== current.icon) set.icon = data.icon
   if (data.color !== undefined && data.color.toUpperCase() !== current.color.toUpperCase()) set.color = data.color.toUpperCase()
-  if (data.visible_to_all !== undefined && data.visible_to_all !== current.visible_to_all) set.visibleToAll = data.visible_to_all
+  if (data.visibility !== undefined && data.visibility !== current.visibility) {
+    set.visibility = data.visibility
+    // An Application cannot have Restricted tickets (3.32), so its allowed types must not become one.
+    if (data.visibility === 'participants') {
+      const [used] = await db.select({ name: application.name }).from(application)
+        .where(sql`EXISTS (SELECT 1 FROM json_each(${application.ticketTypeIds}) WHERE value = ${id})`).limit(1)
+      if (used) problems.push({ key: 'visibility', reason: `The Application "${used.name}" may create tickets of this type. Remove the type from it first.` })
+    }
+  }
   if (data.team_id !== undefined && data.team_id !== current.team.id) {
     if (await teamExists(db, data.team_id)) set.teamId = data.team_id
     else problems.push({ key: 'team_id', reason: 'No Team has this ID.' })
@@ -411,8 +419,8 @@ export async function updateTicketType(db: Db, principal: UserPrincipal, id: num
   if (set.prefix) writes.push(db.insert(ticketTypeOldPrefix).values({ prefix: current.prefix, ticketTypeId: id }).onConflictDoNothing())
   if (Object.keys(settingChanges).length) {
     // One entry for all changed settings, with the old and new value of each.
-    const was: Record<string, unknown> = { name: current.name, prefix: current.prefix, description: current.description, icon: current.icon, color: current.color, visible_to_all: current.visible_to_all, team_id: current.team.id }
-    const now: Record<string, unknown> = { name: set.name, prefix: set.prefix, description: set.description, icon: set.icon, color: set.color, visible_to_all: set.visibleToAll, team_id: set.teamId }
+    const was: Record<string, unknown> = { name: current.name, prefix: current.prefix, description: current.description, icon: current.icon, color: current.color, visibility: current.visibility, team_id: current.team.id }
+    const now: Record<string, unknown> = { name: set.name, prefix: set.prefix, description: set.description, icon: set.icon, color: set.color, visibility: set.visibility, team_id: set.teamId }
     const keys = Object.keys(now).filter(k => now[k] !== undefined)
     writes.push(adminAuditEntry(db, principal, {
       subject,

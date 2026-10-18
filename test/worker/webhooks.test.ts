@@ -1,7 +1,7 @@
 import { createExecutionContext, createScheduledController, waitOnExecutionContext } from 'cloudflare:test'
 import { env } from 'cloudflare:workers'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { call, postJson, signInAs, typeId } from './helpers'
+import { call, createRestrictedType, postJson, signInAs, typeId } from './helpers'
 // @ts-expect-error The build output has no types.
 import builtWorker from '../../.output/server/index.mjs'
 
@@ -216,6 +216,23 @@ describe('delivery', () => {
     const toInternal = receiver.requests.filter(to(internal))
     expect(toInternal.map(r => r.payload.comment?.visibility ?? null)).toEqual([null, 'internal', 'public'])
     expect(toInternal[1]!.payload).toMatchObject({ type: 'comment.created', comment: { body: 'Secret note' }, after: { ref: t.ref } })
+  })
+
+  it('sends no Event for a Restricted ticket to an endpoint without "include internal data" (8.31)', async () => {
+    const [agent, admin] = await Promise.all([signInAs('agent'), signInAs('admin')])
+    const plain = await addEndpoint(admin)
+    const internal = await addEndpoint(admin, { include_internal: true })
+    const res = await postJson('/api/v1/tickets', { ticket_type_id: await createRestrictedType(), title: 'Export customer records' }, headers(agent))
+    expect(res.status).toBe(201)
+    const t = await res.json() as TicketView
+    expect((await comment(agent, t.ref, { body: 'Started', visibility: 'public' })).status).toBe(201)
+    expect((await patch(agent, t.ref, { priority: 'high' })).status).toBe(200)
+    await runCron(Date.now())
+
+    expect(receiver.requests.filter(to(plain))).toEqual([])
+    expect(await deliveries(admin, plain.id)).toEqual([])
+    expect(receiver.requests.filter(to(internal)).map(r => r.payload.type)).toEqual(['ticket.created', 'comment.created', 'ticket.updated'])
+    expect(receiver.requests.filter(to(internal))[0]!.payload.after.title).toBe('Export customer records')
   })
 
   it('retries with backoff, gives up after 24 hours, and turns the endpoint off after 3 days', async () => {

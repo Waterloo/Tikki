@@ -236,7 +236,7 @@ describe('the data boundary', () => {
     const app: ApplicationPrincipal = { kind: 'application', applicationId: 7, permissions: ALL as ApplicationPrincipal['permissions'], ticketTypeIds: [1], channel: 'api' }
     expect(canReadInternalComments(app)).toBe(false)
     expect(canReadInternalComments({ kind: 'user', userId: 'u', role: 'agent', channel: 'web' })).toBe(true)
-    const own = { requesterId: null, applicationId: 7, visibleToAll: false }
+    const own = { requesterId: null, applicationId: 7, assigneeId: null, visibility: 'requester', participantIds: [] }
     expect(authorizeApplicationComment(app, own, false)).toBeNull()
     expect(authorizeApplicationComment(app, own, true)?.code).toBe('FORBIDDEN')
     expect(authorizeApplicationComment(app, { ...own, applicationId: 8 }, false)?.code).toBe('NOT_FOUND')

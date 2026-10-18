@@ -1,4 +1,5 @@
 /** The shapes the Ticket Type editor API returns (server/utils/ticket-type-admin.ts). */
+import type { Visibility } from '~/utils/visibility'
 
 export type FieldType = 'short_text' | 'long_text' | 'number' | 'date' | 'single_select' | 'multi_select' | 'checkbox' | 'user' | 'url' | 'file'
 
@@ -35,7 +36,7 @@ export interface AdminType {
   color: string
   prefix: string
   team: AdminTeam
-  visible_to_all: boolean
+  visibility: Visibility
   archived_at: string | null
   schema_version: number
   field_count: number

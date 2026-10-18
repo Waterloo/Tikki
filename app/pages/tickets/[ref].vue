@@ -83,6 +83,11 @@ async function save(field: 'status' | 'priority' | 'assignee' | 'type', body: Re
   } catch (e) {
     const err = e as { status?: number, data?: { error?: { message?: string } } }
     if (err.status === 401) return navigateTo('/sign-in')
+    // The unassign was saved, but a Restricted ticket is hidden from a User who is no longer a Participant.
+    if (err.status === 404 && field === 'assignee' && ticket.value.restricted) {
+      toast.add({ title: done, description: 'You are no longer a Participant, so you cannot see this ticket now.', color: 'success' })
+      return navigateTo(back.value.to)
+    }
     toast.add({ title: 'The change was not saved.', description: err.data?.error?.message ?? 'Check your connection, then try again.', color: 'error' })
   } finally {
     saving.value = null
@@ -481,6 +486,8 @@ onMounted(load)
               </form>
             </div>
           </div>
+
+          <TicketParticipants v-if="ticket.restricted" :ticket-ref="ticket.ref" :can-manage="can('manage_participants')" :version="activityVersion" @changed="activityVersion++" />
 
           <div class="rounded-[14px] border border-(--ui-border) bg-(--ui-bg) p-[18px] flex flex-col gap-3">
             <h2 class="text-sm font-semibold text-(--ui-text-highlighted)">

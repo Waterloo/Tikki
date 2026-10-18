@@ -1,5 +1,5 @@
-import { and, eq, isNull, or, type SQL } from 'drizzle-orm'
-import { contact, ticket, ticketType, type ApplicationPermission, type StatusCategory } from '../db/schema'
+import { and, eq, isNull, ne, or, sql, type SQL } from 'drizzle-orm'
+import { contact, ticket, ticketParticipant, ticketType, type ApplicationPermission, type StatusCategory, type TicketVisibility } from '../db/schema'
 import type { ApplicationPrincipal, Principal, UserPrincipal } from './tickets'
 
 /**
@@ -7,7 +7,7 @@ import type { ApplicationPrincipal, Principal, UserPrincipal } from './tickets'
  * REST, MCP, and the UI (through `allowed_actions`) use it. No other code checks permissions.
  */
 
-export const TICKET_ACTIONS = ['read', 'change_status', 'change_priority', 'assign', 'edit_fields', 'edit_description', 'change_type', 'comment', 'comment_internal', 'cancel', 'reopen', 'delete'] as const
+export const TICKET_ACTIONS = ['read', 'change_status', 'change_priority', 'assign', 'edit_fields', 'edit_description', 'change_type', 'comment', 'comment_internal', 'cancel', 'reopen', 'delete', 'manage_participants'] as const
 export type TicketAction = typeof TICKET_ACTIONS[number]
 
 /** The facts about a ticket that the rules use. */
@@ -16,7 +16,10 @@ export interface PolicyTicket {
   requesterId: string | null
   /** The Application whose Contact is the Requester, or null. This is the Application that created the ticket. */
   applicationId: number | null
-  visibleToAll: boolean
+  assigneeId: string | null
+  visibility: TicketVisibility
+  /** The Users that were added as Participants (issue 27). The Requester and the assignee are not in it. */
+  participantIds: readonly string[]
   statusKey: string
   statusCategory: StatusCategory
   /** Soft-deleted by an Admin (issue 22). Nobody can read it; only an Admin can restore it. */
@@ -52,6 +55,7 @@ const AGENT_ONLY: Record<Exclude<TicketAction, 'read'>, string> = {
   comment: 'You cannot comment on this ticket.',
   comment_internal: 'Only Agents can write Internal Comments.',
   delete: 'Only Admins can delete a ticket.',
+  manage_participants: 'Only the Requester, the assignee and Admins can add or remove Participants.',
 }
 
 /** Admins can do everything an Agent can (3.17). Agents see all tickets (3.5). */
@@ -59,6 +63,11 @@ const STAFF_ROLES: readonly string[] = ['admin', 'agent']
 
 function isStaff(principal: Principal) {
   return principal.kind === 'user' && STAFF_ROLES.includes(principal.role)
+}
+
+// Not the `isAdmin` type guard: its false branch would narrow a User to never.
+function hasAdminRole(principal: Principal) {
+  return principal.kind === 'user' && principal.role === 'admin'
 }
 
 function has(principal: ApplicationPrincipal, permission: ApplicationPermission) {
@@ -74,13 +83,21 @@ export function canBeAssignee(role: string) {
   return STAFF_ROLES.includes(role)
 }
 
+/** The Requester, the assignee, or an added User (glossary: Participant). */
+function isParticipant(principal: UserPrincipal, t: PolicyTicket) {
+  return t.requesterId === principal.userId || t.assigneeId === principal.userId || t.participantIds.includes(principal.userId)
+}
+
 function canRead(principal: Principal, t: PolicyTicket) {
   // A deleted ticket is hidden from every channel, Admins included; they see it only in the deleted list.
   if (t.deleted) return false
-  // An Application sees only the tickets it created (3.11), and "visible to all" is for internal Users only.
-  if (principal.kind === 'application') return t.applicationId === principal.applicationId
+  // An Application sees only the tickets it created (3.11), never a Restricted ticket, and "visible to all" is for
+  // internal Users only.
+  if (principal.kind === 'application') return t.applicationId === principal.applicationId && t.visibility !== 'participants'
+  // A Restricted ticket: its Participants and the Admins only, also against other Agents (3.32).
+  if (t.visibility === 'participants') return hasAdminRole(principal) || isParticipant(principal, t)
   // "Visible to all" is for internal tickets. A Contact's ticket holds customer data, so only staff see it.
-  return isStaff(principal) || t.requesterId === principal.userId || (t.visibleToAll && t.applicationId === null)
+  return isStaff(principal) || t.requesterId === principal.userId || (t.visibility === 'internal' && t.applicationId === null)
 }
 
 /** Null when the Principal may do the action; otherwise the refusal. */
@@ -117,6 +134,10 @@ export function authorize(principal: Principal, action: TicketAction, t: PolicyT
       return t.statusKey === 'resolved' ? null : forbidden('Only a resolved ticket can be reopened.')
     case 'delete':
       return isAdmin(principal) ? null : forbidden(AGENT_ONLY.delete)
+    // An added Participant reads and comments, but does not decide who else sees the ticket.
+    case 'manage_participants':
+      if (t.visibility !== 'participants') return forbidden('Participants are added only to a Restricted ticket.')
+      return hasAdminRole(principal) || isRequester || (principal.kind === 'user' && t.assigneeId === principal.userId) ? null : forbidden(AGENT_ONLY.manage_participants)
     default:
       return isStaff(principal) ? null : forbidden(AGENT_ONLY[action])
   }
@@ -137,6 +158,11 @@ export function assertMayCreate(principal: Principal, ticketTypeId?: number): vo
   if (principal.kind === 'user') return
   if (!has(principal, 'tickets:create')) throw new PolicyRefusal(missing('tickets:create'))
   if (ticketTypeId !== undefined && !principal.ticketTypeIds.includes(ticketTypeId)) throw new PolicyRefusal(TYPE_NOT_ALLOWED)
+}
+
+/** An Application cannot create a Restricted ticket (3.32): its Contact cannot be a Participant. */
+export function assertMayCreateWithVisibility(principal: Principal, visibility: TicketVisibility): void {
+  if (principal.kind === 'application' && visibility === 'participants') throw new PolicyRefusal(TYPE_NOT_ALLOWED)
 }
 
 /** Whether the Principal may see this Ticket Type and its Fields. An Application sees only its allowed types. */
@@ -179,14 +205,27 @@ export function allowedActions(principal: Principal, t: PolicyTicket): TicketAct
 }
 
 /**
- * The `read` rule as a query condition, for lists. The query must join `contact` on `ticket.contact_id`. It must match `canRead`; the REST tests check both.
+ * The `read` rule as a query condition, for lists. The query must join `ticket_type`, and `contact` on `ticket.contact_id`. It must match `canRead`; the REST tests check both.
  * It always excludes deleted tickets.
  */
 export function readableTickets(principal: Principal): SQL {
   const visible = isNull(ticket.deletedAt)
-  if (principal.kind === 'application') return and(visible, eq(contact.applicationId, principal.applicationId))!
-  if (isStaff(principal)) return visible
-  return and(visible, or(eq(ticket.requesterId, principal.userId), and(eq(ticketType.visibleToAll, true), isNull(ticket.contactId))))!
+  const unrestricted = ne(ticketType.visibility, 'participants')
+  if (principal.kind === 'application') return and(visible, eq(contact.applicationId, principal.applicationId), unrestricted)!
+  if (hasAdminRole(principal)) return visible
+  const me = principal.userId
+  const participant = or(
+    eq(ticket.requesterId, me),
+    eq(ticket.assigneeId, me),
+    // Raw SQL, because a drizzle subquery needs a db handle. The primary key makes it one index lookup.
+    sql`EXISTS (SELECT 1 FROM ${ticketParticipant} WHERE ${ticketParticipant.ticketNumber} = ${ticket.number} AND ${ticketParticipant.userId} = ${me})`,
+  )
+  if (isStaff(principal)) return and(visible, or(unrestricted, participant))!
+  return and(visible, or(
+    and(unrestricted, eq(ticket.requesterId, me)),
+    and(eq(ticketType.visibility, 'internal'), isNull(ticket.contactId)),
+    and(eq(ticketType.visibility, 'participants'), participant),
+  ))!
 }
 
 /** Restoring and listing deleted tickets is for Admins. Anyone else gets NOT_FOUND: for them the ticket does not exist. */

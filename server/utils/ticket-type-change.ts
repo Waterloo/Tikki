@@ -1,7 +1,8 @@
 import { z } from 'zod'
 import type { Db } from './auth'
 import type { FieldDef, FieldError, FieldValues } from './fields'
-import { applyChange, getTicket, loadFor, pinnedFields, TicketValidationError, type Principal, type TicketDetail } from './tickets'
+import { authorize } from './policy'
+import { applyChange, getTicket, loadFor, pinnedFields, policyFacts, TicketValidationError, type Principal, type TicketDetail } from './tickets'
 import { loadTicketType } from './ticket-types'
 
 const input = z.strictObject({
@@ -47,6 +48,14 @@ export async function changeTicketType(db: Db, principal: Principal, number: num
   if (!target) throw new TicketValidationError([problem('No Ticket Type has this ID.')])
   if (target.archived) throw new TicketValidationError([problem('This Ticket Type is archived and takes no new tickets. Choose another one.')])
   if (target.type.id === row.typeId) throw new TicketValidationError([problem('The ticket already has this Ticket Type.')])
+  if (target.type.visibility === 'participants') {
+    // A Contact cannot be a Participant, and its Application could no longer read its own ticket (3.32).
+    if (row.contactId !== null) throw new TicketValidationError([problem('A ticket from an Application cannot become a Restricted ticket. Choose another type.')])
+    // Otherwise the change would succeed and then answer "not found".
+    if (authorize(principal, 'read', { ...policyFacts(row), visibility: 'participants' })) {
+      throw new TicketValidationError([problem('This type is Participants only, and you are not a Participant. Assign the ticket to yourself first.')])
+    }
+  }
 
   const { moved, unmoved } = moveValues(await pinnedFields(db, row), target.version.fields, row.fields)
   await applyChange(db, principal, number, { ticketTypeId: target.type.id, schemaVersion: target.version.version, fields: moved }, [{

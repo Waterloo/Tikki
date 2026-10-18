@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { Visibility } from '~/utils/visibility'
 import { firstUnusedColor, keyFromLabel, suggestIcon, suggestPrefix } from '~~/shared/ticket-type-rules'
 import type { AdminType, AdminTypeDetail, AdminTypeList, DraftField, Problem } from '~/types/ticket-types'
 
@@ -16,7 +17,7 @@ const prefixInput = ref<string | null>(null)
 const iconInput = ref<string | null>(null)
 const colorInput = ref<string | null>(null)
 const teamId = ref<number | undefined>()
-const visibleToAll = ref(false)
+const visibility = ref<Visibility>('requester')
 const fields = ref<DraftField[]>([])
 const adding = ref(false)
 
@@ -82,7 +83,7 @@ async function create() {
         icon: icon.value,
         color: color.value,
         team_id: teamId.value,
-        visible_to_all: visibleToAll.value,
+        visibility: visibility.value,
         fields: fields.value.map(({ isNew: _, ...f }) => f),
       },
     })
@@ -165,13 +166,7 @@ onMounted(load)
             <UFormField label="Owning team" name="team">
               <USelect v-model="teamId" :items="teams.map(t => ({ value: t.id, label: t.name }))" class="w-full" />
             </UFormField>
-            <div class="flex items-center justify-between gap-3 min-h-11 sm:mt-[26px]">
-              <label for="t-vis" class="flex flex-col gap-0.5 cursor-pointer">
-                <span class="text-sm font-medium text-(--ui-text-highlighted)">Visible to all internal users</span>
-                <span class="text-[13px] text-(--ui-text-muted)">{{ visibleToAll ? 'Every internal user can see these tickets.' : 'Requesters see only their own tickets.' }}</span>
-              </label>
-              <USwitch id="t-vis" v-model="visibleToAll" />
-            </div>
+            <TypeVisibility id="t-vis" v-model="visibility" />
           </div>
         </section>
 

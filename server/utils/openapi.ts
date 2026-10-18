@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { FIELD_TYPES, type FieldError } from './fields'
-import { PRIORITIES, STATUS_CATEGORIES } from '../db/schema'
+import { PRIORITIES, STATUS_CATEGORIES, TICKET_VISIBILITIES } from '../db/schema'
 import { TICKET_ACTIONS } from './policy'
 import type { TicketTypeView, TicketTypeWithFields } from './ticket-types'
 import { applicationTicketInput } from './ticket-input'
@@ -46,6 +46,7 @@ const ticketDetailOut = ticketSummaryOut.extend({
   comment_count: z.number().int().describe('The comments the caller can see. An Application never sees Internal Comments.'),
   reopened_from: z.object({ number: z.number().int(), ref: z.string() }).nullable(),
   allowed_actions: z.array(z.enum(TICKET_ACTIONS)),
+  restricted: z.boolean().describe('Always false for an Application: it never sees a Restricted ticket.'),
 })
 
 const ticketTypeOut = z.object({
@@ -56,7 +57,7 @@ const ticketTypeOut = z.object({
   color: z.string(),
   prefix: z.string(),
   team: z.object({ id: z.number().int(), name: z.string() }),
-  visible_to_all: z.boolean(),
+  visibility: z.enum(TICKET_VISIBILITIES).describe('Who sees its tickets. An Application never gets a `participants` type.'),
 })
 
 const ticketTypeWithFieldsOut = ticketTypeOut.extend({

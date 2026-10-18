@@ -28,8 +28,8 @@ async function newTicket(cookie: string) {
 async function createFileType(): Promise<number> {
   const prefix = `F${Array.from(crypto.getRandomValues(new Uint8Array(4)), b => String.fromCharCode(65 + (b % 26))).join('')}`
   const type = await env.DB.prepare(
-    `INSERT INTO ticket_type (name, prefix, description, team_id, visible_to_all, created_at)
-     VALUES (?, ?, 'Has a file.', (SELECT id FROM team WHERE name = 'Support'), 0, ?) RETURNING id`,
+    `INSERT INTO ticket_type (name, prefix, description, team_id, visibility, created_at)
+     VALUES (?, ?, 'Has a file.', (SELECT id FROM team WHERE name = 'Support'), 'requester', ?) RETURNING id`,
   ).bind(`Files ${prefix}`, prefix, Date.now()).first<{ id: number }>()
   await env.DB.prepare('INSERT INTO schema_version (ticket_type_id, version, fields, created_at) VALUES (?, 1, ?, ?)')
     .bind(type!.id, JSON.stringify([{ key: 'screenshot', label: 'Screenshot', type: 'file', required: false, help: '' }]), Date.now()).run()

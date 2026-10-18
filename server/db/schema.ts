@@ -8,6 +8,13 @@ export * from './auth-schema'
 export const PRIORITIES = ['low', 'normal', 'high', 'urgent'] as const
 export type Priority = typeof PRIORITIES[number]
 
+/**
+ * Who sees the tickets of a type: the Requester only (and staff), all internal Users, or the Participants only
+ * (and Admins, 3.32). Staff means Agents and Admins.
+ */
+export const TICKET_VISIBILITIES = ['requester', 'internal', 'participants'] as const
+export type TicketVisibility = typeof TICKET_VISIBILITIES[number]
+
 export const team = sqliteTable('team', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   name: text('name').notNull().unique(),
@@ -26,7 +33,7 @@ export const ticketType = sqliteTable('ticket_type', {
   color: text('color').notNull().default('#4B5563'),
   // Nullable only because SQLite cannot add a NOT NULL column with a foreign key. Every type has a Team (4.13).
   teamId: integer('team_id').references(() => team.id),
-  visibleToAll: integer('visible_to_all', { mode: 'boolean' }).notNull().default(false),
+  visibility: text('visibility', { enum: TICKET_VISIBILITIES }).notNull().default('requester'),
   /** Set when an Admin archives the type (4.15f). Archived types take no new tickets; old tickets keep them. */
   archivedAt: integer('archived_at', { mode: 'timestamp_ms' }),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(() => new Date()),
@@ -131,6 +138,8 @@ export const comment = sqliteTable('comment', {
 export const AUDIT_ACTIONS = ['ticket_created', 'status_changed', 'priority_changed', 'assignee_changed', 'field_changed', 'comment_added', 'type_changed', 'description_changed', 'ticket_cancelled', 'ticket_reopened', 'attachment_added',
   // Issue 22: soft delete, restore, and Erasure of the Contact's data
   'ticket_deleted', 'ticket_restored', 'ticket_erased',
+  // Issue 27: Participants of a ticket
+  'participant_added', 'participant_removed',
   // Admin changes with no ticket (subject = ticket type, user, invite or team)
   'type_created', 'type_settings_changed', 'schema_version_created', 'type_archived', 'type_restored',
   'role_changed', 'user_invited', 'invite_resent', 'invite_revoked', 'user_deactivated', 'user_reactivated',
@@ -439,3 +448,16 @@ export const rateCounter = sqliteTable('rate_counter', {
   window: integer('window').notNull(),
   count: integer('count').notNull(),
 }, t => [primaryKey({ columns: [t.key, t.window] })])
+
+// Issue 27: restricted tickets
+
+/**
+ * A User that someone added to a ticket. The Requester and the assignee are Participants by rule and have no row.
+ * A Contact cannot be a Participant.
+ */
+export const ticketParticipant = sqliteTable('ticket_participant', {
+  ticketNumber: integer('ticket_number').notNull().references(() => ticket.number),
+  userId: text('user_id').notNull().references(() => user.id),
+  addedBy: text('added_by').notNull().references(() => user.id),
+  addedAt: integer('added_at', { mode: 'timestamp_ms' }).notNull(),
+}, t => [primaryKey({ columns: [t.ticketNumber, t.userId] }), index('ticket_participant_user_idx').on(t.userId)])
