@@ -122,7 +122,7 @@ Remove `X-Frame-Options: DENY` or `SAMEORIGIN` from that page, or the browser sh
 
 One app can show in more than one placement. Each placement loads its own URL, so a sidebar card can be a small page that loads fast, and the tab can be a full tool on another host.
 
-Tikki adds `placement=sidebar` or `placement=tab` to the query of the URL. It keeps the query you wrote. For example, `https://orders.you.com/tikki?view=compact` loads as `https://orders.you.com/tikki?view=compact&placement=sidebar`. The context has the same value in `app.placement`, and the token in `tikki_placement`. On your backend, use the checked token, not the query.
+Tikki adds `placement=sidebar` or `placement=tab` to the query of the URL. It keeps the rest of the query you wrote; a `placement` already in your URL is replaced. For example, `https://orders.you.com/tikki?view=compact` loads as `https://orders.you.com/tikki?view=compact&placement=sidebar`. The context has the same value in `app.placement`, and the token in `tikki_placement`. On your backend, use the checked token, not the query.
 
 | | `sidebar` | `tab` |
 |---|---|---|
