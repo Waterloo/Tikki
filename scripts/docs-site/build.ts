@@ -11,12 +11,13 @@ import { homeBody } from './pages'
  * static assets serve them without the Worker.
  */
 
-/** The guides: their source, and their URL without `/docs/`. */
-export const GUIDES = [
+/** The guides: their source, and their URL without `/docs/`. A page with `parent` shows under it in the menu. */
+export const GUIDES: readonly { file: string, slug: string, label: string, parent?: string }[] = [
   { file: 'docs/ticket-apps.md', slug: 'ticket-apps', label: 'Ticket Apps' },
+  { file: 'docs/ticket-apps-reference.md', slug: 'ticket-apps-reference', label: 'Reference', parent: 'ticket-apps' },
   { file: 'docs/webhooks.md', slug: 'webhooks', label: 'Webhooks' },
   { file: 'docs/ai-assistants.md', slug: 'ai', label: 'AI assistants (MCP)' },
-] as const
+]
 
 export interface SearchEntry { page: string, title: string, url: string, text: string }
 
@@ -85,7 +86,7 @@ export async function buildDocsSite(root: string, openapi: OpenApiDocument): Pro
 
   const nav: NavGroup[] = [
     { title: 'Start', items: [{ label: 'Overview', href: '/docs/' }] },
-    { title: 'Guides', items: guides.map(g => ({ label: g.label, href: g.url })) },
+    { title: 'Guides', items: guides.map(g => ({ label: g.label, href: g.url, nested: !!g.parent })) },
     {
       title: 'API reference',
       items: [
@@ -97,7 +98,7 @@ export async function buildDocsSite(root: string, openapi: OpenApiDocument): Pro
     { title: 'Files', items: [{ label: 'OpenAPI document', href: '/api/v1/openapi.json', external: true }, { label: 'llms.txt', href: '/docs/llms.txt', external: true }] },
   ]
 
-  const order: NavItem[] = [{ label: 'Overview', href: '/docs/' }, ...guides.map(g => ({ label: g.label, href: g.url })), { label: 'API reference', href: '/docs/api' }]
+  const order: NavItem[] = [{ label: 'Overview', href: '/docs/' }, ...guides.map(g => ({ label: g.parent ? `${GUIDES.find(p => p.slug === g.parent)!.label} reference` : g.label, href: g.url })), { label: 'API reference', href: '/docs/api' }]
   const around = (href: string) => {
     const i = order.findIndex(o => o.href === href)
     return { prev: order[i - 1], next: order[i + 1] }

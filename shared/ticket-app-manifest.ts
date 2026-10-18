@@ -1,4 +1,4 @@
-/** Issue 40: the shapes of a Ticket App manifest after Tikki read it (docs/ticket-apps.md#manifest). */
+/** Issue 40: the shapes of a Ticket App manifest after Tikki read it (docs/ticket-apps-reference.md#manifest). */
 
 import type { AppIconType } from './ticket-app-icons'
 

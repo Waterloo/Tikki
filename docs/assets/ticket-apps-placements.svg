@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 562 380" class="tkp" data-steps="2" font-family="Geist, ui-sans-serif, system-ui, sans-serif">
+  <style>
+    /* Inline on the docs site: the page tokens apply, and docs.js sets data-step. On GitHub the fallback colors apply. */
+    .tkp { --t-bg: var(--ui-bg, #ffffff); --t-panel: var(--ui-bg-elevated, #f7f8fa); --t-skel: var(--ui-bg-accented, #e9ebee); --t-line: var(--ui-border-accented, #dadde2);
+      --t-hi: var(--ui-text-highlighted, #17181c); --t-muted: var(--ui-text-muted, #5b606b); --t-pri: var(--docs-link, #2563eb); --t-soft: var(--docs-link-soft, #eff4ff); }
+    @media (prefers-color-scheme: dark) {
+      .tkp { --t-bg: var(--ui-bg, #17181c); --t-panel: var(--ui-bg-elevated, #1e2025); --t-skel: var(--ui-bg-accented, #26282e); --t-line: var(--ui-border-accented, #34373e);
+        --t-hi: var(--ui-text-highlighted, #f4f5f7); --t-muted: var(--ui-text-muted, #9ea3ad); --t-pri: var(--docs-link, #60a5fa); --t-soft: var(--docs-link-soft, #172036); }
+    }
+    .tkp .window { fill: var(--t-bg); stroke: var(--t-line); }
+    .tkp .bar { fill: var(--t-panel); }
+    .tkp .rule { stroke: var(--t-line); }
+    .tkp .box { fill: var(--t-bg); stroke: var(--t-line); }
+    .tkp .skel { fill: var(--t-skel); }
+    .tkp .app { fill: var(--t-soft); stroke: var(--t-pri); stroke-dasharray: 5 4; }
+    .tkp .on { fill: var(--t-soft); }
+    .tkp .tabline { stroke: var(--t-pri); stroke-width: 2; }
+    .tkp .title { fill: var(--t-hi); font-size: 14px; font-weight: 600; }
+    .tkp .small { fill: var(--t-hi); font-size: 12.5px; font-weight: 600; }
+    .tkp .item { fill: var(--t-hi); font-size: 12px; }
+    .tkp .note { fill: var(--t-muted); font-size: 12px; }
+    .tkp .label { fill: var(--t-pri); font-size: 12px; font-weight: 600; }
+    .tkp .host { fill: var(--t-muted); font-family: 'Geist Mono', ui-monospace, monospace; font-size: 11.5px; }
+    .tkp .dot { fill: var(--t-pri); }
+    .tkp .dot-n { fill: var(--t-bg); font-size: 11px; font-weight: 700; }
+    .tkp .packet { fill: var(--t-pri); opacity: 0; }
+    .tkp .step { transition: opacity 0.2s; }
+    .tkp[data-step] .step { opacity: 0.28; }
+    .tkp[data-step="1"] .step-1, .tkp[data-step="2"] .step-2 { opacity: 1; }
+    .tkp[data-step] .packet { opacity: 1; }
+  </style>
+
+  <!-- A ticket page: the sidebar card (1) and the tab (2). The page placement has its own figure. -->
+  <rect class="window" x="1" y="1" width="560" height="378" rx="14"/>
+  <path class="bar" d="M15 1.5h532a13.5 13.5 0 0 1 13.5 13.5v26.5h-559V15A13.5 13.5 0 0 1 15 1.5z"/>
+  <line class="rule" x1="1" y1="41.5" x2="561" y2="41.5"/>
+  <circle cx="22" cy="21" r="5" fill="#FF6B6B"/><circle cx="38" cy="21" r="5" fill="#FFC94D"/><circle cx="54" cy="21" r="5" fill="#2EC4B6"/>
+  <rect class="box" x="76" y="10" width="300" height="22" rx="11"/>
+  <text class="host" x="92" y="25">tikki.example.com/tickets/PAY-1048</text>
+
+  <text class="host" x="20" y="68">PAY-1048</text>
+  <text class="title" x="20" y="88">Charged twice for order 5521</text>
+  <text class="note" x="20" y="118">Conversation</text>
+  <text class="note" x="104" y="118">Activity</text>
+  <line class="rule" x1="20" y1="127.5" x2="364" y2="127.5"/>
+  <rect class="skel" x="20" y="142" width="300" height="44" rx="8"/>
+  <rect class="skel" x="20" y="198" width="260" height="44" rx="8"/>
+  <rect class="skel" x="20" y="254" width="320" height="44" rx="8"/>
+  <rect class="box" x="20" y="320" width="344" height="40" rx="8"/>
+  <text class="note" x="32" y="344">Reply…</text>
+
+  <g class="step step-2">
+    <path data-path="" d="M300 34C310 70 220 90 206 106" fill="none"/>
+    <rect class="on" x="160" y="103" width="96" height="22" rx="6"/>
+    <text class="item" x="170" y="118">Time tracking</text>
+    <line class="tabline" x1="160" y1="127" x2="256" y2="127"/>
+    <circle class="dot" cx="276" cy="114" r="10"/><text class="dot-n" x="276" y="118" text-anchor="middle">2</text>
+    <text class="label" x="292" y="118">Tab</text>
+  </g>
+
+  <line class="rule" x1="380.5" y1="42" x2="380.5" y2="379"/>
+  <text class="note" x="396" y="68">Requester</text>
+  <rect class="skel" x="396" y="76" width="148" height="44" rx="8"/>
+  <g class="step step-1">
+    <path data-path="" d="M376 34C440 50 470 100 470 132" fill="none"/>
+    <rect class="app" x="396" y="136" width="148" height="136" rx="10"/>
+    <text class="small" x="410" y="160">Time tracking</text>
+    <text class="title" x="410" y="186">1h 45m</text>
+    <text class="note" x="466" y="186">on this ticket</text>
+    <rect class="skel" x="410" y="200" width="120" height="8" rx="4"/>
+    <rect class="skel" x="410" y="216" width="96" height="8" rx="4"/>
+    <circle class="dot" cx="410" cy="256" r="10"/><text class="dot-n" x="410" y="260" text-anchor="middle">1</text>
+    <text class="label" x="426" y="260">Sidebar card</text>
+  </g>
+
+  <circle class="packet" r="5"/>
+</svg>

@@ -2,7 +2,7 @@
 import type { ContextToken, TicketAppPlacement } from '~/types/ticket-apps'
 import { appNavigationPath } from '../../shared/app-navigation'
 
-/** One placement of a Ticket App in a sandboxed iframe, and the messages of docs/ticket-apps.md. */
+/** One placement of a Ticket App in a sandboxed iframe, and the messages of docs/ticket-apps-reference.md. */
 const props = defineProps<{
   app: { id: number, name: string }
   /** The URL of this placement. */

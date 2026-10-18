@@ -1,6 +1,6 @@
 # Time tracking: an example Ticket App
 
-Agents log the time they spend on a ticket. Admins and Agents see the time across tickets in a timesheet. One Cloudflare Worker with its own D1 database serves three views, one for each [placement](../../docs/ticket-apps.md#placements):
+Agents log the time they spend on a ticket. Admins and Agents see the time across tickets in a timesheet. One Cloudflare Worker with its own D1 database serves three views, one for each [placement](../../docs/ticket-apps-reference.md#placements):
 
 | URL | Placement | What it shows |
 |---|---|---|

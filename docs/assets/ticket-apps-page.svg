@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 840 400" class="tkg" font-family="Geist, ui-sans-serif, system-ui, sans-serif">
+  <style>
+    /* Inline on the docs site: the page tokens apply. On GitHub the fallback colors apply. */
+    .tkg { --t-bg: var(--ui-bg, #ffffff); --t-panel: var(--ui-bg-elevated, #f7f8fa); --t-skel: var(--ui-bg-accented, #e9ebee); --t-line: var(--ui-border-accented, #dadde2);
+      --t-hi: var(--ui-text-highlighted, #17181c); --t-muted: var(--ui-text-muted, #5b606b); --t-pri: var(--docs-link, #2563eb); --t-soft: var(--docs-link-soft, #eff4ff); }
+    @media (prefers-color-scheme: dark) {
+      .tkg { --t-bg: var(--ui-bg, #17181c); --t-panel: var(--ui-bg-elevated, #1e2025); --t-skel: var(--ui-bg-accented, #26282e); --t-line: var(--ui-border-accented, #34373e);
+        --t-hi: var(--ui-text-highlighted, #f4f5f7); --t-muted: var(--ui-text-muted, #9ea3ad); --t-pri: var(--docs-link, #60a5fa); --t-soft: var(--docs-link-soft, #172036); }
+    }
+    .tkg .window { fill: var(--t-bg); stroke: var(--t-line); }
+    .tkg .bar, .tkg .nav { fill: var(--t-panel); }
+    .tkg .rule { stroke: var(--t-line); }
+    .tkg .box { fill: var(--t-bg); stroke: var(--t-line); }
+    .tkg .skel { fill: var(--t-skel); }
+    .tkg .app { fill: var(--t-soft); stroke: var(--t-pri); stroke-dasharray: 5 4; }
+    .tkg .on { fill: var(--t-soft); }
+    .tkg .seg-on { fill: var(--t-bg); stroke: var(--t-line); }
+    .tkg .word { fill: var(--t-hi); font-size: 17px; font-weight: 700; letter-spacing: -0.02em; }
+    .tkg .h1 { fill: var(--t-hi); font-size: 20px; font-weight: 600; letter-spacing: -0.01em; }
+    .tkg .item { fill: var(--t-hi); font-size: 13px; }
+    .tkg .item-on { fill: var(--t-hi); font-size: 13px; font-weight: 600; }
+    .tkg .section { fill: var(--t-muted); font-size: 12px; font-weight: 500; }
+    .tkg .small { fill: var(--t-hi); font-size: 12.5px; font-weight: 600; }
+    .tkg .cell { fill: var(--t-hi); font-size: 12.5px; }
+    .tkg .num { fill: var(--t-hi); font-family: 'Geist Mono', ui-monospace, monospace; font-size: 12.5px; }
+    .tkg .ref { fill: var(--t-pri); font-family: 'Geist Mono', ui-monospace, monospace; font-size: 12px; font-weight: 500; }
+    .tkg .note { fill: var(--t-muted); font-size: 12px; }
+    .tkg .host { fill: var(--t-muted); font-family: 'Geist Mono', ui-monospace, monospace; font-size: 11.5px; }
+    .tkg .label { fill: var(--t-pri); font-size: 12px; font-weight: 600; }
+    .tkg .icon { stroke: var(--t-muted); stroke-width: 1.6; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+    .tkg .icon-on { stroke: var(--t-pri); stroke-width: 1.6; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+  </style>
+
+  <rect class="window" x="1" y="1" width="838" height="398" rx="14"/>
+  <path class="bar" d="M15 1.5h810a13.5 13.5 0 0 1 13.5 13.5v26.5h-837V15A13.5 13.5 0 0 1 15 1.5z"/>
+  <line class="rule" x1="1" y1="41.5" x2="839" y2="41.5"/>
+  <circle cx="22" cy="21" r="5" fill="#FF6B6B"/><circle cx="38" cy="21" r="5" fill="#FFC94D"/><circle cx="54" cy="21" r="5" fill="#2EC4B6"/>
+  <rect class="box" x="76" y="10" width="300" height="22" rx="11"/>
+  <text class="host" x="92" y="25">tikki.example.com/apps/4</text>
+
+  <!-- The main sidebar, with the Apps menu. -->
+  <path class="nav" d="M1.5 42h200v356.5H15A13.5 13.5 0 0 1 1.5 385z"/>
+  <line class="rule" x1="201.5" y1="42" x2="201.5" y2="399"/>
+  <text class="word" x="20" y="76">tikki</text>
+  <path class="icon" d="M22 102h12v9H22z"/><text class="item" x="44" y="111">My tickets</text>
+  <path class="icon" d="M22 128h12l-2 9h-8z"/><text class="item" x="44" y="137">Inbox</text>
+  <text class="section" x="20" y="176">Apps</text>
+  <rect class="on" x="12" y="186" width="178" height="30" rx="7"/>
+  <circle class="icon-on" cx="29" cy="201" r="7"/><path class="icon-on" d="M29 197v4l3 2"/>
+  <text class="item-on" x="44" y="206">Time tracking</text>
+  <text class="label" x="20" y="244">The Apps menu</text>
+  <text class="note" x="20" y="262">One entry for each app</text>
+  <text class="note" x="20" y="279">with a page, in the order</text>
+  <text class="note" x="20" y="296">of the admin list</text>
+
+  <!-- The page: the app's name as the title, and the frame under it. -->
+  <text class="h1" x="224" y="80">Time tracking</text>
+  <text class="note" x="372" y="80">the app's name, as the page title</text>
+  <rect class="app" x="224" y="98" width="596" height="282" rx="12"/>
+  <text class="small" x="244" y="126">Timesheet</text>
+  <text class="host" x="324" y="126">app.you.com/timesheet?placement=page</text>
+  <rect class="skel" x="244" y="142" width="250" height="26" rx="7"/>
+  <rect class="seg-on" x="247" y="145" width="80" height="20" rx="5"/>
+  <text class="note" x="258" y="159">This week</text><text class="note" x="340" y="159">Last week</text><text class="note" x="420" y="159">This month</text>
+  <line class="rule" x1="244" y1="190.5" x2="800" y2="190.5"/>
+  <text class="ref" x="244" y="214">PAY-1048</text><text class="cell" x="324" y="214">Charged twice for order 5521</text><text class="num" x="800" y="214" text-anchor="end">1h 45m</text>
+  <line class="rule" x1="244" y1="228.5" x2="800" y2="228.5"/>
+  <text class="ref" x="244" y="252">BUG-12</text><text class="cell" x="324" y="252">Checkout page is blank on Safari</text><text class="num" x="800" y="252" text-anchor="end">2h 30m</text>
+  <line class="rule" x1="244" y1="266.5" x2="800" y2="266.5"/>
+  <text class="ref" x="244" y="290">GEN-7</text><text class="cell" x="324" y="290">Export of last month's invoices</text><text class="num" x="800" y="290" text-anchor="end">45m</text>
+  <line class="rule" x1="244" y1="304.5" x2="800" y2="304.5"/>
+  <text class="small" x="244" y="328">Total</text><text class="num" x="800" y="328" text-anchor="end">5h 00m</text>
+  <text class="label" x="244" y="364">Your page fills the main area, outside any ticket</text>
+</svg>

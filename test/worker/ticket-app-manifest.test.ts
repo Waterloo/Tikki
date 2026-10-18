@@ -2,7 +2,7 @@ import { env } from 'cloudflare:workers'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { adminAuditOf, call, postJson, signInAs } from './helpers'
 
-// Issue 40: add a Ticket App from its manifest (ADR 0005, docs/ticket-apps.md#manifest).
+// Issue 40: add a Ticket App from its manifest (ADR 0005, docs/ticket-apps-reference.md#manifest).
 
 type Session = Awaited<ReturnType<typeof signInAs>>
 interface Change { key: string, before: string | null, after: string | null, warning: string | null }
