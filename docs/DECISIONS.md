@@ -78,9 +78,10 @@ Facts verified on 2026-10-18 that the design depends on:
 | 3.27 | A Contact's ticket holds customer data, so only staff and the source Application can read it. "Visible to all internal Users" (3.6) does not show it to Requesters. (issue 12) | Delegated |
 | 3.28 | Deactivation (3.18) also deletes the User's sessions, tokens and Team memberships, and every sign-in method refuses new sessions. Reactivation clears only the flag: the User signs in again, and an Admin adds the User to the Teams again. (issue 20) | Delegated |
 | 3.29 | An Admin cannot deactivate themself. The last active Admin cannot lose the role. The check is part of the UPDATE statement (2.11), so two Admins cannot demote each other at the same time. (issue 20) | Delegated |
-| 3.30 | An invite lets one email outside the allowed domains sign in (3.16). The invited User starts as Requester (3.14). An unused invite expires after 30 days, and "Resend" starts 30 days again. After the first sign-in it never expires. An Admin removes an unused invite and stops a used one by deactivation. (issue 20) | Delegated |
+| 3.30 | An invite lets one email outside the allowed domains sign in (3.16). The invite sets the role and Teams (3.33). An unused invite expires after 30 days, and "Resend" starts 30 days again. After the first sign-in it never expires. An Admin removes an unused invite and stops a used one by deactivation. (issue 20, changed in issue 28) | Delegated |
 | 3.31 | After sign-in, the page goes back only to a path on this site. A path that starts with `//` or `/\` is refused. (issue 17) | Delegated |
 | 3.32 | A Ticket Type can be "Participants only". Its tickets are Restricted tickets: only their Participants and the Admins see them, also when the other person is an Agent. Admins see them, because they manage Erasure, delete and the audit log, and a ticket that one person alone can see is lost when that person leaves. For everyone else a Restricted ticket answers "not found". (issue 27) | Decided |
+| 3.33 | An invite sets the role (Requester by default) and, for Agents and Admins, the Teams. They are applied in the step that creates the User at the first sign-in, so a User never exists with the wrong role. An Admin can also invite an email on an allowed domain, only to set its role and Teams in advance. (issue 28) | Decided |
 
 ## 4. Tickets, types, and fields
 
