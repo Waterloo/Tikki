@@ -60,12 +60,15 @@ Tikki is a remote MCP server at `https://<your-domain>/mcp`. It uses the MCP sta
 | GitHub Copilot in VS Code | In `.vscode/mcp.json`: `"servers": { "tikki": { "type": "http", "url": "https://<your-domain>/mcp" } }` |
 | Cursor | In `~/.cursor/mcp.json`: `"mcpServers": { "tikki": { "url": "https://<your-domain>/mcp" } }` |
 | Other MCP clients | Add a remote server (Streamable HTTP) with the MCP URL. |
+| ChatGPT desktop app, built-in browser (WebMCP) | No connector. Open Tikki in the app's browser and sign in. ChatGPT can then search, open and update tickets in your tab, as you. |
 
 Menus and file formats change often. If a step is different, look in the documentation of your assistant for "remote MCP server". Tikki is tested with Claude. The other clients use the same standard.
 
 Then ask, for example: "The checkout page shows a blank screen on Safari."
 
-The assistant can list and get Ticket Types, create, search and read tickets, add comments and text attachments, and request an upload link. Agents can also change status, priority, type, assignee and Team. The assistant acts as the signed-in user, with that user's permissions. A web-based assistant (claude.ai, ChatGPT) must reach your server on the internet; a local client (Claude Code, Cursor, VS Code) can also use `http://localhost:8787/mcp`.
+Through MCP, the assistant can list and get Ticket Types, create, search and read tickets, add comments and text attachments, and request an upload link. Agents can also change status, priority, type, assignee and Team. The assistant acts as the signed-in user, with that user's permissions. A web-based assistant (claude.ai, ChatGPT) must reach your server on the internet; a local client (Claude Code, Cursor, VS Code) can also use `http://localhost:8787/mcp`.
+
+In the ChatGPT desktop browser, the page gives ChatGPT a smaller set of tools ([WebMCP](docs/research/webmcp.md)): search tickets, open a ticket in your tab, read the ticket you see, add a comment, change its Status (Agents), and create a ticket. Search gives summaries only: ChatGPT reads the full ticket only when your tab shows it. Changes from the assistant, through MCP or the page, show as "AI" in the Activity.
 
 ## Use it from another system
 

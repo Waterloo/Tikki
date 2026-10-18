@@ -35,6 +35,12 @@ export async function deleteOldCounters(db: Db, now = Date.now()) {
   await db.delete(rateCounter).where(lt(rateCounter.window, now - 2 * WINDOW_MS))
 }
 
+/** One AI tool call: through `/mcp`, or a page request with `X-Tikki-Channel: ai`. A write takes both slots. */
+export async function takeToolSlot(db: Db, userId: string, write: boolean): Promise<Limited | null> {
+  return (write ? await takeSlot(db, `mcp-write:${userId}`, USER_MCP_WRITE_LIMIT) : null)
+    ?? await takeSlot(db, `mcp:${userId}`, USER_MCP_LIMIT)
+}
+
 export function limitMessage(what: string, { retryAfter }: Limited) {
   return `Too many ${what}. Try again in ${retryAfter} second${retryAfter === 1 ? '' : 's'}.`
 }

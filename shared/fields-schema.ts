@@ -1,8 +1,16 @@
-import type { FieldView } from './ticket-types'
+// A structural type: the page (WebMCP tools) uses this file too, and must not import server code.
+export interface SchemaField {
+  key: string
+  label: string
+  type: string
+  required: boolean
+  help: string
+  options?: string[]
+}
 
 type JsonSchema = Record<string, unknown>
 
-function fieldSchema(field: FieldView): JsonSchema {
+function fieldSchema(field: SchemaField): JsonSchema {
   const schema: JsonSchema = { title: field.label }
   switch (field.type) {
     case 'short_text': case 'long_text': case 'user': case 'file':
@@ -42,7 +50,7 @@ function fieldSchema(field: FieldView): JsonSchema {
 }
 
 /** The Field values object of one Ticket Type as JSON Schema. Output only: validation uses the Field validator (4.16). */
-export function fieldsToJsonSchema(fields: readonly FieldView[]): JsonSchema {
+export function fieldsToJsonSchema(fields: readonly SchemaField[]): JsonSchema {
   const schema: JsonSchema = {
     $schema: 'https://json-schema.org/draft/2020-12/schema',
     type: 'object',
