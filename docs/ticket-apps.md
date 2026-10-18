@@ -4,13 +4,22 @@ A **Ticket App** is your own web page inside Tikki. Agents use it next to the ti
 
 ## Where your app shows
 
-![A Tikki ticket page with an app as a card in the ticket sidebar and as a tab next to Conversation and Activity, and an app page that opens from the Apps menu of the main sidebar.](assets/ticket-apps-placements.svg)
+An app has up to three placements: a sidebar card and a tab in each ticket, and a page of its own. Each placement has its own URL, so a sidebar card can be a small page that loads fast, and the tab can be a full tool on another host. One app can use one, two or all three. Sizes and loading: [Placements](ticket-apps-reference.md#placements).
+
+### In a ticket
+
+![A Tikki ticket page. The app shows as a card in the ticket sidebar, below Requester, and as a tab next to Conversation and Activity.](assets/ticket-apps-placements.svg)
 
 1. **Sidebar card:** a card in the ticket sidebar, below Requester. For short facts: the plan, the last order, the account status.
 2. **Tab:** a tab after Conversation and Activity. For a full tool: an order history, a refund form.
-3. **Page:** a page in the Apps menu of the main sidebar, outside any ticket. For a tool across tickets: a timesheet, a report.
 
-One app can use one, two or all three placements. Each placement has its own URL, so a sidebar card can be a small page that loads fast, and the tab can be a full tool on another host. The sidebar card and the tab are for Agents and Admins. A page is for Agents and Admins, and also for Requesters when the Admin allows it. Sizes and loading: [Placements](ticket-apps-reference.md#placements).
+The sidebar card and the tab are for Agents and Admins.
+
+### As a page
+
+![A Tikki app page. The main sidebar has an Apps menu with an entry for the app. The page shows the app's name as its title, and the app's frame, a timesheet, fills the main area.](assets/ticket-apps-page.svg)
+
+A page at `/apps/{id}`, outside any ticket, with an entry in the **Apps** menu of the main sidebar. For a tool across tickets: a timesheet, a report. A page is for Agents and Admins, and also for Requesters when the Admin allows it. See [Build a full page](#build-a-full-page).
 
 Typical apps:
 

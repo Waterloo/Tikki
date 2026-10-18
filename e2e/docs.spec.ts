@@ -93,6 +93,7 @@ test('every step-through figure gets its Play button and its list', async ({ pag
   await page.goto('/docs/ticket-apps')
   const figures = page.locator('figure.diagram svg[data-steps]')
   await expect(figures).toHaveCount(4)
+  await expect(page.getByRole('img', { name: /A Tikki app page/ })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Play the steps' })).toHaveCount(4)
   for (const cls of ['tkp', 'tkd', 'tkr', 'tkm']) {
     const steps = Number(await page.locator(`svg.${cls}`).getAttribute('data-steps'))
