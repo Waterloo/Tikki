@@ -44,5 +44,5 @@
   <circle class="icon" cx="30" cy="310" r="9"/><path class="icon" d="M23.6 316.4 36.4 303.6"/>
   <text class="never-title" x="50" y="315">Never with a token</text>
   <text class="never-text" x="50" y="338">Lists or search, a type change, a Team move, a description edit, Participants, attachments,</text>
-  <text class="never-text" x="50" y="358">cancel, delete, revert, or any admin route. People do those in Tikki.</text>
+  <text class="never-text" x="50" y="358">cancel, reopen, delete, revert, or any admin route. People do those in Tikki.</text>
 </svg>

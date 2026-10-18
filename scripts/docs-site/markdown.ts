@@ -95,6 +95,8 @@ export function renderMarkdown(hl: Highlighter, source: string, opts: RenderOpti
   const headings: Heading[] = []
   const marked = new Marked({ gfm: true })
   const dir = posix.dirname(opts.file)
+  // The step figures that checkStepLists found alone in a paragraph, with their list. Any other one fails below.
+  let checkedSteps = new Set<string>()
 
   const href = (link: string) => {
     // `#anchor`, a site path such as `/docs/api`, and web links stay as they are.
@@ -150,6 +152,9 @@ export function renderMarkdown(hl: Highlighter, source: string, opts: RenderOpti
         const target = posix.normalize(posix.join(dir, link))
         if (!/^docs\/assets\/[\w-]+\.svg$/.test(target)) throw new Error(`Docs: ${opts.file} shows "${link}". Only SVG files in docs/assets are allowed.`)
         const svg = readFileSync(join(opts.root, target), 'utf8').replace(/<\?xml[^>]*>\s*/, '')
+        if (/<svg[^>]*\sdata-steps="/.test(svg) && !checkedSteps.has(target)) {
+          throw new Error(`Docs: ${opts.file} shows the step figure ${target} inside other text. Put it alone in a paragraph, with its numbered list after it.`)
+        }
         return `<figure class="diagram" data-scroll-x>${svg.replace('<svg ', `<svg role="img" aria-label="${escapeHtml(text)}" `)}</figure>`
       },
       // A paragraph that holds only an image is the figure, not a <p> around it.
@@ -176,13 +181,14 @@ export function renderMarkdown(hl: Highlighter, source: string, opts: RenderOpti
   }
   // The lead is the first paragraph before the first section, also when a note comes before it.
   const firstSection = after.findIndex(t => t.type === 'heading')
-  const leadAt = after.findIndex((t, i) => t.type === 'paragraph' && (firstSection === -1 || i < firstSection))
+  const imageOnly = (t: Token) => (t as Tokens.Paragraph).tokens?.length === 1 && (t as Tokens.Paragraph).tokens[0]!.type === 'image'
+  const leadAt = after.findIndex((t, i) => t.type === 'paragraph' && !imageOnly(t) && (firstSection === -1 || i < firstSection))
   let lead = ''
   if (leadAt !== -1) {
     lead = marked.parseInline(after[leadAt]!.raw.trim()) as string
     after.splice(leadAt, 1)
   }
-  checkStepLists(opts, after)
+  checkedSteps = checkStepLists(opts, after)
   const body = groupTabs(hl, after) as Token[] & { links: Record<string, never> }
   body.links = Object.create(null)
   const html = marked.parser(body)
@@ -193,7 +199,8 @@ export function renderMarkdown(hl: Highlighter, source: string, opts: RenderOpti
  * A step-through figure (an SVG with `data-steps="N"`) is driven by the numbered list right after it (docs.js). Fails
  * the build when that list is missing or has another number of items, so the figure and its text cannot drift apart.
  */
-function checkStepLists(opts: RenderOptions, tokens: Token[]) {
+function checkStepLists(opts: RenderOptions, tokens: Token[]): Set<string> {
+  const checked = new Set<string>()
   const content = tokens.filter(t => t.type !== 'space')
   content.forEach((t, i) => {
     const image = t.type === 'paragraph' && (t as Tokens.Paragraph).tokens.length === 1 ? (t as Tokens.Paragraph).tokens[0] : undefined
@@ -205,7 +212,9 @@ function checkStepLists(opts: RenderOptions, tokens: Token[]) {
     if (list?.type !== 'list' || !list.ordered || list.items.length !== Number(steps)) {
       throw new Error(`Docs: ${opts.file}: ${target} has ${steps} steps, so a numbered list of ${steps} items must follow it.`)
     }
+    checked.add(target)
   })
+  return checked
 }
 
 /** Inline Markdown (backticks, links) in OpenAPI descriptions. */

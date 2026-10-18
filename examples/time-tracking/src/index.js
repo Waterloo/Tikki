@@ -1,4 +1,4 @@
-// Example Ticket App: Agents log time on a ticket; a timesheet page shows it across tickets. Contract: docs/ticket-apps.md.
+// Example Ticket App: Agents log time on a ticket; a timesheet page shows it across tickets. Contract: docs/ticket-apps-reference.md.
 // Every API call needs a context token. The ticket, the User and the role come only from the checked token.
 import { createRemoteJWKSet, jwtVerify } from 'jose'
 import { sidebarPage, tabPage } from './ticket.js'
@@ -193,7 +193,7 @@ async function timesheetCsv(request, env) {
   })
 }
 
-// For "Add from manifest" in Tikki (docs/ticket-apps.md, Manifest). Relative URLs resolve against this file's URL.
+// For "Add from manifest" in Tikki (docs/ticket-apps-reference.md#manifest). Relative URLs resolve against this file's URL.
 const MANIFEST = {
   tikki_app: 1,
   name: 'Time tracking',

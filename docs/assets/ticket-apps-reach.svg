@@ -10,7 +10,7 @@
     .tkr .cred { fill: var(--t-bg); stroke: var(--t-line); }
     .tkr .tile { fill: var(--t-bg); stroke: var(--t-line); transition: fill 0.2s, stroke 0.2s; }
     .tkr .bar { fill: var(--t-skel); }
-    .tkr .ref { fill: var(--t-hi); font-family: 'Geist Mono', ui-monospace, monospace; font-size: 10.5px; font-weight: 600; }
+    .tkr .ref { fill: var(--t-hi); font-family: 'Geist Mono', ui-monospace, monospace; font-size: 10px; font-weight: 600; }
     .tkr .mark-own { fill: #2EC4B6; }
     .tkr .lock { fill: var(--t-muted); }
     .tkr .lock-loop { stroke: var(--t-muted); stroke-width: 1.5; fill: none; }
@@ -52,13 +52,13 @@
   <g class="step step-3">
     <rect class="cred" x="1" y="168" width="296" height="50" rx="10"/>
     <circle class="dot" cx="24" cy="193" r="10"/><text class="dot-n" x="24" y="197" text-anchor="middle">3</text>
-    <text class="title" x="44" y="189">API key, scope Own</text><text class="note" x="44" y="206">The tickets the Application created</text>
+    <text class="title" x="44" y="189">API key, Own tickets</text><text class="note" x="44" y="206">The tickets the Application created</text>
     <path class="wire" data-path="" d="M300 193C330 193 429.0 209.0 429.0 189.0"/>
   </g>
   <g class="step step-4">
     <rect class="cred" x="1" y="230" width="296" height="50" rx="10"/>
     <circle class="dot" cx="24" cy="255" r="10"/><text class="dot-n" x="24" y="259" text-anchor="middle">4</text>
-    <text class="title" x="44" y="251">API key, scope All</text><text class="note" x="44" y="268">Every ticket that is not deleted</text>
+    <text class="title" x="44" y="251">API key, All tickets</text><text class="note" x="44" y="268">Every ticket that is not deleted</text>
     <path class="wire" data-path="" d="M300 255C330 255 553.0 249.0 563.0 219.0"/>
   </g>
 

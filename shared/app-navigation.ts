@@ -1,4 +1,4 @@
-/** Issue 39: the Tikki paths a Ticket App may open with `tikki:navigate` (docs/ticket-apps.md#messages). */
+/** Issue 39: the Tikki paths a Ticket App may open with `tikki:navigate` (docs/ticket-apps-reference.md#messages). */
 
 const ALLOWED = /^\/(?:tickets|apps)\//
 // Any origin works: only the path is kept.

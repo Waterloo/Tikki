@@ -150,7 +150,7 @@ The context has **no comments, attachments or Participants**. Ask the API for co
 
 ## Tokens
 
-Both tokens are JSON Web Tokens, signed by Tikki. Each lives 5 minutes. `expires_at` in the message tells you when it ends. Ask again with `tikki:fetch-context` before that.
+Tikki makes two kinds of **context token**: the **ticket token** for the sidebar card and the tab, and the **page token** for a page. Both are JSON Web Tokens, signed by Tikki. Each lives 5 minutes. `expires_at` in the message tells you when it ends. Ask again with `tikki:fetch-context` before that.
 
 ### The ticket token
 
@@ -192,7 +192,7 @@ Use any JWT library that reads a JWKS. The keys are at `https://tikki.example.co
 
 ## Scopes
 
-The calls that a ticket token may make, for each access level. How the calls work, with examples: [Change the ticket](ticket-apps.md#change-the-ticket).
+The calls that a ticket token may make, for each access level of the app (`tikki_scope`). How the calls work, with examples: [Change the ticket](ticket-apps.md#change-the-ticket).
 
 | Scope | Allowed calls |
 |---|---|
@@ -200,7 +200,7 @@ The calls that a ticket token may make, for each access level. How the calls wor
 | `comment` | All of `read`, plus `POST /api/v1/tickets/{ref}/comments` |
 | `update` | All of `comment`, plus `PATCH /api/v1/tickets/{ref}` (Status, Priority, assignee and Fields) |
 
-A token never allows: lists or search, a type change, a Team move, a description edit, Participants, attachments, cancel, delete, revert, or any admin route. People do those in Tikki. These routes answer `403`, or `401` for a route that is only for the Tikki web app.
+A token never allows: lists or search, a type change, a Team move, a description edit, Participants, attachments, cancel, reopen, delete, revert, or any admin route. People do those in Tikki. These routes answer `403`, or `401` for a route that is only for the Tikki web app.
 
 Tikki uses the lower of `tikki_scope` and the app's access now. So when an Admin lowers the access, the old tokens lose the higher rights at once.
 
@@ -317,7 +317,7 @@ What Tikki does on its side:
 |---|---|---|
 | Your page sends no message in 10 s | Tikki shows "The app did not answer" with Retry | Send `tikki:fetch-context` at start-up. Keep the first paint fast. Load data after you show something. |
 | The frame is empty | The browser blocked the frame | Allow Tikki's origin in `frame-ancestors`, and remove `X-Frame-Options`. See [Framing](#framing). |
-| Your card is a white box in dark mode | The frame's color scheme differs from Tikki's | Set `color-scheme` from `theme`. |
+| Your card is a white box in dark mode | The frame's color scheme differs from Tikki's | See [Look right in every placement](ticket-apps.md#look-right-in-every-placement). |
 | Token expired | API answers `401` | Send `tikki:fetch-context` and retry once. |
 | Wrong ticket in the URL | `404` | Use `tikki_ticket` from the checked token. |
 | Action outside your scope | `403` with code `FORBIDDEN` | Ask the Admin for a higher access level, or hide the button. |

@@ -108,7 +108,7 @@
     <text class="note" x="676" y="214">Nothing changes without</text>
     <text class="note" x="676" y="231">the Admin</text>
     <path class="wire loop" data-path="" d="M750 263V300H310V266" marker-end="url(#tkm-arrow)"/>
-    <text class="note" x="420" y="318">You change the manifest: Tikki fetches it again</text>
+    <text class="note" x="372" y="318">Only on Check for updates: Tikki fetches the manifest again</text>
   </g>
 
   <circle class="packet" r="5"/>

@@ -44,7 +44,7 @@ Tikki sends every message only to the origin of the app URL (never `'*'`). Tikki
 | Tikki | `{ type: 'tikki:context', data, token }` | Sent when the iframe loads, on `tikki:fetch-context`, and after the ticket changes |
 | app | `{ type: 'tikki:resize', height }` | Sidebar only. Clamped to 120–600 px |
 
-`data` and the message fields are defined in the developer guide, [docs/ticket-apps.md](../ticket-apps.md#the-context). That guide is the contract: build to it, and change it in the same commit if the build must differ. In short: `version`, `app`, `theme`, `agent`, `ticket` (the REST field names and shapes), `requester`, and `expires_at` next to the token. No comments, no attachments, no Participants.
+`data` and the message fields are defined in the developer guide, [docs/ticket-apps.md](../ticket-apps-reference.md#the-context). That guide is the contract: build to it, and change it in the same commit if the build must differ. In short: `version`, `app`, `theme`, `agent`, `ticket` (the REST field names and shapes), `requester`, and `expires_at` next to the token. No comments, no attachments, no Participants.
 
 ### Context token
 

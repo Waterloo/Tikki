@@ -93,7 +93,7 @@ A **Ticket App** is your own web page, shown inside a ticket as a sidebar card, 
 | `comment` | Also add public replies and internal notes |
 | `update` | Also change Status, Priority, assignee and Fields |
 
-Requesters never see Ticket Apps. Your page needs no SDK: about 20 lines of JavaScript.
+Requesters never see the sidebar card or the tab, and see an app page only when the Admin shows it to them. Your page needs no SDK: about 20 lines of JavaScript.
 
 - Developer guide: [docs/ticket-apps.md](docs/ticket-apps.md), also at `/docs/ticket-apps` on your Tikki: a 2-minute start, then one section for each task. The exact values (messages, context, token claims, scopes, manifest, security checklist, errors) are in [docs/ticket-apps-reference.md](docs/ticket-apps-reference.md).
 - Example app: [time tracking](examples/time-tracking/README.md). Agents log time in a sidebar card or a ticket tab; a timesheet page shows the time across tickets.

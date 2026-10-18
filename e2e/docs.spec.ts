@@ -71,15 +71,17 @@ test('search finds a section on another page and opens it', async ({ page }) => 
 
 test('the How it works figure steps through the numbered list', async ({ page }) => {
   await page.goto('/docs/ticket-apps')
-  const svg = page.locator('figure.diagram svg[data-steps]')
-  const steps = page.locator('figure.diagram + .diagram-play + ol > li')
+  const svg = page.locator('svg.tkd')
+  const play = page.locator('figure:has(svg.tkd) + .diagram-play')
+  const steps = page.locator('figure:has(svg.tkd) + .diagram-play + ol > li')
   await expect(svg).toHaveAttribute('role', 'img')
   await expect(svg).not.toHaveAttribute('data-step')
-  await page.getByRole('button', { name: 'Play the steps' }).click()
+  await play.click()
   await expect(svg).toHaveAttribute('data-step', '1')
   await expect(steps.nth(0)).toHaveClass(/step-on/)
   await expect(svg).toHaveAttribute('data-step', '2', { timeout: 3000 })
-  await page.getByRole('button', { name: 'Stop', exact: true }).click()
+  await expect(play).toHaveAccessibleName('Stop')
+  await play.click()
   await expect(svg).not.toHaveAttribute('data-step')
 
   await steps.nth(2).hover()
@@ -92,6 +94,10 @@ test('every step-through figure gets its Play button and its list', async ({ pag
   const figures = page.locator('figure.diagram svg[data-steps]')
   await expect(figures).toHaveCount(4)
   await expect(page.getByRole('button', { name: 'Play the steps' })).toHaveCount(4)
+  for (const cls of ['tkp', 'tkd', 'tkr', 'tkm']) {
+    const steps = Number(await page.locator(`svg.${cls}`).getAttribute('data-steps'))
+    await expect(page.locator(`figure:has(svg.${cls}) + .diagram-play + ol > li`), cls).toHaveCount(steps)
+  }
   const reach = page.locator('svg.tkr')
   await page.locator('figure:has(svg.tkr) + .diagram-play + ol > li').nth(1).hover()
   await expect(reach).toHaveAttribute('data-step', '2')
