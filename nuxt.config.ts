@@ -19,6 +19,12 @@ export default defineNuxtConfig({
       icons: ['lucide:bug', 'lucide:credit-card', 'lucide:database', 'lucide:key-round', 'lucide:user', 'lucide:circle-help', 'lucide:life-buoy', 'lucide:ticket'],
     },
   },
+  routeRules: {
+    // Not `immutable`: Vite names a chunk before it writes the CSS file names into it, so a chunk can keep its name
+    // while its content changes. A cached old copy then loads the old stylesheet next to the new one. Revalidating
+    // costs a 304 from Workers static assets, without the Worker.
+    '/_nuxt/**': { headers: { 'cache-control': 'public, max-age=0, must-revalidate' } },
+  },
   nitro: {
     preset: 'cloudflare-module',
     // Puts the upload routes in front of Nitro, which would buffer the body (server/utils/upload.ts).

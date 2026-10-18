@@ -18,8 +18,9 @@ const ROLES: { label: string, value: Role }[] = [
   { label: 'Agent', value: 'agent' },
   { label: 'Requester', value: 'requester' },
 ]
-// One grid for the header and the rows. Below `lg` each row becomes a card.
-const COLUMNS = 'lg:grid-cols-[minmax(220px,1.6fr)_150px_minmax(120px,1fr)_110px_110px_230px]'
+// One grid for the header and the rows. It follows the width of the Users section, not of the window, because the
+// sidebar takes part of the window. Below `@4xl` (56rem) each row becomes a card. The fixed columns fit in 56rem.
+const COLUMNS = '@4xl:grid-cols-[minmax(0,1.6fr)_130px_minmax(0,1fr)_90px_100px_230px]'
 
 const toast = useToast()
 const { user: me } = useCurrentUser()
@@ -128,7 +129,7 @@ onMounted(load)
   <AppPage id="people" title="Teams and users">
     <PageHeader
       title="Teams and users"
-      subtitle="People sign in with their work account. New people start as requesters. Give agents a team so they get its tickets."
+      subtitle="People sign in with their work account. New people start as requesters, unless their invite sets a role. Give agents a team so they get its tickets."
       :breadcrumb="[{ label: 'Admin' }, { label: 'Teams and users' }]"
     >
       <template #actions>
@@ -157,18 +158,18 @@ onMounted(load)
         <span class="text-[13px] text-(--ui-text-muted)">Set in the deployment settings.</span>
       </section>
 
-      <section aria-labelledby="users-h" class="rounded-[14px] border border-(--ui-border) bg-(--ui-bg) p-2">
+      <section aria-labelledby="users-h" class="@container rounded-[14px] border border-(--ui-border) bg-(--ui-bg) p-2">
         <h2 id="users-h" class="px-3.5 pt-2.5 pb-1.5 text-[15px] font-semibold text-(--ui-text-highlighted)">
           Users
         </h2>
-        <div class="hidden lg:grid items-center gap-4 px-3.5 min-h-10 text-[13px] text-(--ui-text-muted)" :class="COLUMNS" aria-hidden="true">
+        <div class="hidden @4xl:grid items-center gap-4 px-3.5 min-h-10 text-[13px] text-(--ui-text-muted)" :class="COLUMNS" aria-hidden="true">
           <span>Person</span><span>Role</span><span>Teams</span><span>Status</span><span>Last active</span><span />
         </div>
         <ul>
           <li
             v-for="p in people"
             :key="rowKey(p)"
-            class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2 px-3.5 py-3 lg:py-2 lg:min-h-[60px] border-t border-(--ui-border-muted) text-sm"
+            class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2 px-3.5 py-3 @4xl:py-2 @4xl:min-h-[60px] border-t border-(--ui-border-muted) text-sm"
             :class="COLUMNS"
           >
             <span class="flex items-center gap-2.5 min-w-0">
@@ -181,7 +182,7 @@ onMounted(load)
                 <span v-if="p.name" class="text-[13px] text-(--ui-text-muted) truncate">{{ p.email }}</span>
               </span>
             </span>
-            <span class="col-start-2 row-start-1 lg:col-start-auto lg:row-start-auto justify-self-end lg:justify-self-start">
+            <span class="col-start-2 row-start-1 @4xl:col-start-auto @4xl:row-start-auto justify-self-end @4xl:justify-self-start">
               <USelect
                 v-if="p.id"
                 :model-value="p.role"
@@ -193,7 +194,7 @@ onMounted(load)
               />
               <span v-else class="text-(--ui-text-muted)">{{ ROLES.find(r => r.value === p.role)?.label }}</span>
             </span>
-            <span class="col-span-2 lg:col-span-1 flex flex-wrap gap-1">
+            <span class="col-span-2 @4xl:col-span-1 flex flex-wrap gap-1">
               <template v-if="p.teams.length">
                 <UBadge v-for="t in p.teams" :key="t.id" color="primary" variant="subtle">
                   {{ t.name }}
@@ -206,7 +207,7 @@ onMounted(load)
               <time v-if="p.last_active_at" :datetime="p.last_active_at">{{ timeAgo(p.last_active_at) }}</time>
               <template v-else>{{ p.status === 'active' ? 'Not yet' : '—' }}</template>
             </span>
-            <span class="col-span-2 lg:col-span-1 flex justify-end gap-2">
+            <span class="col-span-2 @4xl:col-span-1 flex justify-end gap-2">
               <template v-if="p.id">
                 <UButton v-if="p.status === 'deactivated'" color="neutral" variant="outline" size="sm" :loading="busyId === rowKey(p)" @click="setActive(p, true)">
                   Reactivate
