@@ -95,7 +95,7 @@ An Admin opens **Ticket Apps** in Tikki and fills in:
 | Setting | Values | Notes |
 |---|---|---|
 | Name | Text | Shown as the card title or the tab name. Keep it short: "Orders". |
-| URL | `https://...` | The page Tikki loads. Its **origin** is the token audience. `http://localhost` works only on a development instance. |
+| URL | `https://...` | The page Tikki loads. Its **origin** is the token audience. `http://localhost` works only on a development or test instance. It cannot be on Tikki's own origin. |
 | Position | `sidebar` or `tab` | See [Positions](#positions). |
 | Show on | "All Ticket Types", or "Only these types" with a checklist | For example, check "Data request" and "Payment issue". "All Ticket Types" also covers types added later. |
 | Access | `read`, `comment` or `update` | What your backend may do with the token. Default `read`. See [scopes](#scopes). |
@@ -133,7 +133,7 @@ All messages are plain objects with a `type`. Always pass Tikki's origin as the 
 
 | `type` | Fields | Effect |
 |---|---|---|
-| `tikki:fetch-context` | — | Tikki answers with `tikki:context`. Use it at start-up and when your token is close to expiry. |
+| `tikki:fetch-context` | — | Tikki answers with `tikki:context`. Use it at start-up and when your token is close to expiry. Send a first message within 10 s of load, or Tikki shows "The app did not answer". |
 | `tikki:resize` | `height` (number, px) | Sidebar only. Tikki clamps it to 120–600. Ignored for tabs. |
 | `tikki:refresh` | — | Tikki reloads the ticket. Send it after your backend changed the ticket. |
 
@@ -317,7 +317,7 @@ What Tikki does on its side:
 
 | Situation | What happens | What to do |
 |---|---|---|
-| Your page does not load in 10 s | Tikki shows "The app did not answer" with Retry | Keep the first paint fast. Load data after you show something. |
+| Your page sends no message in 10 s | Tikki shows "The app did not answer" with Retry | Send `tikki:fetch-context` at start-up. Keep the first paint fast. Load data after you show something. |
 | Token expired | API answers `401` | Send `tikki:fetch-context` and retry once. |
 | Wrong ticket in the URL | `404` | Use `tikki_ticket` from the checked token. |
 | Action outside your scope | `403` with code `FORBIDDEN` | Ask the Admin for a higher access level, or hide the button. |

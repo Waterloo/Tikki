@@ -25,7 +25,7 @@ export default defineConfig({
       dependencies: ['setup'],
     },
   ],
-  webServer: {
+  webServer: [{
     // RATE_LIMITS:off keeps the many fast requests of the suite from hitting the limits (allowed only in development and test).
     // Fresh state on each run. The secret is fixed here, because CI has no .dev.vars.
     // The server output goes to a file: e2e/mail.ts reads the sign-in codes from it.
@@ -39,5 +39,10 @@ export default defineConfig({
     url: `http://localhost:${PORT}/sign-in`,
     timeout: 300_000,
     reuseExistingServer: false,
-  },
+  }, {
+    // The test Ticket App, on another origin (e2e/ticket-app.ts).
+    command: 'node e2e/ticket-app-server.mjs',
+    url: `http://localhost:${Number(process.env.E2E_APP_PORT ?? PORT + 100)}/health`,
+    reuseExistingServer: false,
+  }],
 })

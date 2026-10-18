@@ -26,7 +26,7 @@ Most ticketing tools give you a large product and many settings. Tikki gives you
 | Protect | Tickets of a "Participants only" type are visible only to the people on the ticket and to Admins. Requesters never see internal comments. |
 | Attach | Files up to 25 MB in R2. The AI assistant can attach text, or give the user an upload link. |
 | Notify | An in-app Inbox for every user. Email when it is configured. |
-| Integrate | Signed webhooks (Standard Webhooks) with the ticket `before` and `after`, delivered at least once. Each Application gets only the Events for its own tickets. |
+| Integrate | Signed webhooks (Standard Webhooks) with the ticket `before` and `after`, delivered at least once. Each Application gets only the Events for its own tickets. Ticket Apps show your own pages inside the ticket, for Agents ([guide](docs/ticket-apps.md)). |
 | Audit | One audit log for ticket changes and admin changes. Each entry shows who made the change (a user or an Application) and the channel (web, AI or API). |
 | Erase | Admins can hide a ticket and restore it. Erasing a Contact removes the Contact's personal data from tickets, comments and the audit log. |
 

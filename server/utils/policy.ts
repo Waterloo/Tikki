@@ -149,6 +149,11 @@ export function authorizeListAssignees(principal: Principal): Refusal | null {
   return isStaff(principal) ? null : { status: 403, code: 'FORBIDDEN', message: 'Only Agents can see who a ticket can be assigned to.' }
 }
 
+/** Ticket Apps and their context tokens are for staff only (ADR 0004). Which ticket is the read rule. */
+export function authorizeTicketApps(principal: Principal): Refusal | null {
+  return isStaff(principal) ? null : { status: 403, code: 'FORBIDDEN', message: 'Only Agents and Admins can use Ticket Apps.' }
+}
+
 /** Null when the Principal may list tickets. Which tickets is `readableTickets`. */
 export function authorizeList(principal: Principal): Refusal | null {
   return principal.kind === 'application' && !has(principal, 'tickets:read') ? missing('tickets:read') : null

@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { createJiti } from 'jiti'
 
@@ -41,6 +42,8 @@ export default defineNuxtConfig({
         const { buildOpenApiDocument } = await createJiti(import.meta.url).import<typeof import('./server/utils/openapi')>('./server/utils/openapi')
         return `export default ${JSON.stringify(JSON.stringify(buildOpenApiDocument()))}`
       },
+      // The Ticket Apps guide, served by server/api/docs/ticket-apps.md.get.ts.
+      '#ticket-apps-guide': () => `export default ${JSON.stringify(readFileSync(new URL('./docs/ticket-apps.md', import.meta.url), 'utf8'))}`,
     },
     // Workers static assets serve the SPA shell, so the Worker never renders HTML.
     prerender: { routes: ['/'] },
