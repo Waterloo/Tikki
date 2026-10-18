@@ -288,6 +288,9 @@ export const application = sqliteTable('application', {
   ticketTypeIds: text('ticket_type_ids', { mode: 'json' }).$type<number[]>().notNull().default([]),
   // Null while enabled. A disabled Application's keys are refused at once.
   disabledAt: integer('disabled_at', { mode: 'timestamp_ms' }),
+  // Requests a minute for each Application (all its keys together), and how many of them may be ticket creates (issue 23).
+  rateLimit: integer('rate_limit').notNull().default(60),
+  createLimit: integer('create_limit').notNull().default(10),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(() => new Date()),
 })
 
@@ -412,3 +415,12 @@ export const notificationMail = sqliteTable('notification_mail', {
   notificationId: integer('notification_id').primaryKey().references(() => notification.id, { onDelete: 'cascade' }),
   at: integer('at', { mode: 'timestamp_ms' }).notNull(),
 })
+
+// Issue 23: rate limits
+
+/** Fixed-window counters. `window` is the start of the minute in ms. Old windows are deleted by the cron. */
+export const rateCounter = sqliteTable('rate_counter', {
+  key: text('key').notNull(),
+  window: integer('window').notNull(),
+  count: integer('count').notNull(),
+}, t => [primaryKey({ columns: [t.key, t.window] })])

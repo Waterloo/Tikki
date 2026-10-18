@@ -28,6 +28,8 @@ export interface ApplicationSummary {
 }
 
 export interface ApplicationDetail extends ApplicationSummary {
+  rate_limit: number
+  create_limit: number
   permissions: Permission[]
   ticket_types: { id: number, name: string, prefix: string, icon: string, color: string }[]
   keys: ApiKey[]

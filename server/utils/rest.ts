@@ -3,6 +3,7 @@ import { ApplicationInputError, principalForKey } from './applications'
 import type { Role } from './auth'
 import { db, useAuth } from './services'
 import { RevertRefusal } from './activity'
+import { limitMessage, takeSlot, USER_WEB_LIMIT, type Limited } from './rate-limit'
 import { PeopleError } from './people'
 import { authorizeManagePeople, isAdmin, NOT_FOUND, PolicyRefusal } from './policy'
 import { TypeAdminError } from './ticket-type-admin'
@@ -13,10 +14,19 @@ export function apiError(status: number, code: string, message: string, details?
   return Response.json({ error: { code, message, details: details ?? null } }, { status })
 }
 
+/** 429 with `Retry-After`, in the standard error format. */
+export function rateLimited(what: string, limited: Limited): Response {
+  const res = apiError(429, 'RATE_LIMITED', limitMessage(what, limited))
+  res.headers.set('retry-after', String(limited.retryAfter))
+  return res
+}
+
 /** The User of the web session. For routes that an Application must never use. */
 export async function sessionPrincipal(event: H3Event): Promise<UserPrincipal | Response> {
   const session = await useAuth().api.getSession({ headers: event.headers })
   if (!session) return apiError(401, 'UNAUTHENTICATED', 'Sign in first.')
+  const limited = await takeSlot(db, `user:${session.user.id}`, USER_WEB_LIMIT)
+  if (limited) return rateLimited('requests', limited)
   return { kind: 'user', userId: session.user.id, role: session.user.role as Role, channel: 'web' }
 }
 
@@ -30,7 +40,15 @@ export async function restPrincipal(event: H3Event): Promise<Principal | Respons
   if (authorization === null) return sessionPrincipal(event)
   const key = /^Bearer\s+(\S+)$/i.exec(authorization)?.[1]
   const check = key ? await principalForKey(db, key) : { ok: false as const, reason: 'invalid' as const }
-  if (check.ok) return check.principal
+  if (check.ok) {
+    const { applicationId } = check.principal
+    // A create counts in both limits, so the create limit is checked first and cannot be used up by refused calls.
+    const isCreate = event.method === 'POST' && event.path.split('?')[0] === '/api/v1/tickets'
+    const limited = (isCreate ? await takeSlot(db, `app-create:${applicationId}`, check.limits.creates) : null)
+      ?? await takeSlot(db, `app:${applicationId}`, check.limits.requests)
+    if (limited) return rateLimited('requests', limited)
+    return check.principal
+  }
   if (check.reason === 'disabled') return apiError(403, 'APPLICATION_DISABLED', 'This Application is disabled. An Admin can enable it again.')
   return apiError(401, 'UNAUTHENTICATED', 'The API key is not valid. It may be revoked. Send it as "Authorization: Bearer gt_live_...".')
 }
