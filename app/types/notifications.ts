@@ -2,7 +2,7 @@
 
 import type { Priority } from './tickets'
 
-export type NoticeKind = 'ticket_created' | 'assigned' | 'public_comment' | 'internal_comment' | 'status_changed' | 'webhook_failing' | 'webhook_disabled'
+export type NoticeKind = 'ticket_created' | 'assigned' | 'public_comment' | 'internal_comment' | 'status_changed' | 'webhook_failing' | 'webhook_disabled' | 'moved_to_team'
 
 export interface Notice {
   id: number

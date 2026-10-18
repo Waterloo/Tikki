@@ -20,7 +20,11 @@ const statuses = ref<Status[]>([])
 const state = ref<'loading' | 'ready' | 'not-found' | 'error'>('loading')
 const attachments = ref<Attachment[]>([])
 const attachmentsState = ref<'loading' | 'ready' | 'error'>('loading')
-const saving = ref<'status' | 'priority' | 'assignee' | 'type' | null>(null)
+const saving = ref<'status' | 'priority' | 'assignee' | 'team' | 'type' | null>(null)
+// Who can be assigned, and the Teams to move to (staff only). It is a help: the buttons work without it.
+interface Assignable { id: string, name: string, email: string, team_ids: number[] }
+const people = ref<{ data: Assignable[], teams: { id: number, name: string }[] } | null>(null)
+const peopleState = ref<'idle' | 'loading' | 'error'>('idle')
 // The type picker is open when `typeChoice` is not null. Types load on first open.
 const typeChoice = ref<number | null>(null)
 const types = ref<{ label: string, value: number }[]>([])
@@ -54,6 +58,7 @@ async function load() {
     ticket.value = t
     state.value = 'ready'
     loadAttachments(t.ref)
+    if ((can('assign') || can('move_team')) && !people.value) loadPeople()
     // An old prefix or a bare number still opens the ticket (4.9a); the address then shows the current reference.
     if (route.params.ref !== t.ref) router.replace(`/tickets/${t.ref}`)
   } catch (e) {
@@ -73,7 +78,17 @@ async function loadAttachments(ref: string) {
   }
 }
 
-async function save(field: 'status' | 'priority' | 'assignee' | 'type', body: Record<string, unknown>, done: string) {
+async function loadPeople() {
+  peopleState.value = 'loading'
+  try {
+    people.value = await $fetch<NonNullable<typeof people.value>>('/api/v1/assignees')
+    peopleState.value = 'idle'
+  } catch {
+    peopleState.value = 'error'
+  }
+}
+
+async function save(field: 'status' | 'priority' | 'assignee' | 'team' | 'type', body: Record<string, unknown>, done: string) {
   if (!ticket.value || saving.value) return
   saving.value = field
   try {
@@ -107,6 +122,34 @@ function changePriority(value: Priority) {
 
 function assignToMe() {
   if (user.value) save('assignee', { assignee_id: user.value.id }, 'Assigned to you')
+}
+
+// The members of the ticket's Team come first.
+type AssignItem = { label: string, description?: string, value: string }
+const assignItems = computed<(AssignItem | { type: 'label', label: string })[]>(() => {
+  const all = people.value?.data ?? []
+  const teamId = ticket.value?.team.id
+  const members = all.filter(p => teamId !== undefined && p.team_ids.includes(teamId))
+  const others = all.filter(p => !members.includes(p))
+  const item = (p: Assignable) => ({ label: displayName(p), description: displayName(p) === p.email ? undefined : p.email, value: p.id })
+  return [
+    ...(members.length ? [{ type: 'label' as const, label: `${ticket.value!.team.name} members` }, ...members.map(item)] : []),
+    ...(others.length ? [{ type: 'label' as const, label: members.length ? 'Other Agents' : 'Agents' }, ...others.map(item)] : []),
+  ]
+})
+const assigneeItem = computed(() => assignItems.value.find((i): i is AssignItem => 'value' in i && i.value === ticket.value?.assignee?.id))
+const teamItems = computed(() => (people.value?.teams ?? []).map(t => ({ label: t.name, value: t.id })))
+
+function assignTo(item: typeof assignItems.value[number]) {
+  if (!('value' in item) || item.value === ticket.value?.assignee?.id) return
+  const id = item.value
+  const person = people.value?.data.find(p => p.id === id)
+  save('assignee', { assignee_id: id }, person ? `Assigned to ${displayName(person)}` : 'Assigned')
+}
+
+function moveTeam(id: number) {
+  if (id === ticket.value?.team.id) return
+  save('team', { team_id: id }, `Moved to ${people.value?.teams.find(t => t.id === id)?.name ?? 'the Team'}`)
 }
 
 function unassign() {
@@ -452,11 +495,38 @@ onMounted(load)
                   </UButton>
                 </template>
               </div>
+              <template v-if="can('assign')">
+                <USelectMenu
+                  :model-value="assigneeItem"
+                  :items="assignItems"
+                  placeholder="Assign to someone else"
+                  aria-label="Assign to"
+                  :loading="peopleState === 'loading' || saving === 'assignee'"
+                  :disabled="saving !== null || peopleState !== 'idle'"
+                  class="w-full"
+                  @update:model-value="assignTo"
+                />
+                <p v-if="peopleState === 'error'" class="text-[13px] text-(--ui-error)" role="alert">
+                  The list of people could not be loaded.
+                  <button type="button" class="underline" @click="loadPeople">Try again</button>
+                </p>
+              </template>
             </div>
 
             <div class="flex flex-col gap-1.5">
-              <span class="text-[13px] text-(--ui-text-muted)">Team</span>
-              <span class="text-sm text-(--ui-text-highlighted)">{{ ticket.team.name }}</span>
+              <label v-if="can('move_team')" for="ticket-team" class="text-[13px] text-(--ui-text-muted)">Team</label>
+              <span v-else class="text-[13px] text-(--ui-text-muted)">Team</span>
+              <USelect
+                v-if="can('move_team') && teamItems.length"
+                id="ticket-team"
+                :model-value="ticket.team.id"
+                :items="teamItems"
+                :loading="saving === 'team'"
+                :disabled="saving !== null"
+                class="w-full"
+                @update:model-value="moveTeam"
+              />
+              <span v-else class="text-sm text-(--ui-text-highlighted)">{{ ticket.team.name }}</span>
             </div>
 
             <div class="flex flex-col gap-1.5">

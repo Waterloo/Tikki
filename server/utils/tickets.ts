@@ -73,6 +73,8 @@ export interface TicketSummary {
   /** Null for an Application: it learns only `assigned`, not the staff member. */
   assignee: PersonView | null
   assigned: boolean
+  /** The ticket's own Team (4.13a). Absent for an Application: staff structure is private (issue 13). */
+  team?: { id: number, name: string }
   channel: Channel
   /** The Application that created the ticket, for tickets from the API. */
   application: { id: number, name: string } | null
@@ -96,7 +98,6 @@ export interface TicketDetail extends TicketSummary {
   schema_version: number
   fields: FieldValues
   schema_fields: SchemaFieldView[]
-  team: { id: number, name: string }
   /** The comments the Principal can see. Internal Comments count only for Users who can see them. */
   comment_count: number
   /** The old ticket, when a Requester reopened it after the 14 days (4.22). */
@@ -112,12 +113,13 @@ export interface TicketDetail extends TicketSummary {
 import { applicationTicketInput, contactInput, contactPart, coreInput, ticketTextInput, typeInput } from './ticket-input'
 export { applicationTicketInput, contactInput, coreInput, ticketTextInput, typeInput }
 
-const UPDATABLE = { status: 'change_status', priority: 'change_priority', assignee_id: 'assign', fields: 'edit_fields', description: 'edit_description' } as const satisfies Record<string, TicketAction>
+const UPDATABLE = { status: 'change_status', priority: 'change_priority', assignee_id: 'assign', team_id: 'move_team', fields: 'edit_fields', description: 'edit_description' } as const satisfies Record<string, TicketAction>
 
 const updateInput = z.strictObject({
   status: z.string({ error: 'Must be a Status key.' }).min(1, 'Must be a Status key.').optional(),
   priority: z.enum(PRIORITIES, { error: 'Must be one of the options.' }).optional(),
   assignee_id: z.string({ error: 'Must be a User ID, or null to unassign.' }).min(1, 'Must be a User ID, or null to unassign.').nullable().optional(),
+  team_id: z.number({ error: 'Must be a Team ID.' }).int('Must be a Team ID.').positive('Must be a Team ID.').optional(),
   // Not `ticketTextInput.shape.description`: its default would clear the description when none is sent.
   description: z.string({ error: 'Must be text.' }).trim().max(20_000, 'Description must be 20000 characters or fewer.').optional(),
   // Only the Fields that are sent change. An empty value clears the Field.
@@ -137,6 +139,7 @@ const coreLabels: Record<string, string> = {
   fields: 'Fields',
   status: 'Status',
   assignee_id: 'Assignee',
+  team_id: 'Team',
 }
 
 /** Errors for the core attributes use the attribute name as `key`, so Field Keys must not reuse these names. */
@@ -197,6 +200,8 @@ const summaryColumns = {
   assigneeId: assignee.id,
   assigneeName: assignee.name,
   assigneeEmail: assignee.email,
+  teamId: team.id,
+  teamName: team.name,
 }
 
 const detailColumns = {
@@ -205,8 +210,6 @@ const detailColumns = {
   schemaVersion: ticket.schemaVersion,
   fields: ticket.fields,
   reopenedFrom: ticket.reopenedFrom,
-  teamId: team.id,
-  teamName: team.name,
   // JSON array text. Only the detail needs it: lists use the SQL form of the read rule.
   participantIds: sql<string>`(SELECT json_group_array(${ticketParticipant.userId}) FROM ${ticketParticipant} WHERE ${ticketParticipant.ticketNumber} = ${ticket.number})`,
 }
@@ -220,6 +223,7 @@ function selectSummaries(db: Db, where: SQL | undefined) {
     .leftJoin(contact, eq(ticket.contactId, contact.id))
     .leftJoin(source, eq(contact.applicationId, source.id))
     .leftJoin(assignee, eq(ticket.assigneeId, assignee.id))
+    .leftJoin(team, eq(ticket.teamId, team.id))
     .where(where)
 }
 
@@ -231,7 +235,7 @@ function selectDetail(db: Db, number: number) {
     .leftJoin(contact, eq(ticket.contactId, contact.id))
     .leftJoin(source, eq(contact.applicationId, source.id))
     .leftJoin(assignee, eq(ticket.assigneeId, assignee.id))
-    .leftJoin(team, eq(ticketType.teamId, team.id))
+    .leftJoin(team, eq(ticket.teamId, team.id))
     .where(eq(ticket.number, number))
     .limit(1)
 }
@@ -253,6 +257,7 @@ function toSummary(row: SummaryRow): TicketSummary {
   if (row.statusKey === null || row.statusName === null || row.statusCategory === null) {
     throw new Error(`Ticket ${row.number} has no Status. Every ticket must have one (4.10).`)
   }
+  if (row.teamId === null || row.teamName === null) throw new Error(`Ticket ${row.number} has no Team. Every ticket must have one (4.13a).`)
   return {
     number: row.number,
     ref: `${row.prefix}-${row.number}`,
@@ -263,6 +268,7 @@ function toSummary(row: SummaryRow): TicketSummary {
     requester: toRequester(row),
     assignee: row.assigneeId === null ? null : { id: row.assigneeId, name: row.assigneeName ?? '', email: row.assigneeEmail ?? '' },
     assigned: row.assigneeId !== null,
+    team: { id: row.teamId, name: row.teamName },
     channel: row.channel,
     application: row.applicationId === null ? null : { id: row.applicationId, name: row.applicationName! },
     created_at: row.createdAt.toISOString(),
@@ -272,7 +278,9 @@ function toSummary(row: SummaryRow): TicketSummary {
 
 /** An Application learns whether a ticket has an assignee, never who it is. */
 function forViewer(principal: Principal, summary: TicketSummary): TicketSummary {
-  return principal.kind === 'application' ? { ...summary, assignee: null } : summary
+  if (principal.kind !== 'application') return summary
+  const { team: _team, ...rest } = summary
+  return { ...rest, assignee: null }
 }
 
 export function policyFacts(row: Pick<DetailRow, 'requesterId' | 'applicationId' | 'assigneeId' | 'visibility' | 'participantIds' | 'statusKey' | 'statusCategory' | 'deletedAt'>): PolicyTicket {
@@ -298,7 +306,6 @@ export async function pinnedFields(db: Db, row: Pick<DetailRow, 'number' | 'type
 }
 
 async function toDetail(db: Db, principal: Principal, row: DetailRow): Promise<TicketDetail> {
-  if (row.teamId === null || row.teamName === null) throw new Error(`Ticket Type ${row.prefix} has no Team. Every type must have one (4.13).`)
   const [fields, [comments], [origin]] = await Promise.all([
     pinnedFields(db, row),
     db.select({ n: count() }).from(comment)
@@ -317,7 +324,6 @@ async function toDetail(db: Db, principal: Principal, row: DetailRow): Promise<T
       key: f.key, label: f.label, type: f.type, required: f.required, help: f.help,
       ...(f.options ? { options: activeOptions(f) } : {}),
     })),
-    team: { id: row.teamId, name: row.teamName },
     comment_count: comments!.n,
     reopened_from: row.reopenedFrom === null ? null : { number: row.reopenedFrom, ref: `${origin?.prefix ?? '?'}-${row.reopenedFrom}` },
     allowed_actions: allowedActions(principal, policyFacts(row)),
@@ -376,6 +382,7 @@ async function checkNewTicket(db: Db, principal: Principal, input: unknown, extr
   return {
     values: {
       ticketTypeId: found.type.id,
+      teamId: found.type.team.id,
       schemaVersion: found.version.version,
       title: core.data.title,
       description: core.data.description,
@@ -511,6 +518,8 @@ export interface ListFilter {
   requesterIsMe?: boolean
   /** `me`: assigned to the Principal. `none`: unassigned. Any other value is a User ID. */
   assignee?: string
+  /** The ticket's own Team, not the Team of its type. */
+  teamId?: number
   /** Words in the title or description, or a Ticket Reference. Every word must match. */
   search?: string
   ticketTypeId?: number
@@ -574,6 +583,7 @@ function filterCondition(principal: Principal, filter: ListFilter): SQL | undefi
     assignee === 'none' ? isNull(ticket.assigneeId) : assignee ? eq(ticket.assigneeId, assignee) : undefined,
     filter.search ? searchCondition(filter.search) : undefined,
     filter.ticketTypeId !== undefined ? eq(ticket.ticketTypeId, filter.ticketTypeId) : undefined,
+    filter.teamId !== undefined ? eq(ticket.teamId, filter.teamId) : undefined,
     filter.priority ? eq(ticket.priority, filter.priority) : undefined,
     ...(filter.fields ?? []).map(f => fieldCondition(f.key, f.value)),
     filter.openOnly ? ne(status.category, 'done') : undefined,
@@ -675,8 +685,13 @@ export async function updateTicket(db: Db, principal: Principal, number: number,
     }
   }
   if (changes.assignee_id) {
-    const [target] = await db.select({ role: user.role }).from(user).where(eq(user.id, changes.assignee_id)).limit(1)
-    if (!target || !canBeAssignee(target.role)) errors.push({ key: 'assignee_id', label: 'Assignee', reason: 'Must be the ID of an Agent or Admin.' })
+    const [target] = await db.select({ role: user.role, deactivatedAt: user.deactivatedAt }).from(user).where(eq(user.id, changes.assignee_id)).limit(1)
+    if (!target || target.deactivatedAt !== null || !canBeAssignee(target.role)) errors.push({ key: 'assignee_id', label: 'Assignee', reason: 'Must be the ID of an active Agent or Admin.' })
+  }
+  let nextTeam: TeamRef | undefined
+  if (changes.team_id !== undefined) {
+    nextTeam = await findTeam(db, changes.team_id)
+    if (!nextTeam) errors.push({ key: 'team_id', label: 'Team', reason: 'No Team has this ID.' })
   }
   let nextFields: FieldValues | undefined
   if (changes.fields !== undefined) {
@@ -715,6 +730,10 @@ export async function updateTicket(db: Db, principal: Principal, number: number,
     set.assigneeId = changes.assignee_id
     entries.push({ action: 'assignee_changed', before: row.assigneeId, after: changes.assignee_id })
   }
+  if (nextTeam && nextTeam.id !== row.teamId) {
+    set.teamId = nextTeam.id
+    entries.push(teamEntry({ id: row.teamId!, name: row.teamName! }, nextTeam))
+  }
   if (changes.description !== undefined && changes.description !== row.description) {
     set.description = changes.description
     entries.push({ action: 'description_changed', before: row.description, after: changes.description })
@@ -732,9 +751,21 @@ export async function updateTicket(db: Db, principal: Principal, number: number,
   return getTicket(db, principal, number)
 }
 
+export interface TeamRef { id: number, name: string }
+
+export async function findTeam(db: Db, id: number): Promise<TeamRef | undefined> {
+  const [found] = await db.select({ id: team.id, name: team.name }).from(team).where(eq(team.id, id)).limit(1)
+  return found
+}
+
+/** Ids and names, so the entry stays readable after a rename or a removal of the Team. */
+export function teamEntry(from: TeamRef, to: TeamRef): ChangeEntry {
+  return { action: 'team_changed', before: from, after: to }
+}
+
 /** One change of one value, for the audit log. `before` and `after` are the real values, `null` for none. */
 export interface ChangeEntry {
-  action: Extract<AuditAction, 'status_changed' | 'priority_changed' | 'assignee_changed' | 'field_changed' | 'type_changed' | 'description_changed' | 'ticket_cancelled' | 'ticket_reopened'>
+  action: Extract<AuditAction, 'status_changed' | 'priority_changed' | 'assignee_changed' | 'team_changed' | 'field_changed' | 'type_changed' | 'description_changed' | 'ticket_cancelled' | 'ticket_reopened'>
   fieldKey?: string
   before: unknown
   after: unknown

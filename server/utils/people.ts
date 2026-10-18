@@ -1,6 +1,6 @@
 import { and, asc, count, eq, inArray, max, sql } from 'drizzle-orm'
 import { z } from 'zod'
-import { invite, inviteTeam, oauthAccessToken, oauthRefreshToken, session, team, teamMember, ticketType, user } from '../db/schema'
+import { invite, inviteTeam, oauthAccessToken, oauthRefreshToken, session, team, teamMember, ticket, ticketType, user } from '../db/schema'
 import { adminAuditEntry } from './audit'
 import type { Db, Role } from './auth'
 import type { Config } from './config'
@@ -391,6 +391,11 @@ export async function deleteTeam(db: Db, principal: UserPrincipal, id: number): 
   if (!found) throw notFound('Team')
   if (found.owned > 0) {
     throw new PeopleError(409, 'TEAM_OWNS_TYPES', `${found.name} owns ${found.owned} Ticket ${found.owned === 1 ? 'Type' : 'Types'}. Move ${found.owned === 1 ? 'it' : 'them'} to another Team first.`)
+  }
+  // Tickets keep their own Team (issue 29), also after a type moved away; a soft-deleted ticket counts too.
+  const held = await db.$count(ticket, eq(ticket.teamId, id))
+  if (held > 0) {
+    throw new PeopleError(409, 'TEAM_HAS_TICKETS', `${found.name} has ${held} ${held === 1 ? 'ticket' : 'tickets'}. Move ${held === 1 ? 'it' : 'them'} to another Team first.`)
   }
   await db.batch([
     db.delete(teamMember).where(eq(teamMember.teamId, id)),

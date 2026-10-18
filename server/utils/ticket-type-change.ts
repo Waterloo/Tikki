@@ -2,7 +2,7 @@ import { z } from 'zod'
 import type { Db } from './auth'
 import type { FieldDef, FieldError, FieldValues } from './fields'
 import { authorize } from './policy'
-import { applyChange, getTicket, loadFor, pinnedFields, policyFacts, TicketValidationError, type Principal, type TicketDetail } from './tickets'
+import { applyChange, getTicket, loadFor, pinnedFields, policyFacts, teamEntry, TicketValidationError, type Principal, type TicketDetail } from './tickets'
 import { loadTicketType } from './ticket-types'
 
 const input = z.strictObject({
@@ -58,10 +58,12 @@ export async function changeTicketType(db: Db, principal: Principal, number: num
   }
 
   const { moved, unmoved } = moveValues(await pinnedFields(db, row), target.version.fields, row.fields)
-  await applyChange(db, principal, number, { ticketTypeId: target.type.id, schemaVersion: target.version.version, fields: moved }, [{
+  // The ticket takes the Team of the new type, even if an Agent had moved it before (4.13a).
+  const teamMoves = row.teamId !== target.type.team.id
+  await applyChange(db, principal, number, { ticketTypeId: target.type.id, schemaVersion: target.version.version, fields: moved, teamId: target.type.team.id }, [{
     action: 'type_changed',
     before: { type: row.typeName, ref: `${row.prefix}-${number}`, unmoved },
     after: { type: target.type.name, ref: `${target.type.prefix}-${number}` },
-  }])
+  }, ...(teamMoves ? [teamEntry({ id: row.teamId!, name: row.teamName! }, target.type.team)] : [])])
   return getTicket(db, principal, number)
 }

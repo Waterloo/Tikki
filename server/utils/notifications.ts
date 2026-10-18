@@ -23,8 +23,7 @@ function insertSelect(db: Db, select: SQL) {
 
 /**
  * After the audit entry of a new ticket (it needs `last_insert_rowid()` to be that entry).
- * Owning Team: there is no Team membership yet (issue 20), so every Agent and Admin gets it. When membership exists,
- * join it here on the Team of the ticket's type. The Requester gets no confirmation: a User Requester is the actor,
+ * It goes to the members of the ticket's own Team (issue 29; at first the Team of its type). The Requester gets no confirmation: a User Requester is the actor,
  * and a Contact has no Inbox (its Application learns of the ticket from the create answer).
  */
 export function noticeTicketCreated(db: Db, actorId: string | null) {
@@ -34,22 +33,38 @@ export function noticeTicketCreated(db: Db, actorId: string | null) {
     JOIN ticket t ON t.number = a.ticket_number
     JOIN ticket_type tt ON tt.id = t.ticket_type_id
     WHERE a.id = last_insert_rowid() AND u.id IS NOT ${actorId} AND u.deactivated_at IS NULL AND u.role IN ('admin', 'agent')
-      AND CASE WHEN tt.visibility = 'participants'
-        -- A Restricted ticket goes to its Participants only, not to the Team (8.31).
-        THEN u.id IS t.assignee_id OR EXISTS (SELECT 1 FROM ticket_participant p WHERE p.ticket_number = t.number AND p.user_id = u.id)
-        ELSE u.id IN (SELECT tm.user_id FROM team_member tm WHERE tm.team_id = tt.team_id)
-          -- A Team without members (a new install) must not drop the notice: then every Agent and Admin gets it.
-          OR NOT EXISTS (SELECT 1 FROM team_member tm WHERE tm.team_id = tt.team_id)
-      END`)
+      AND ${teamRecipient(sql`t.team_id`)}`)
 }
 
-/** For the entries of `applyChange`: a new assignee is told, and the Requester is told of a new Status. */
+/**
+ * Whether `u` (a staff User) hears about a ticket `t` (with `tt` its type) that is new to the Team `teamId`.
+ * A Restricted ticket goes to its Participants only, not to the Team (8.31). A Team without members (a new install)
+ * must not drop the notice: then every Agent and Admin gets it.
+ */
+function teamRecipient(teamId: SQL) {
+  return sql`CASE WHEN tt.visibility = 'participants'
+    THEN u.id IS t.assignee_id OR EXISTS (SELECT 1 FROM ticket_participant p WHERE p.ticket_number = t.number AND p.user_id = u.id)
+    ELSE u.id IN (SELECT tm.user_id FROM team_member tm WHERE tm.team_id = ${teamId})
+      OR NOT EXISTS (SELECT 1 FROM team_member tm WHERE tm.team_id = ${teamId})
+  END`
+}
+
+/** For the entries of `applyChange`: a new assignee is told, the new Team is told of a move, and the Requester is told of a new Status. */
 export function noticesForChange(db: Db, actorId: string | null, number: number, entries: ChangeEntry[]) {
   const now = Date.now()
   const statements = []
   for (const e of entries) {
     if (e.action === 'assignee_changed' && typeof e.after === 'string' && e.after !== actorId) {
       statements.push(db.insert(notification).values({ userId: e.after, kind: 'assigned', ticketNumber: number, actorId, createdAt: new Date(now) }))
+    }
+    if (e.action === 'team_changed') {
+      const to = (e.after as { id: number }).id
+      statements.push(insertSelect(db, sql`
+        SELECT NULL, u.id, 'moved_to_team', t.number, NULL, ${actorId},
+          json_object('team', (SELECT name FROM team WHERE id = ${to})), NULL, ${now}
+        FROM user u, ticket t JOIN ticket_type tt ON tt.id = t.ticket_type_id
+        WHERE t.number = ${number} AND u.id IS NOT ${actorId} AND u.deactivated_at IS NULL AND u.role IN ('admin', 'agent')
+          AND ${teamRecipient(sql`${to}`)}`))
     }
     if (e.action === 'status_changed') {
       statements.push(insertSelect(db, sql`
@@ -164,6 +179,7 @@ export function noticeText(r: NoticeSource): { head: string, body: string, href:
     case 'assigned': return { head: `${who} assigned ${tref} to you`, body: r.title!, href }
     case 'public_comment': return { head: `${who} replied on ${tref}`, body: excerpt, href }
     case 'internal_comment': return { head: `${who} added an internal note on ${tref}`, body: excerpt, href }
+    case 'moved_to_team': return { head: `${who} moved ${tref} to ${r.data?.team ?? 'your Team'}`, body: r.title!, href }
     case 'status_changed': return { head: `${who} changed ${tref} to ${r.data?.status ?? 'a new Status'}`, body: r.title!, href }
     default: return { head: r.data?.head ?? 'A webhook endpoint needs attention', body: r.data?.body ?? '', href: r.data?.href ?? '/' }
   }

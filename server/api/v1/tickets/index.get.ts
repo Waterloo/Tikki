@@ -13,6 +13,7 @@ const query = z.object({
   assignee: z.string().min(1, 'Must be me, none, or a User ID.').max(100).optional(),
   q: z.string().max(MAX_SEARCH_LENGTH, `Must be ${MAX_SEARCH_LENGTH} characters or fewer.`).optional(),
   type: z.preprocess(empty, z.coerce.number({ error: 'Must be a Ticket Type ID.' }).int().positive('Must be a Ticket Type ID.')).optional(),
+  team: z.preprocess(empty, z.coerce.number({ error: 'Must be a Team ID.' }).int().positive('Must be a Team ID.')).optional(),
   priority: z.enum(PRIORITIES, { error: 'Must be one of the options.' }).optional(),
   // `field=branch:Singapore`, repeated for more Fields.
   field: z.union([z.string(), z.array(z.string())]).transform(v => [v].flat()).optional(),
@@ -22,7 +23,7 @@ const query = z.object({
 })
 
 /**
- * Filters: `requester=me`, `assignee=me|none|<User ID>`, `q` (words, or a Ticket Reference), `type`, `priority`,
+ * Filters: `requester=me`, `assignee=me|none|<User ID>`, `q` (words, or a Ticket Reference), `type`, `team` (the ticket's own Team ID), `priority`,
  * `field=<key>:<value>` (any Schema Version), `open=true`. Paging: `limit`, `cursor` (the `next_cursor` of the last page).
  * The requester and assignee filters are for Users. An Application gets the tickets it created.
  */
@@ -57,6 +58,7 @@ export default defineEventHandler(async (event) => {
       assignee: q.assignee,
       search: q.q,
       ticketTypeId: q.type,
+      teamId: q.team,
       priority: q.priority,
       fields,
       openOnly: q.open === 'true',

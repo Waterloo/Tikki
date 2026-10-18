@@ -3,7 +3,7 @@
 export type Priority = 'low' | 'normal' | 'high' | 'urgent'
 export type Channel = 'web' | 'ai' | 'api'
 export type StatusCategory = 'open' | 'active' | 'waiting' | 'done'
-export type TicketAction = 'change_status' | 'change_priority' | 'assign' | 'edit_fields' | 'edit_description' | 'change_type' | 'comment' | 'comment_internal' | 'cancel' | 'reopen' | 'delete' | 'manage_participants'
+export type TicketAction = 'change_status' | 'change_priority' | 'assign' | 'edit_fields' | 'edit_description' | 'change_type' | 'move_team' | 'comment' | 'comment_internal' | 'cancel' | 'reopen' | 'delete' | 'manage_participants'
 
 export interface Status {
   key: string
@@ -38,6 +38,8 @@ export interface TicketSummary {
   requester: Requester
   assignee: Person | null
   assigned: boolean
+  /** The ticket's own Team. */
+  team: { id: number, name: string }
   channel: Channel
   application: { id: number, name: string } | null
   created_at: string
@@ -49,7 +51,6 @@ export interface TicketDetail extends TicketSummary {
   schema_version: number
   fields: Record<string, unknown>
   schema_fields: { key: string, label: string, type: string, required: boolean, help: string, options?: string[] }[]
-  team: { id: number, name: string }
   comment_count: number
   reopened_from: { number: number, ref: string } | null
   allowed_actions: TicketAction[]
@@ -84,7 +85,7 @@ export type ActivityItem =
     type: 'event'
     id: string
     at: string
-    action: 'ticket_created' | 'status_changed' | 'priority_changed' | 'assignee_changed' | 'field_changed' | 'type_changed' | 'description_changed' | 'ticket_cancelled' | 'ticket_reopened' | 'attachment_added' | 'ticket_deleted' | 'ticket_restored' | 'ticket_erased' | 'participant_added' | 'participant_removed'
+    action: 'ticket_created' | 'status_changed' | 'priority_changed' | 'assignee_changed' | 'field_changed' | 'type_changed' | 'team_changed' | 'description_changed' | 'ticket_cancelled' | 'ticket_reopened' | 'attachment_added' | 'ticket_deleted' | 'ticket_restored' | 'ticket_erased' | 'participant_added' | 'participant_removed'
     principal: Actor
     channel: Channel
     field: { key: string, label: string } | null
