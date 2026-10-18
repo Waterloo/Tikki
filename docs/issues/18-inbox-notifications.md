@@ -18,7 +18,7 @@ Every User sees what needs them in the in-app Inbox, with or without email.
 ## Acceptance criteria
 
 - [~] REST test for each row of the notification table: the right Users get a notice and nobody else does.
-  Evidence: `test/worker/notifications.test.ts`, "notices: fan-out": ticket created, assigned, Public Comment, Internal Comment, Status changed, and webhook failing (through `notifyAdmins`, Admins only). Each test names the exact recipients and checks that the actor and everyone else got none. **Not complete:** the webhook row is only covered by the exported `notifyAdmins`; issue 14 must call it when an endpoint fails or is disabled (8.7). The Requester confirmation and the Source Application column are not written (see Decisions).
+  Evidence: `test/worker/notifications.test.ts`, "notices: fan-out": ticket created, assigned, Public Comment, Internal Comment, Status changed, and webhook failing (through `notifyAdmins`, Admins only). Each test names the exact recipients and checks that the actor and everyone else got none. The webhook row: since the merge with issue 14, a disabled endpoint sends `webhook_disabled` to every active Admin (`test/worker/webhooks.test.ts`, "retries with backoff, gives up after 24 hours, and turns the endpoint off after 3 days"). No `webhook_failing` notice is sent yet; the Webhooks screen shows the failing state. The Requester confirmation and the Source Application column are not written (see Decisions).
 - [x] REST test: a Requester never gets a notice about an Internal Comment.
   Evidence: `test/worker/notifications.test.ts`, "Internal Comment: the assignee only. A Requester never gets one". The Requester's list has no such notice, the text does not appear in it, and a refused Internal Comment from a Requester writes none.
 - [x] REST test: "Mark all as read" sets the unread count to 0.
@@ -36,7 +36,7 @@ Every User sees what needs them in the in-app Inbox, with or without email.
 
 - Light mode and the Inbox at 375 px were only checked for horizontal scroll (none) and dark mode by screenshot; light mode was not looked at.
 - The slow poll of the unread count (60 s) was not exercised by a test.
-- The "webhook failing or disabled" criterion row is open until issue 14 calls `notifyAdmins`.
+- No `webhook_failing` notice is sent. Only a disabled endpoint notifies the Admins (merge with issue 14).
 
 ## Decisions made here
 
@@ -62,7 +62,7 @@ Copied to CONTEXT.md.
 
 ## Notes for later issues
 
-- Issue 14: call `notifyAdmins(db, 'webhook_failing' | 'webhook_disabled', { head, body, href })` from `server/utils/notifications.ts` (8.7: disable after 3 days of failure). Then tick the open criterion row.
+- Issue 14: call `notifyAdmins(db, 'webhook_failing' | 'webhook_disabled', { head, body, href })` from `server/utils/notifications.ts` (8.7: disable after 3 days of failure). Done at merge for `webhook_disabled`.
 - Issue 19: send email from the Notices. Read the User's switch with `getPreferences` (key per kind: `ticket_created` -> `team_ticket`, `assigned` -> `assigned`, `public_comment`, `internal_comment`, `status_changed`, `webhook_*` -> `webhook`). `assigned` is always on.
 - Issue 20: join Team membership in `noticeTicketCreated`. Add an assignee picker if the Agent should assign others from the UI.
 - Issue 12: add the Requester confirmation and the Source Application recipient.
