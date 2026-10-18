@@ -57,6 +57,14 @@ describe('MCP endpoint', () => {
     await client.close()
   })
 
+  // A duplicate-check hint on another tool can make an assistant call create_ticket by mistake.
+  it('only create_ticket mentions confirm_new', async () => {
+    const { client } = await connected()
+    const { tools } = await client.listTools()
+    expect(tools.filter(t => JSON.stringify(t).includes('confirm_new')).map(t => t.name)).toEqual(['create_ticket'])
+    await client.close()
+  })
+
   it('list_ticket_types returns every type with name, description and prefix', async () => {
     const { cookie, client } = await connected()
     const result = await client.callTool({ name: 'list_ticket_types', arguments: {} })

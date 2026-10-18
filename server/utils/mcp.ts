@@ -231,7 +231,7 @@ function buildServer(principal: UserPrincipal) {
 
   server.registerTool('attach_text', {
     title: 'Attach text',
-    description: 'Attach text (a log, CSV, or stack trace, up to 256 KB) to one ticket as a file. Use a name such as "error.log" or "data.csv". For a binary file or a larger one, call request_upload_link instead. Ask the user to confirm before you call it. If similar open tickets exist, nothing is created: the result lists them. Ask the user whether to add a comment to one of them (add_comment) or to create a new ticket, and in that case call create_ticket again with the same arguments and confirm_new set to true.',
+    description: 'Attach text (a log, CSV, or stack trace, up to 256 KB) to one ticket as a file. Use a name such as "error.log" or "data.csv". For a binary file or a larger one, call request_upload_link instead. Ask the user to confirm before you call it.',
     inputSchema: z.object({
       ticket: ticketArg,
       filename: z.string().describe('The file name, for example "error.log". A name that ends in .csv is stored as CSV, anything else as plain text.'),
@@ -245,7 +245,7 @@ function buildServer(principal: UserPrincipal) {
 
   server.registerTool('request_upload_link', {
     title: 'Request upload link',
-    description: 'Get a link that the user opens in the browser to upload a file (an image or any binary file) to one ticket. The link works once, for 15 minutes, and only for the signed-in user. Give the link to the user and tell them to open it. Ask the user to confirm before you call it. If similar open tickets exist, nothing is created: the result lists them. Ask the user whether to add a comment to one of them (add_comment) or to create a new ticket, and in that case call create_ticket again with the same arguments and confirm_new set to true.',
+    description: 'Get a link that the user opens in the browser to upload a file (an image or any binary file) to one ticket. The link works once, for 15 minutes, and only for the signed-in user. Give the link to the user and tell them to open it. Ask the user to confirm before you call it.',
     inputSchema: z.object({ ticket: ticketArg }),
     annotations: { title: 'Request upload link', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   }, ({ ticket }) => run(async () => {
@@ -285,21 +285,21 @@ function buildServer(principal: UserPrincipal) {
 
   server.registerTool('change_status', {
     title: 'Change ticket Status',
-    description: 'Agents only. Set the Status of one ticket, for example in_progress, waiting, resolved, or closed. Ask the user to confirm before you call it. If similar open tickets exist, nothing is created: the result lists them. Ask the user whether to add a comment to one of them (add_comment) or to create a new ticket, and in that case call create_ticket again with the same arguments and confirm_new set to true.',
+    description: 'Agents only. Set the Status of one ticket, for example in_progress, waiting, resolved, or closed. Ask the user to confirm before you call it.',
     inputSchema: z.object({ ticket: ticketArg, status: z.string().describe('The Status key, for example in_progress. An unknown key returns the list of keys.') }),
     annotations: { title: 'Change ticket Status', ...writeAnnotations },
   }, ({ ticket, status }) => change(ticket, { status }))
 
   server.registerTool('change_priority', {
     title: 'Change ticket Priority',
-    description: 'Agents only. Set the Priority of one ticket. Ask the user to confirm before you call it. If similar open tickets exist, nothing is created: the result lists them. Ask the user whether to add a comment to one of them (add_comment) or to create a new ticket, and in that case call create_ticket again with the same arguments and confirm_new set to true.',
+    description: 'Agents only. Set the Priority of one ticket. Ask the user to confirm before you call it.',
     inputSchema: z.object({ ticket: ticketArg, priority: z.enum(PRIORITIES) }),
     annotations: { title: 'Change ticket Priority', ...writeAnnotations },
   }, ({ ticket, priority }) => change(ticket, { priority }))
 
   server.registerTool('assign_ticket', {
     title: 'Assign ticket',
-    description: 'Agents only. Assign one ticket to the signed-in user ("me"), to an active Agent or Admin by email, or remove the assignee ("none"). Moving a ticket to another Team keeps the assignee. Ask the user to confirm before you call it. If similar open tickets exist, nothing is created: the result lists them. Ask the user whether to add a comment to one of them (add_comment) or to create a new ticket, and in that case call create_ticket again with the same arguments and confirm_new set to true.',
+    description: 'Agents only. Assign one ticket to the signed-in user ("me"), to an active Agent or Admin by email, or remove the assignee ("none"). Moving a ticket to another Team keeps the assignee. Ask the user to confirm before you call it.',
     inputSchema: z.object({ ticket: ticketArg, assignee: z.string().min(1).max(320).describe('"me", "none", or the email of an active Agent or Admin.') }),
     annotations: { title: 'Assign ticket', ...writeAnnotations },
   }, ({ ticket, assignee }) => {
@@ -318,7 +318,7 @@ function buildServer(principal: UserPrincipal) {
 
   server.registerTool('move_ticket_team', {
     title: 'Move ticket to a Team',
-    description: 'Agents only. Move one ticket to another Team by name, for example from Support to Development. The assignee stays. The members of the new Team get a notice. Ask the user to confirm before you call it. If similar open tickets exist, nothing is created: the result lists them. Ask the user whether to add a comment to one of them (add_comment) or to create a new ticket, and in that case call create_ticket again with the same arguments and confirm_new set to true.',
+    description: 'Agents only. Move one ticket to another Team by name, for example from Support to Development. The assignee stays. The members of the new Team get a notice. Ask the user to confirm before you call it.',
     inputSchema: z.object({ ticket: ticketArg, team: z.string().min(1).max(100).describe('The name of the Team.') }),
     annotations: { title: 'Move ticket to a Team', ...writeAnnotations },
   }, ({ ticket, team: teamName }) => run(async () => {
@@ -333,7 +333,7 @@ function buildServer(principal: UserPrincipal) {
 
   server.registerTool('change_ticket_type', {
     title: 'Change ticket type',
-    description: 'Agents only. Move one ticket to another Ticket Type, for example when it was filed as the wrong kind. The number stays and the prefix changes, so the old reference still works. Values of Fields with the same key and data type move; the others stay in the Activity. The Team changes to the Team of the new type. Ask the user to confirm before you call it. If similar open tickets exist, nothing is created: the result lists them. Ask the user whether to add a comment to one of them (add_comment) or to create a new ticket, and in that case call create_ticket again with the same arguments and confirm_new set to true.',
+    description: 'Agents only. Move one ticket to another Ticket Type, for example when it was filed as the wrong kind. The number stays and the prefix changes, so the old reference still works. Values of Fields with the same key and data type move; the others stay in the Activity. The Team changes to the Team of the new type. Ask the user to confirm before you call it.',
     inputSchema: z.object({ ticket: ticketArg, ticket_type_id: z.number().describe('The id from list_ticket_types.') }),
     annotations: { title: 'Change ticket type', ...writeAnnotations },
   }, ({ ticket, ticket_type_id }) => change(ticket, { ticket_type_id }, changeTicketType))
