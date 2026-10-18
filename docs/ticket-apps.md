@@ -340,6 +340,14 @@ Errors use the Tikki API error format:
 4. Open any ticket as the Admin (`admin@example.com`). Your app shows in the sidebar or as a tab.
 5. In your app, use `TIKKI_ORIGIN = 'http://localhost:8787'` and audience `http://localhost:5173`.
 
+A complete example app with a backend token check is in [`examples/ticket-app/server.mjs`](../examples/ticket-app/server.mjs). Run it from the repository root:
+
+```bash
+node examples/ticket-app/server.mjs
+```
+
+It listens on `http://localhost:5173`. Set `TIKKI` when Tikki is not on `http://localhost:8787`. The card shows the context, and "Checked by the backend" shows the claims of the checked token.
+
 ## FAQ
 
 **Can I show my app to the customer (the requester)?**
