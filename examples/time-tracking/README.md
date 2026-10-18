@@ -1,17 +1,29 @@
 # Time tracking: an example Ticket App
 
-Agents log the time they spend on a ticket, in a card in the ticket sidebar. The card shows the total and every entry. An Agent can add an internal note to the ticket with each entry ("Logged 1h 30m: Reproduced the export bug").
+Agents log the time they spend on a ticket. Admins and Agents see the time across tickets in a timesheet. One Cloudflare Worker with its own D1 database serves three views, one for each [placement](../../docs/ticket-apps.md#placements):
 
-It is a separate Cloudflare Worker with its own D1 database. It follows the [Ticket App guide](../../docs/ticket-apps.md).
+| URL | Placement | What it shows |
+|---|---|---|
+| `/sidebar` (also `/`) | Sidebar | A small card: the total, your time, a quick form and the last 5 entries. |
+| `/tab` | Tab | The full log of the ticket: every entry by day, the total for each person, and a larger form. |
+| `/timesheet` | Page | Time across tickets for a date range (This week, Last week, This month, Custom), by ticket or by person, with CSV export. |
+
+It follows the [Ticket App guide](../../docs/ticket-apps.md).
 
 ## How it works
 
-- The page asks Tikki for the context and gets a context token.
-- Every call to `/api/entries` sends the token. The Worker checks it against Tikki's JWKS. The ticket and the Agent come only from the checked token, never from the request body.
-- An entry stores the ticket reference, the Agent's User id, the minutes and the note. The Agent's name is display text from the context; it is never used for a decision.
+- Each view asks Tikki for the context and gets a token. Every API call sends the token. The Worker checks it against Tikki's JWKS, with the request origin as the audience.
+- All three views are on one origin, so all tokens have the same audience. The Worker checks `tikki_placement` too: `/api/entries` accepts only a sidebar or tab token with `tikki_ticket`; `/api/timesheet` accepts only a page token.
+- The ticket, the User and the role come only from the checked token, never from the request body.
+- An entry stores the ticket reference, the Agent's User id, the minutes and the note. It also stores display text from the context: the Agent's name, the ticket title and the Ticket Type name. A page token cannot read tickets from Tikki, so the timesheet shows this saved text. Each new entry updates the title and type of the older entries of that ticket. This text is never used for a decision.
+- The app keeps its own copy of ticket titles and Agent names. Tikki cannot delete this copy, for example when it erases a person's data. Delete such rows in this database yourself.
 - Only the Agent who logged an entry can delete it. A delete waits 5 seconds with Undo, so Undo needs no server call.
-- The page uses Tikki's colors, font and radius (`src/page.js`), follows Tikki's light or dark mode, and has quick buttons for 15m, 30m, 1h and 2h.
-- The "Note on ticket" switch calls `POST /api/v1/tickets/{ref}/comments` on Tikki with the same token. This needs the app's access to be **Comment** or **Update**. With **Read**, the box is off.
+- **Timesheet rule:** an Admin sees the time of every person. An Agent sees only their own time. Anyone else (a Requester, when the page is shown to Requesters) gets `403`. The role is `tikki_role` from the page token.
+- The ticket reference in the timesheet sends `tikki:navigate` to `/tickets/{ref}`, so the ticket opens in the same Tikki tab.
+- CSV export: the frame sandbox has no `allow-downloads`, so the page posts a form to `/api/timesheet.csv` in a new tab. The token goes in the form body, not in the URL. The file has the entries of the range, with dates in the browser's time zone.
+- The views use Tikki's colors, font and radius (`src/ui.js`), follow Tikki's light or dark mode, and work from 375 px wide. Quick buttons for 15m, 30m, 1h and 2h.
+- The "Note on ticket" switch calls `POST /api/v1/tickets/{ref}/comments` on Tikki with the same token. This needs the app's access to be **Comment** or **Update**. With **Read**, the switch is off.
+- Icons for light and dark mode are in `icons/`. The Worker serves them at `/icon-light.svg` and `/icon-dark.svg` for the manifest.
 
 Time formats: `45`, `45m`, `1h`, `1h 30m`, `1.5h`, `1:30`. One entry is at most 24 hours.
 
@@ -29,15 +41,23 @@ pnpm exec wrangler dev -c examples/time-tracking/wrangler.jsonc --port 5174
 
 If Tikki runs on another port, add `--var TIKKI_ORIGIN:http://localhost:<port>`.
 
-In Tikki, open **Ticket Apps** and add:
+In Tikki, open **Ticket Apps**, select **Add from manifest**, and paste `http://localhost:5174/tikki-app.json`. The preview shows the name, both icons, the three URLs and the access the app asks for (**Comment**). Approve it.
+
+The Worker serves the manifest at `/tikki-app.json` (`src/index.js`). Its URLs are relative, so they follow the address of the manifest.
+
+Or add the app by hand:
 
 | Setting | Value |
 |---|---|
 | Name | Time tracking |
-| Sidebar URL | `http://localhost:5174/` |
+| Icon | Upload image: `icons/icon-light.svg` as the light image, `icons/icon-dark.svg` as the dark image. Or a built-in icon. |
+| Sidebar URL | `http://localhost:5174/sidebar` |
+| Tab URL | `http://localhost:5174/tab` |
+| Page URL | `http://localhost:5174/timesheet` |
+| Show the page to Requesters | Off |
 | Access | Comment |
 
-Open any ticket as an Agent or Admin.
+Open any ticket as an Agent or Admin for the card and the tab. Open **Time tracking** in the Apps menu for the timesheet.
 
 ## Deploy it
 
@@ -47,7 +67,7 @@ Open any ticket as an Agent or Admin.
    pnpm exec wrangler d1 create tikki-time
    ```
 
-2. Apply the migration:
+2. Apply the migrations:
 
    ```bash
    pnpm exec wrangler d1 migrations apply TIME --remote -c examples/time-tracking/wrangler.jsonc
@@ -59,7 +79,7 @@ Open any ticket as an Agent or Admin.
    pnpm exec wrangler deploy -c examples/time-tracking/wrangler.jsonc
    ```
 
-4. Add the Worker's HTTPS address as the Sidebar URL of a Ticket App. An HTTPS Tikki cannot frame an `http://` page.
+4. In Tikki, add the app from `https://<your Worker>/tikki-app.json`, or add the HTTPS URLs `/sidebar`, `/tab` and `/timesheet` by hand, as in the table above. An HTTPS Tikki cannot frame an `http://` page.
 
 A deployed copy runs at `https://time.jithinsha.in/` for `https://tikki.jithinsha.in` (`env.production` in `wrangler.jsonc`):
 
@@ -67,6 +87,12 @@ A deployed copy runs at `https://time.jithinsha.in/` for `https://tikki.jithinsh
 pnpm exec wrangler deploy --env production -c examples/time-tracking/wrangler.jsonc
 ```
 
+## Upgrade from the one-view version
+
+1. Apply the migrations again. `0002_ticket_details.sql` adds the ticket title and the Ticket Type name. Old entries get empty text; the timesheet shows their ticket reference.
+2. Deploy.
+3. In the Ticket App, add the Tab URL and the Page URL. The old Sidebar URL `/` keeps working. Or delete the app and add it again from the manifest.
+
 ## Not included
 
-Reports across tickets, editing an entry, and timers. Add a report page with its own sign-in if you need totals per Agent or per month: the context token is only valid inside the ticket.
+Editing an entry, timers, and a filter by person or by ticket in the timesheet.
