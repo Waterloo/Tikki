@@ -41,7 +41,7 @@ How an Application sees any Agent or Admin: no name and no email.
 How the UI and the API show an action that an Application took for its Contact: the Contact's name with the label "Contact · Application name".
 
 **Team**:
-A group of Agents that owns one or more Ticket Types.
+A group of Agents that owns one or more Ticket Types. Each ticket has a Team: at first the Team of its Ticket Type, and Agents can move it to another Team.
 _Avoid_: Queue, group, department
 
 **Invite**:

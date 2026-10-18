@@ -103,6 +103,8 @@ Facts verified on 2026-10-18 that the design depends on:
 | 4.11 | Priority is a core attribute of every ticket: `low`, `normal`, `high`, `urgent`. Default `normal`. The Requester or the AI sets it at creation, and Agents can change it (Q38). | Decided |
 | 4.12 | Branch (Australia, Singapore, ...) is a normal Field. No data residency, so one D1 database (Q16). | Decided |
 | 4.13 | Each Ticket Type has exactly one owning Team. An Agent can be in more than one Team. A new install makes one Team, "Support", and new Agents join it (Q9, Q40). | Delegated |
+| 4.13a | A ticket has its own Team. A new ticket gets the Team of its Ticket Type. Agents and Admins move a ticket to another Team; a Ticket Type change sets the Team of the new type. Moving keeps the assignee, tells the members of the new Team, and is audited. Reason: a bug can land in Support and belong to Development, and changing the type's Team would move every ticket of that type. (issue 29) | Decided |
+| 4.13b | Agents and Admins assign a ticket to any active Agent or Admin, not only to themselves. The picker lists the members of the ticket's Team first. (issue 29) | Decided |
 | 4.14 | Assignment is manual (Q9). | Decided |
 | 4.15 | Each Ticket Type has an icon and a color. The UI uses them in the sidebar, in lists and in the ticket header. | Delegated |
 | 4.15a | Creating a Ticket Type is one page: name, "when to use it" (required), icon, color, Team, visibility, Fields. Nothing is saved until "Create", so no draft state exists. Creating makes Schema Version 1, and the type can be used at once. | Delegated |
