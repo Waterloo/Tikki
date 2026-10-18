@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { Resvg } from '@resvg/resvg-js'
 import { escapeHtml } from './markdown'
@@ -57,12 +57,17 @@ function edge(): string {
 }
 
 export function ogSvg(card: OgCard, lockupPng: Buffer): string {
+  // A title that does not fit must be shortened, not cut: it is the card.
+  if (card.title.split(/\s+/).some(w => w.length > 22) || wrap(card.title, 22, 3).length > 2) {
+    throw new Error(`Docs: the title "${card.title}" is too long for its share card. Keep it to two lines of about 22 characters.`)
+  }
   const title = wrap(card.title, 22, 2)
   const titleSize = title.length > 1 || card.title.length > 16 ? 84 : 104
   const titleTop = 270
   const titleLines = title.map((t, i) => `<tspan x="80" y="${titleTop + i * titleSize * 1.08}">${escapeHtml(t)}</tspan>`).join('')
   const descTop = titleTop + (title.length - 1) * titleSize * 1.08 + 72
-  const desc = wrap(card.description, 62, 3).map((t, i) => `<tspan x="80" y="${descTop + i * 44}">${escapeHtml(t)}</tspan>`).join('')
+  // Two title lines leave room for two lines of description above the address.
+  const desc = wrap(card.description, 62, title.length > 1 ? 2 : 3).map((t, i) => `<tspan x="80" y="${descTop + i * 44}">${escapeHtml(t)}</tspan>`).join('')
   // The lockup PNG has the mascot and the "tikki" wordmark on the cream ground; the inner viewBox crops its margin.
   const lockup = `data:image/png;base64,${lockupPng.toString('base64')}`
   return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${OG_WIDTH}" height="${OG_HEIGHT}" viewBox="0 0 ${OG_WIDTH} ${OG_HEIGHT}">
@@ -80,6 +85,9 @@ ${edge()}
 export function renderOg(root: string, card: OgCard): Buffer {
   const lockup = readFileSync(join(root, 'docs/assets/tikki-lockup.png'))
   const fontFiles = FONTS.map(f => join(root, 'node_modules/geist/dist/fonts', f))
+  // resvg draws no text, and reports nothing, when a font file is missing.
+  const missing = fontFiles.find(f => !existsSync(f))
+  if (missing) throw new Error(`Docs: the font ${missing} is missing, so the share cards would have no text. Did the geist package change its layout?`)
   const png = new Resvg(ogSvg(card, lockup), { font: { fontFiles, loadSystemFonts: false, defaultFontFamily: 'Geist' } }).render().asPng()
   return Buffer.from(png)
 }

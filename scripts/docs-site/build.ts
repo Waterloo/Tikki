@@ -4,7 +4,6 @@ import { methodBadge, operationAnchor, operations, renderApiReference, requestSa
 import { renderPage, type NavGroup, type NavItem, type PageInput } from './layout'
 import { loadHighlighter, renderMarkdown } from './markdown'
 import { renderOg } from './og'
-export { siteUrlFrom } from './site-url'
 import { homeBody } from './pages'
 
 /**
@@ -75,6 +74,9 @@ export interface BuildOptions {
   siteUrl: string
 }
 
+/** The first paragraph of Markdown as plain text, for a page description. */
+const plainParagraph = (md: string) => md.split(/\n\s*\n/)[0]!.replace(/[`*_]/g, '').replace(/\s+/g, ' ').trim()
+
 /** The first sentence of a lead, for the image: a cut sentence reads badly. */
 const firstSentence = (text: string) => /^.*?[.!?](?=\s|$)/.exec(text)?.[0] ?? text
 
@@ -127,7 +129,7 @@ export async function buildDocsSite(root: string, openapi: OpenApiDocument, opti
       lead: g.lead, body: g.html, headings: g.headings, nav, source: g.file, markdown: `/docs/${g.slug}.md`, ...around(g.url),
     })),
     {
-      file: 'docs/api.html', path: '/docs/api', wide: true, title: 'REST API', description: openapi.info.description,
+      file: 'docs/api.html', path: '/docs/api', wide: true, title: 'REST API', description: plainParagraph(openapi.info.description),
       lead: openapi.info.description, body: api.html, headings: api.headings, nav, source: 'server/utils/openapi.ts', ...around('/docs/api'),
     },
   ]

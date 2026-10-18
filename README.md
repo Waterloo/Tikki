@@ -181,7 +181,7 @@ Bindings: `DB` (D1), `FILES` (R2), `EMAIL` (`send_email`), `ASSETS`.
 
 It is read when the site is built, not when the Worker runs, so set it where `pnpm build` runs:
 
-- **Workers Builds:** in the Worker's settings, Build, Variables and secrets, add `DOCS_SITE_URL` as a build variable. A runtime variable in `wrangler.jsonc` does not reach the build.
+- **Workers Builds:** in the Worker's settings, Build, Variables and secrets, add `DOCS_SITE_URL` as a build variable. A runtime variable in `wrangler.jsonc` does not reach the build. On Workers Builds (`WORKERS_CI` is set), the build fails without it.
 - **A deploy from a terminal:** `DOCS_SITE_URL=https://tikki.jithinsha.in pnpm build`, then `pnpm exec wrangler deploy --env production`.
 
 ## Tests

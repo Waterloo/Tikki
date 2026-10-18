@@ -4,9 +4,16 @@ import { fileURLToPath } from 'node:url'
 import { createJiti } from 'jiti'
 import { siteUrlFrom } from './scripts/docs-site/site-url'
 
-// The public origin, for absolute Open Graph URLs in the docs and the app shell (README, "Developer docs").
-const SITE_URL = siteUrlFrom(process.env.DOCS_SITE_URL)
-if (!SITE_URL) console.warn('DOCS_SITE_URL is not set: Open Graph URLs are relative, and most sites show no card for them. Set it for a deploy build, for example DOCS_SITE_URL=https://tikki.example.com.')
+// The public origin, for absolute Open Graph URLs in the docs and the app shell (README, "Build variable"). A bad value
+// fails the build in the `compiled` hook below, not every command that loads this config (postinstall, typecheck).
+const site = (() => {
+  try {
+    return { url: siteUrlFrom(process.env.DOCS_SITE_URL), error: undefined }
+  } catch (error) {
+    return { url: '', error: error as Error }
+  }
+})()
+const SITE_URL = site.url
 const SHELL = {
   title: 'Tikki',
   description: 'A small, complete ticketing system for one team. It runs as one Cloudflare Worker.',
@@ -83,6 +90,10 @@ export default defineNuxtConfig({
       async 'compiled'(nitro) {
         // The prerender build copies these hooks; its output is the same public folder, so once is enough.
         if (nitro.options.preset === 'nitro-prerender' || nitro.options.dev) return
+        if (site.error) throw site.error
+        // Workers Builds sets WORKERS_CI. A deploy without the origin would publish share cards that no site shows.
+        if (!SITE_URL && process.env.WORKERS_CI) throw new Error('DOCS_SITE_URL is not set. Add it as a build variable in the Workers Builds settings (README, "Build variable").')
+        if (!SITE_URL) console.warn('DOCS_SITE_URL is not set: Open Graph URLs are relative, and most sites show no card for them. Set it for a deploy build, for example DOCS_SITE_URL=https://tikki.example.com.')
         const jiti = createJiti(import.meta.url)
         const { buildOpenApiDocument } = await jiti.import<typeof import('./server/utils/openapi')>('./server/utils/openapi')
         const { buildDocsSite } = await jiti.import<typeof import('./scripts/docs-site/build')>('./scripts/docs-site/build')

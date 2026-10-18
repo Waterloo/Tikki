@@ -1,8 +1,9 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { beforeAll, describe, expect, it } from 'vitest'
-import { appTokens, buildDocsSite, GUIDES, siteUrlFrom, type SearchEntry } from '../../scripts/docs-site/build'
-import { wrap } from '../../scripts/docs-site/og'
+import { appTokens, buildDocsSite, GUIDES, type SearchEntry } from '../../scripts/docs-site/build'
+import { siteUrlFrom } from '../../scripts/docs-site/site-url'
+import { ogSvg, wrap } from '../../scripts/docs-site/og'
 import { EXAMPLE_ORIGIN, operationAnchor, type OpenApiDocument } from '../../scripts/docs-site/api'
 import { loadHighlighter, renderMarkdown, REPO } from '../../scripts/docs-site/markdown'
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
@@ -184,7 +185,10 @@ describe('docs site', () => {
   it('gives every page Open Graph tags and its own 1200×630 card image, with relative URLs by default', () => {
     for (const page of PAGES) {
       const meta = (p: string) => new RegExp(`<meta property="${p}" content="([^"]*)">`).exec(html(page))?.[1]
-      for (const p of ['og:site_name', 'og:type', 'og:title', 'og:description', 'og:url', 'og:image', 'og:image:alt']) expect(meta(p), `${page} ${p}`).toBeTruthy()
+      for (const p of ['og:site_name', 'og:type', 'og:title', 'og:description', 'og:image', 'og:image:alt']) expect(meta(p), `${page} ${p}`).toBeTruthy()
+      // og:url must be absolute, so it waits for the site URL.
+      expect(meta('og:url'), page).toBeUndefined()
+      expect(meta('og:description')!.length, page).toBeLessThan(400)
       expect(meta('og:site_name')).toBe('Tikki Docs')
       expect(html(page)).toContain('<meta name="twitter:card" content="summary_large_image">')
       expect(html(page)).not.toContain('rel="canonical"')
@@ -212,6 +216,15 @@ describe('docs site', () => {
   it('wraps a card title at spaces and marks cut text', () => {
     expect(wrap('Build a Ticket App', 22, 2)).toEqual(['Build a Ticket App'])
     expect(wrap('one two three four five six', 9, 2)).toEqual(['one two', 'three…'])
+    expect(() => ogSvg({ title: 'A title that is much too long for the card to show well', description: '' }, Buffer.alloc(0))).toThrow(/too long/)
+    expect(ogSvg({ title: 'Tom & <Jerry>', description: '"Quotes"' }, Buffer.alloc(0))).toContain('Tom &amp; &lt;Jerry&gt;')
+  })
+
+  it('states the size of the app shell card as the cover file has it', () => {
+    const png = readFileSync(join(ROOT, 'docs/assets/readme-cover.png'))
+    const config = readFileSync(join(ROOT, 'nuxt.config.ts'), 'utf8')
+    expect(config).toContain(`content: '${png.readUInt32BE(16)}'`)
+    expect(config).toContain(`content: '${png.readUInt32BE(20)}'`)
   })
 
   it('has no element id twice on a page', () => {

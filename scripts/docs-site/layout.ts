@@ -1,4 +1,5 @@
 import { escapeHtml, REPO, type Heading } from './markdown'
+import { OG_HEIGHT, OG_WIDTH } from './og'
 
 export interface NavItem { label: string, href: string, badge?: string, external?: boolean, nested?: boolean }
 export interface NavGroup { title: string, items: NavItem[] }
@@ -61,10 +62,11 @@ export function socialTags(p: Pick<PageInput, 'path' | 'title' | 'description' |
     tag('og:type', p.home ? 'website' : 'article'),
     tag('og:title', p.title),
     tag('og:description', p.description),
-    tag('og:url', url),
+    // Open Graph needs an absolute og:url; without the site URL it is left out, as the canonical link.
+    meta.siteUrl ? tag('og:url', url) : '',
     tag('og:image', meta.siteUrl + meta.image),
-    tag('og:image:width', '1200'),
-    tag('og:image:height', '630'),
+    tag('og:image:width', String(OG_WIDTH)),
+    tag('og:image:height', String(OG_HEIGHT)),
     tag('og:image:alt', meta.imageAlt),
     name('twitter:card', 'summary_large_image'),
   ].filter(Boolean).join('\n')
