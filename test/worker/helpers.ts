@@ -14,6 +14,8 @@ export function call(path: string, init: RequestInit = {}): Promise<Response> {
   if (init.body && !headers.has('content-type')) headers.set('content-type', 'application/json')
   // Better-Auth refuses cookie-carrying POSTs without a trusted Origin.
   if (!headers.has('origin')) headers.set('origin', BASE)
+  // Each call is a new client, so the per-IP sign-in limit does not couple tests. Tests of that limit send their own IP.
+  if (!headers.has('cf-connecting-ip')) headers.set('cf-connecting-ip', `10.${counter++ % 250}.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250)}`)
   return worker.fetch(new URL(path, BASE), { ...init, headers, redirect: 'manual' })
 }
 

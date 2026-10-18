@@ -84,7 +84,7 @@ export function createAuth({ config, db, mail, fetchClientMetadataResource, isMe
     secret: config.authSecret,
     trustedOrigins: [config.appUrl],
     database: drizzleAdapter(db, { provider: 'sqlite', schema, transaction: false }),
-    // Rate limits on sign-in for each IP come in issue 23; the per-address code limit is in the hook below.
+    // Sign-in limits for each IP are in server/routes/api/auth/[...all].ts; the per-address code limit is in the hook below.
     rateLimit: { enabled: false },
     disabledPaths: [
       // The JWT plugin's session-to-JWT endpoint is not used; OAuth access tokens come from /oauth2/token.

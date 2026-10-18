@@ -14,6 +14,10 @@ const detailState = ref<'idle' | 'loading' | 'ready' | 'missing' | 'error'>('idl
 const busy = ref(false)
 
 const creating = ref(false)
+const limitDialog = ref(false)
+const limitRate = ref(60)
+const limitCreate = ref(10)
+const limitError = ref<string | null>(null)
 const keyDialog = ref(false)
 const keyName = ref('')
 const keyError = ref<string | null>(null)
@@ -119,6 +123,33 @@ function toggleEnabled() {
 function onCreated(app: ApplicationDetail) {
   apps.value = [...apps.value, app].sort((a, b) => a.name.localeCompare(b.name))
   navigateTo(`/applications/${app.id}`)
+}
+
+function openLimitDialog() {
+  if (!detail.value) return
+  limitRate.value = detail.value.rate_limit
+  limitCreate.value = detail.value.create_limit
+  limitError.value = null
+  limitDialog.value = true
+}
+
+async function saveLimits() {
+  if (!detail.value) return
+  busy.value = true
+  limitError.value = null
+  try {
+    applyDetail(await $fetch<ApplicationDetail>(`/api/v1/applications/${detail.value.id}`, {
+      method: 'PATCH',
+      body: { rate_limit: Number(limitRate.value), create_limit: Number(limitCreate.value) },
+    }))
+    limitDialog.value = false
+    toast.add({ title: 'Rate limit saved', icon: 'i-lucide-check', color: 'success' })
+  } catch (e) {
+    const details = (e as { data?: { error?: { details?: { reason: string }[] } } }).data?.error?.details
+    limitError.value = details?.[0]?.reason ?? errorMessage(e, 'The limit was not saved. Try again.')
+  } finally {
+    busy.value = false
+  }
 }
 
 function openKeyDialog() {
@@ -288,6 +319,13 @@ onMounted(() => Promise.all([loadList(), loadDetail()]))
                   No types yet, so it cannot create tickets.
                 </p>
               </div>
+              <div class="flex flex-col gap-1">
+                <span class="text-[13px] text-(--ui-text-muted)">Rate limit</span>
+                <span class="text-sm text-(--ui-text-highlighted)">
+                  {{ detail.rate_limit }} requests a minute, {{ detail.create_limit }} of them creates
+                  <UButton variant="link" size="sm" class="ml-1.5 px-0" :disabled="busy" @click="openLimitDialog">Change</UButton>
+                </span>
+              </div>
             </div>
             <p class="flex items-start gap-2 px-3 py-2.5 rounded-[10px] bg-(--ui-bg-elevated) text-[13px] leading-normal text-(--ui-text-toned)">
               <UIcon name="i-lucide-lock" class="size-[15px] shrink-0 mt-0.5" aria-hidden="true" />
@@ -348,6 +386,29 @@ onMounted(() => Promise.all([loadList(), loadDetail()]))
     </div>
 
     <NewApplicationModal v-model:open="creating" :ticket-types="types" @created="onCreated" />
+
+    <UModal v-model:open="limitDialog" title="Rate limit" description="Applies to all keys of this Application together. A request over the limit gets 429 and waits for the next minute.">
+      <template #body>
+        <form id="limits" class="flex flex-col gap-4" @submit.prevent="saveLimits">
+          <UFormField label="Requests a minute" required>
+            <UInput v-model="limitRate" type="number" :min="1" :max="10000" size="lg" class="w-full" />
+          </UFormField>
+          <UFormField label="Ticket creates a minute" description="Part of the requests, so never more than them." :error="limitError ?? undefined" required>
+            <UInput v-model="limitCreate" type="number" :min="1" :max="10000" size="lg" class="w-full" />
+          </UFormField>
+        </form>
+      </template>
+      <template #footer>
+        <div class="flex justify-end gap-2 w-full">
+          <UButton color="neutral" variant="outline" @click="limitDialog = false">
+            Cancel
+          </UButton>
+          <UButton type="submit" form="limits" :loading="busy">
+            Save
+          </UButton>
+        </div>
+      </template>
+    </UModal>
 
     <UModal v-model:open="keyDialog" title="Create API key" description="Name it after where it is used, for example Production or Staging.">
       <template #body>

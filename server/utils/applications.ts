@@ -27,7 +27,7 @@ async function newKey() {
 }
 
 export type KeyCheck =
-  | { ok: true, principal: ApplicationPrincipal }
+  | { ok: true, principal: ApplicationPrincipal, limits: { requests: number, creates: number } }
   | { ok: false, reason: 'invalid' | 'disabled' }
 
 /**
@@ -44,6 +44,8 @@ export async function principalForKey(db: Db, key: string): Promise<KeyCheck> {
     permissions: application.permissions,
     ticketTypeIds: application.ticketTypeIds,
     disabledAt: application.disabledAt,
+    rateLimit: application.rateLimit,
+    createLimit: application.createLimit,
   }).from(apiKey)
     .innerJoin(application, eq(apiKey.applicationId, application.id))
     .where(and(eq(apiKey.keyHash, await sha256Hex(key)), isNull(apiKey.revokedAt)))
@@ -58,6 +60,7 @@ export async function principalForKey(db: Db, key: string): Promise<KeyCheck> {
   return {
     ok: true,
     principal: { kind: 'application', applicationId: row.applicationId, permissions: row.permissions, ticketTypeIds: row.ticketTypeIds, channel: 'api' },
+    limits: { requests: row.rateLimit, creates: row.createLimit },
   }
 }
 
@@ -83,6 +86,8 @@ export interface ApplicationSummary {
 export interface ApplicationDetail extends ApplicationSummary {
   permissions: string[]
   ticket_types: { id: number, name: string, prefix: string, icon: string, color: string }[]
+  rate_limit: number
+  create_limit: number
   keys: ApiKeyView[]
   created_at: string
 }
@@ -91,6 +96,8 @@ const nameInput = z.string({ error: 'Must be text.' }).trim().min(1, 'Name is re
 const descriptionInput = z.string({ error: 'Must be text.' }).trim().max(500, 'Description must be 500 characters or fewer.')
 const permissionsInput = z.array(z.enum(APPLICATION_PERMISSIONS, { error: `Must be one of ${APPLICATION_PERMISSIONS.join(', ')}.` }), { error: 'Must be a list.' })
 const typeIdsInput = z.array(z.number({ error: 'Must be Ticket Type IDs.' }).int().positive(), { error: 'Must be a list of Ticket Type IDs.' })
+
+const limitInput = z.number({ error: 'Must be a whole number.' }).int('Must be a whole number.').min(1, 'Must be at least 1.').max(10_000, 'Must be 10000 or fewer.')
 
 export const applicationCreateInput = z.strictObject({
   name: nameInput,
@@ -105,6 +112,8 @@ export const applicationUpdateInput = z.strictObject({
   permissions: permissionsInput.optional(),
   ticket_type_ids: typeIdsInput.optional(),
   enabled: z.boolean({ error: 'Must be true or false.' }).optional(),
+  rate_limit: limitInput.optional(),
+  create_limit: limitInput.optional(),
 })
 
 export const keyCreateInput = z.strictObject({ name: nameInput })
@@ -171,6 +180,8 @@ export async function getApplication(db: Db, id: number): Promise<ApplicationDet
     enabled: app.disabledAt === null,
     ticket_count: tickets?.count ?? 0,
     last_used_at: iso(lastUsed),
+    rate_limit: app.rateLimit,
+    create_limit: app.createLimit,
     permissions: APPLICATION_PERMISSIONS.filter(p => app.permissions.includes(p)),
     ticket_types: types,
     keys: keys.map(k => ({ id: k.id, name: k.name, prefix: k.prefix, created_at: k.createdAt.toISOString(), last_used_at: iso(k.lastUsedAt) })),
@@ -192,7 +203,7 @@ export async function createApplication(db: Db, input: z.output<typeof applicati
 
 /** Null when no Application has this ID. Disabling refuses its keys at once, because each request reads the flag. */
 export async function updateApplication(db: Db, id: number, input: z.output<typeof applicationUpdateInput>): Promise<ApplicationDetail | null> {
-  const [app] = await db.select({ id: application.id, disabledAt: application.disabledAt }).from(application).where(eq(application.id, id)).limit(1)
+  const [app] = await db.select({ id: application.id, disabledAt: application.disabledAt, rateLimit: application.rateLimit, createLimit: application.createLimit }).from(application).where(eq(application.id, id)).limit(1)
   if (!app) return null
   const set: Partial<typeof application.$inferInsert> = {}
   if (input.name !== undefined) {
@@ -202,6 +213,11 @@ export async function updateApplication(db: Db, id: number, input: z.output<type
   if (input.description !== undefined) set.description = input.description
   if (input.permissions !== undefined) set.permissions = [...new Set(input.permissions)]
   if (input.ticket_type_ids !== undefined) set.ticketTypeIds = await checkTypeIds(db, input.ticket_type_ids)
+  const nextRate = input.rate_limit ?? app.rateLimit
+  const nextCreate = input.create_limit ?? app.createLimit
+  if (nextCreate > nextRate) throw new ApplicationInputError([{ key: 'create_limit', reason: 'Creates are part of the requests, so this cannot be more than the request limit.' }])
+  if (input.rate_limit !== undefined) set.rateLimit = input.rate_limit
+  if (input.create_limit !== undefined) set.createLimit = input.create_limit
   // Keep the first disable time when an Admin disables twice.
   if (input.enabled !== undefined) set.disabledAt = input.enabled ? null : (app.disabledAt ?? new Date())
   if (Object.keys(set).length) await db.update(application).set(set).where(eq(application.id, id))

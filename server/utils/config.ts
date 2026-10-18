@@ -11,6 +11,8 @@ export interface Config {
   adminEmail: string | null
   mailTransport: MailTransportName
   mailFrom: string | null
+  /** RATE_LIMITS=off. For local development and tests only (DECISIONS 10). */
+  rateLimitsOff: boolean
 }
 
 export class ConfigError extends Error {
@@ -96,6 +98,11 @@ export function readConfig(env: RawEnv): Config {
     if (!env.EMAIL) throw new ConfigError('The EMAIL send_email binding is required when MAIL_TRANSPORT=cloudflare.')
   }
 
+  const rateLimitsOff = str(env, 'RATE_LIMITS') === 'off'
+  if (rateLimitsOff && appEnv !== 'development' && appEnv !== 'test') {
+    throw new ConfigError(`RATE_LIMITS=off is allowed only when APP_ENV is development or test (APP_ENV is "${appEnv}").`)
+  }
+
   if (!env.DB) throw new ConfigError('The DB (D1) binding is required.')
 
   return {
@@ -107,6 +114,7 @@ export function readConfig(env: RawEnv): Config {
     adminEmail: str(env, 'ADMIN_EMAIL')?.toLowerCase() ?? null,
     mailTransport,
     mailFrom,
+    rateLimitsOff,
   }
 }
 

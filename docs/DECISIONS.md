@@ -197,6 +197,14 @@ Rate limits (Q41, Delegated). An Admin can change the limits for each API key.
 
 Before implementation, confirm that the Cloudflare rate-limiting binding is available on the Free plan. If it is not, use a counter in D1 for the sign-in and OTP limits only.
 
+| # | Decision | Status |
+|---|---|---|
+| 10.1 | Binding check (2026-10-18, https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/). The page documents `ratelimits` in the Wrangler config and `env.X.limit({ key })`. `period` must be 10 or 60 seconds. Limits are per Cloudflare location, so counts are approximate. The page and the Workers limits page (https://developers.cloudflare.com/workers/platform/limits/) do not say that the Workers Free plan includes it, and do not say that `wrangler dev` or `@cloudflare/vitest-plugin` support it. | Decided |
+| 10.2 | Because of 10.1, and because the limit of a binding is fixed in config while Admins change the limit for each Application, all limits use one D1 fixed-window counter: table `rate_counter (key, window, count)`, one UPSERT with `RETURNING` for each counted request. It is exact, works in tests and local dev, and refuses visibly. Cost: one D1 row write for each counted request. At the scale of 1.3 this is far below the Free plan write budget. Fixed windows allow up to 2 times the limit across a minute boundary. The cron deletes counters older than 2 minutes. | Decided |
+| 10.3 | The API key limits are set for each Application (the Rate limit row on the Application page, as in the canvas), not for each key. They are counted for the Application, so all its keys share them and a new key does not give more room. Defaults 60 requests/min and 10 creates/min (`POST /api/v1/tickets`). Creates also count as requests. The create limit cannot be above the request limit. | Decided |
+| 10.4 | Where the limits apply: REST after the key or session is verified (so bad keys cost no D1 write); each MCP tool call, with writes (every tool without `readOnlyHint: true`) also counted in the 10/min write limit; `POST /api/auth/sign-in/*` and `/api/auth/email-otp/*` for each `CF-Connecting-IP` (without the header, as in local dev, all callers share one counter). REST answers 429 `RATE_LIMITED` in the standard error format with `Retry-After`; MCP answers a tool error `RATE_LIMITED: ...`; the Better-Auth routes answer 429 `{ code, message }` with `Retry-After`. The per-address code limit of ADR 0001 is unchanged. | Decided |
+| 10.5 | Test override: `RATE_LIMITS=off` turns the limits off. The config check refuses it unless `APP_ENV` is `development` or `test`, so staging and production fail at start. Playwright sets it with `--var`. Vitest keeps the limits on: tests use a new random `CF-Connecting-IP` for each call, and the limit tests wait for a fresh minute. | Decided |
+
 ## 11. Production baseline (Q23, Decided)
 
 - Two environments, `staging` and `production`, each with its own D1, R2 and secrets.
