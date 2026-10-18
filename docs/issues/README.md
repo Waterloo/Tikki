@@ -35,9 +35,9 @@ Vertical slices of [the PRD](../PRD.md). Each slice goes through every layer and
 | 26 | [UI foundation: theme, app shell, shared parts](26-ui-foundation.md) | AFK | 01 | Done |
 | 27 | [Restricted tickets: Participants only](27-restricted-tickets.md) | AFK | — | Done |
 | 28 | [Invite with a role and Teams](28-invite-with-role-and-teams.md) | AFK | — | Done |
-| 29 | [Assign to any Agent, and move a ticket to another Team](29-assign-anyone-and-move-team.md) | AFK | — | In progress |
-| 30 | [Claude checks for duplicates, and the Cron removes old uploads](30-duplicate-check-and-upload-cleanup.md) | AFK | — | In progress |
-| 31 | [Calmer ticket page actions](31-ticket-page-actions.md) | AFK | — | In progress |
+| 29 | [Assign to any Agent, and move a ticket to another Team](29-assign-anyone-and-move-team.md) | AFK | — | Done |
+| 30 | [Claude checks for duplicates, and the Cron removes old uploads](30-duplicate-check-and-upload-cleanup.md) | AFK | — | Done |
+| 31 | [Calmer ticket page actions](31-ticket-page-actions.md) | AFK | — | Done |
 
 All AFK issues except 02 are merged into `integration` on 2026-10-18. The cloud setup is deferred (issues 02, 24 and 25, and the staging checks).
 
