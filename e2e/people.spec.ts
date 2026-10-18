@@ -3,6 +3,7 @@ import { expect, test, type Browser } from '@playwright/test'
 import { expectToast } from './toast'
 import { logSize } from './mail'
 import { signIn, signInAsAdmin } from './sign-in'
+import { openSettings } from './settings'
 
 // A fresh context: the shared session belongs to a Requester.
 async function adminPage(browser: Browser) {
@@ -14,7 +15,7 @@ async function adminPage(browser: Browser) {
 
 test('an Admin invites, creates a Team and deactivates a User', async ({ browser }) => {
   const { context, page } = await adminPage(browser)
-  await page.getByRole('link', { name: 'Teams and users' }).first().click()
+  await openSettings(page, 'Teams and users')
   await expect(page.getByRole('heading', { name: 'Teams and users' }).first()).toBeVisible()
   await expect(page.getByText('Who can sign in')).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Support' })).toBeVisible()
