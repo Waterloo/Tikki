@@ -15,20 +15,13 @@
  *   pnpm lint:migrations              lint ./migrations
  *   pnpm lint:migrations <dir>        lint another directory (used to try a bad sample)
  * Needs Node 22+ (`node:sqlite`).
- * Migrations that are already applied are never edited, so GRANDFATHERED lists the known old findings.
- * Do not add new entries: fix the SQL instead.
  */
 import { DatabaseSync } from 'node:sqlite'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
-import { basename, join, resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 
 interface Finding { file: string, line: number, message: string }
 interface Stmt { sql: string, line: number }
-
-// 0013 has the drizzle-kit PRAGMA lines. They are no-ops on D1 and the file is already applied.
-const GRANDFATHERED: Record<string, RegExp> = {
-  '0013_admin_audit.sql': /PRAGMA foreign_keys/,
-}
 
 const findings: Finding[] = []
 
@@ -110,9 +103,7 @@ function columnsOf(db: DatabaseSync, table: string): Set<string> | null {
 }
 
 function lintStatement(file: string, st: Stmt, db: DatabaseSync) {
-  const skip = GRANDFATHERED[basename(file)]
   const add = (message: string, at = 0) => {
-    if (skip?.test(message)) return
     findings.push({ file, line: st.line + st.sql.slice(0, at).split('\n').length - 1, message })
   }
 
