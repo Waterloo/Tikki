@@ -159,6 +159,9 @@ _Avoid_: Dashboard app, full-screen app
 **App manifest**:
 A JSON file that a Ticket App publishes to describe itself: name, icons, URLs, and the access it asks for. An Admin reviews it before the app is added or changed.
 
+**Ticket scope**:
+For each permission of an Application (read, update, comment): which tickets it reaches. Own: the tickets it created for its Contacts. All: every ticket, except Restricted tickets unless the Admin includes them. An Admin sets it.
+
 **Ticket App access**:
 What a Ticket App's backend may do with its Context Token: read, comment, or update. Each level includes the one before. An Admin sets it.
 
