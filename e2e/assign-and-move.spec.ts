@@ -41,10 +41,11 @@ test('a Support Agent moves a ticket to Development and assigns it to a Developm
   await expect(support.page.getByText(`Moved to ${devName}`, { exact: true })).toBeVisible()
   await expect(support.page.getByRole('listitem').filter({ hasText: `Support to ${devName}` })).toBeVisible()
 
-  // Members of the ticket's Team come first.
-  await panel.getByRole('button', { name: 'Assign to', exact: true }).click()
+  // "Me (you)" is first, then the members of the ticket's Team.
+  await panel.getByRole('button', { name: 'Assignee' }).click()
   const options = support.page.getByRole('option')
-  await expect(options.first()).toContainText(`e2e-dev-${stamp}@example.com`)
+  await expect(options.first()).toHaveText('Me (you)')
+  await expect(options.nth(1)).toContainText(`e2e-dev-${stamp}@example.com`)
   await expect(support.page.getByText(`${devName} members`)).toBeVisible()
   await options.filter({ hasText: `e2e-dev-${stamp}@example.com` }).click()
   await expect(support.page.getByText(`Assigned to e2e-dev-${stamp}@example.com`, { exact: true })).toBeVisible()
@@ -64,6 +65,6 @@ test('a Support Agent moves a ticket to Development and assigns it to a Developm
   // A Requester sees the Team but has no controls.
   await page.goto(`/tickets/${ref}`)
   await expect(page.getByRole('heading', { name: title })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Assign to', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Assignee' })).toHaveCount(0)
   await expect(page.getByRole('combobox', { name: 'Team' })).toHaveCount(0)
 })

@@ -16,7 +16,8 @@ test('an Admin deletes a ticket, finds it in Settings › Privacy, and restores 
   const { ref } = await res.json() as { ref: string }
 
   await page.goto(`/tickets/${ref}`)
-  await page.getByRole('button', { name: 'Delete', exact: true }).click()
+  await page.getByRole('button', { name: 'More actions' }).click()
+  await page.getByRole('menuitem', { name: 'Delete ticket…' }).click()
   await page.getByRole('dialog').getByRole('button', { name: 'Delete ticket' }).click()
   await expect(page).toHaveURL(/\/tickets$/)
   await page.goto(`/tickets/${ref}`)

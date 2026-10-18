@@ -20,13 +20,38 @@ The top of the ticket page shows Edit, "Cancel ticket" and Delete as three borde
 
 ## Acceptance criteria
 
-- [ ] Playwright: on a ticket, the only visible page button is Edit; Cancel and Delete are in the "More actions" menu.
-- [ ] Playwright: in edit mode, no Cancel or Delete control is visible; "Discard" leaves edit mode and the ticket Status does not change.
-- [ ] Playwright: cancelling needs the menu item and the dialog's "Cancel ticket" button; "Keep ticket" changes nothing.
-- [ ] Playwright: an Admin deletes a ticket and "Undo" in the toast restores it.
-- [ ] Playwright: an Agent assigns themself from the select's "Me (you)" option and from the small "Assign to me" link.
-- [ ] The page has no horizontal scroll at 375 px; light and dark mode checked in a browser.
+- [x] Playwright: on a ticket, the only visible page button is Edit; Cancel and Delete are in the "More actions" menu.
+  Evidence: `e2e/ticket-actions.spec.ts` "the only page button is Edit...": the header has 2 buttons (Edit, More actions); Cancel/Delete only as menu items.
+- [x] Playwright: in edit mode, no Cancel or Delete control is visible; "Discard" leaves edit mode and the ticket Status does not change.
+  Evidence: `e2e/ticket-actions.spec.ts` "edit mode has no Cancel or Delete...": no menu, no Cancel/Delete; Escape does nothing; Discard leaves the Status unchanged.
+- [x] Playwright: cancelling needs the menu item and the dialog's "Cancel ticket" button; "Keep ticket" changes nothing.
+  Evidence: `e2e/ticket-actions.spec.ts` "cancelling needs the menu item..." and `e2e/self-service.spec.ts` (Requester cancels through the menu).
+- [x] Playwright: an Admin deletes a ticket and "Undo" in the toast restores it.
+  Evidence: `e2e/ticket-actions.spec.ts` "an Admin deletes a ticket and Undo...": Undo restores it and opens the ticket again.
+- [x] Playwright: an Agent assigns themself from the select's "Me (you)" option and from the small "Assign to me" link.
+  Evidence: `e2e/ticket-actions.spec.ts` "an Agent assigns themself...": "Me (you)" option, "Nobody" option, and the small "Assign to me" link.
+- [x] The page has no horizontal scroll at 375 px; light and dark mode checked in a browser.
+  Evidence: Playwright asserts no horizontal overflow at 375 px (Admin and Requester, light and dark). Screenshots checked: `admin-*`, `requester-*` in the scratchpad `issue-31/` folder.
 
 ## Blocked by
 
 None. Builds on issues 05, 09, 22 and 29.
+
+## Not verified
+
+- Screenshots were taken with headless Playwright, not a live browser pane. Only the Admin's Delete item and the Requester's Cancel item were seen in the menu; the Requester's Reopen button was covered by e2e only.
+- The Undo toast is not checked at 375 px.
+
+## Decisions made here
+
+- Reopen stays a visible secondary (outline, neutral) button, not in the menu: for a Requester whose ticket is resolved it is the main next step. It is hidden in edit mode.
+- The menu holds "Cancel this ticket…" and "Delete ticket…" (red text and icon only). The trigger is an outline icon button with aria-label "More actions".
+- Assignee is one `USelectMenu`: "Me (you)", then "Nobody" (only when assigned, it unassigns), then Team members, then other Agents. The current User is removed from the Team and Agents lists, to avoid a duplicate. The old "Unassign" button is gone.
+- The small "Assign to me" link (`variant="link"`) shows beside the label only when the ticket is unassigned and the User may assign. When someone else holds the ticket, the select is the way to take it.
+- Undo: after delete the page goes to the list, as before. Undo calls the restore route, then opens the ticket again. The toast lasts 10 s. The Settings › Privacy path stays.
+- "Change type" and the picker's "Cancel" are ghost buttons. The picker's submit stays solid because it commits a change that cannot be reverted.
+- No server change, no migration.
+
+## Notes for later issues
+
+- The USelectMenu trigger has role `button` in Playwright (not `combobox`); USelect has role `combobox`.

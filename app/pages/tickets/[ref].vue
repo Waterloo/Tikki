@@ -46,6 +46,11 @@ const back = computed(() => isStaff.value ? { label: 'All tickets', to: '/ticket
 const can = (action: TicketDetail['allowed_actions'][number]) => ticket.value?.allowed_actions.includes(action) ?? false
 const assignedToMe = computed(() => !!ticket.value?.assignee && ticket.value.assignee.id === user.value?.id)
 const canEdit = computed(() => can('edit_description') || can('edit_fields'))
+// Cancel and Delete live in one quiet menu. Red shows only on the item text.
+const menuItems = computed(() => [
+  ...(can('cancel') ? [{ label: 'Cancel this ticket…', icon: 'i-lucide-x', color: 'error' as const, onSelect: () => { cancelOpen.value = true } }] : []),
+  ...(can('delete') ? [{ label: 'Delete ticket…', icon: 'i-lucide-trash-2', color: 'error' as const, onSelect: () => { deleteOpen.value = true } }] : []),
+])
 const statusItems = computed(() => statuses.value.map(s => ({ label: s.name, value: s.key })))
 
 async function load() {
@@ -124,25 +129,36 @@ function assignToMe() {
   if (user.value) save('assignee', { assignee_id: user.value.id }, 'Assigned to you')
 }
 
-// The members of the ticket's Team come first.
+// "Me" first, then the ticket's Team members, then the other Agents. "Nobody" unassigns.
 type AssignItem = { label: string, description?: string, value: string }
+const NOBODY = '__nobody'
 const assignItems = computed<(AssignItem | { type: 'label', label: string })[]>(() => {
-  const all = people.value?.data ?? []
+  const me = user.value?.id
+  const all = (people.value?.data ?? []).filter(p => p.id !== me)
   const teamId = ticket.value?.team.id
   const members = all.filter(p => teamId !== undefined && p.team_ids.includes(teamId))
   const others = all.filter(p => !members.includes(p))
   const item = (p: Assignable) => ({ label: displayName(p), description: displayName(p) === p.email ? undefined : p.email, value: p.id })
   return [
+    ...(me ? [{ label: 'Me (you)', value: me }] : []),
+    ...(ticket.value?.assignee ? [{ label: 'Nobody', value: NOBODY }] : []),
     ...(members.length ? [{ type: 'label' as const, label: `${ticket.value!.team.name} members` }, ...members.map(item)] : []),
     ...(others.length ? [{ type: 'label' as const, label: members.length ? 'Other Agents' : 'Agents' }, ...others.map(item)] : []),
   ]
 })
-const assigneeItem = computed(() => assignItems.value.find((i): i is AssignItem => 'value' in i && i.value === ticket.value?.assignee?.id))
+const assigneeItem = computed(() => {
+  const a = ticket.value?.assignee
+  if (!a) return undefined
+  // Fall back to the ticket's own data while the list loads.
+  return assignItems.value.find((i): i is AssignItem => 'value' in i && i.value === a.id) ?? { label: displayName(a), value: a.id }
+})
 const teamItems = computed(() => (people.value?.teams ?? []).map(t => ({ label: t.name, value: t.id })))
 
 function assignTo(item: typeof assignItems.value[number]) {
   if (!('value' in item) || item.value === ticket.value?.assignee?.id) return
+  if (item.value === NOBODY) return unassign()
   const id = item.value
+  if (id === user.value?.id) return assignToMe()
   const person = people.value?.data.find(p => p.id === id)
   save('assignee', { assignee_id: id }, person ? `Assigned to ${displayName(person)}` : 'Assigned')
 }
@@ -276,7 +292,8 @@ async function softDelete() {
     // A plain string: the typed routes read `/tickets/${ref}` as the GET-only `/tickets/deleted`.
     const url: string = `/api/v1/tickets/${ticket.value.ref}`
     await $fetch(url, { method: 'DELETE' })
-    toast.add({ title: `${ticket.value.ref} deleted`, description: 'Restore it from Settings › Privacy.', color: 'success' })
+    const ref = ticket.value.ref
+    toast.add({ title: `${ref} deleted`, description: 'You can also restore it from Settings › Privacy.', color: 'success', duration: 10000, actions: [{ label: 'Undo', color: 'neutral', variant: 'outline', onClick: () => undoDelete(ref) }] })
     deleteOpen.value = false
     await navigateTo(back.value.to)
   } catch (e) {
@@ -284,6 +301,19 @@ async function softDelete() {
     toast.add({ title: 'The ticket was not deleted.', description: err.data?.error?.message ?? 'Check your connection, then try again.', color: 'error' })
   } finally {
     deleting.value = false
+  }
+}
+
+async function undoDelete(ref: string) {
+  try {
+    const url: string = `/api/v1/tickets/${ref}/restore`
+    await $fetch(url, { method: 'POST' })
+    toast.add({ title: `${ref} restored`, color: 'success', duration: 2500 })
+    // This page is gone after the delete: open the ticket again.
+    await router.push(`/tickets/${ref}`)
+  } catch (e) {
+    const err = e as { data?: { error?: { message?: string } } }
+    toast.add({ title: 'The ticket was not restored.', description: err.data?.error?.message ?? 'Restore it from Settings › Privacy.', color: 'error' })
   }
 }
 
@@ -336,19 +366,16 @@ onMounted(load)
         :subtitle="`Opened ${timeAgo(ticket.created_at)} by ${displayName(ticket.requester)}, from ${SOURCE[ticket.channel]}.`"
         :breadcrumb="[back, { label: ticket.ref }]"
       >
-        <template v-if="(canEdit && !editing) || can('cancel') || can('reopen') || can('delete')" #actions>
-          <UButton v-if="canEdit && !editing" variant="outline" color="neutral" icon="i-lucide-pencil" @click="startEdit">
+        <template v-if="!editing && (canEdit || can('reopen') || menuItems.length)" #actions>
+          <UButton v-if="canEdit" variant="outline" color="neutral" icon="i-lucide-pencil" @click="startEdit">
             Edit
           </UButton>
-          <UButton v-if="can('reopen')" icon="i-lucide-rotate-ccw" :loading="acting === 'reopen'" :disabled="acting !== null" @click="selfService('reopen')">
+          <UButton v-if="can('reopen')" variant="outline" color="neutral" icon="i-lucide-rotate-ccw" :loading="acting === 'reopen'" :disabled="acting !== null" @click="selfService('reopen')">
             Reopen
           </UButton>
-          <UButton v-if="can('cancel')" variant="outline" color="error" icon="i-lucide-x" :disabled="acting !== null" @click="cancelOpen = true">
-            Cancel ticket
-          </UButton>
-          <UButton v-if="can('delete')" variant="ghost" color="error" icon="i-lucide-trash-2" @click="deleteOpen = true">
-            Delete
-          </UButton>
+          <UDropdownMenu v-if="menuItems.length" :items="menuItems" :content="{ align: 'end' }">
+            <UButton variant="outline" color="neutral" icon="i-lucide-ellipsis" aria-label="More actions" />
+          </UDropdownMenu>
         </template>
         <template #eyebrow>
           <TicketTypeChip :name="ticket.ticket_type.name" :icon="ticket.ticket_type.icon" :color="ticket.ticket_type.color" />
@@ -479,38 +506,36 @@ onMounted(load)
             </div>
 
             <div class="flex flex-col gap-1.5">
-              <span class="text-[13px] text-(--ui-text-muted)">Assignee</span>
-              <div class="flex items-center gap-2 min-h-10">
+              <div class="flex items-center justify-between gap-2 min-h-5">
+                <label v-if="can('assign')" for="ticket-assignee" class="text-[13px] text-(--ui-text-muted)">Assignee</label>
+                <span v-else class="text-[13px] text-(--ui-text-muted)">Assignee</span>
+                <UButton v-if="can('assign') && !ticket.assignee" size="xs" variant="link" color="neutral" class="p-0" :loading="saving === 'assignee'" :disabled="saving !== null" @click="assignToMe">
+                  Assign to me
+                </UButton>
+              </div>
+              <USelectMenu
+                v-if="can('assign')"
+                id="ticket-assignee"
+                :model-value="assigneeItem"
+                :items="assignItems"
+                placeholder="Unassigned"
+                aria-label="Assignee"
+                :loading="peopleState === 'loading' || saving === 'assignee'"
+                :disabled="saving !== null || peopleState !== 'idle'"
+                class="w-full"
+                @update:model-value="assignTo"
+              />
+              <div v-else class="flex items-center gap-2 min-h-8">
                 <template v-if="ticket.assignee">
                   <UserAvatar :person="ticket.assignee" size="sm" />
                   <span class="flex-1 min-w-0 text-sm truncate text-(--ui-text-highlighted)">{{ displayName(ticket.assignee) }}<span v-if="assignedToMe" class="text-(--ui-text-muted)"> (you)</span></span>
                 </template>
-                <span v-else class="flex-1 text-sm text-(--ui-text-muted)">Unassigned</span>
-                <template v-if="can('assign')">
-                  <UButton v-if="assignedToMe" size="sm" variant="outline" :loading="saving === 'assignee'" :disabled="saving !== null" @click="unassign">
-                    Unassign
-                  </UButton>
-                  <UButton v-else size="sm" :variant="ticket.assignee ? 'outline' : 'solid'" :loading="saving === 'assignee'" :disabled="saving !== null" @click="assignToMe">
-                    Assign to me
-                  </UButton>
-                </template>
+                <span v-else class="text-sm text-(--ui-text-muted)">Unassigned</span>
               </div>
-              <template v-if="can('assign')">
-                <USelectMenu
-                  :model-value="assigneeItem"
-                  :items="assignItems"
-                  placeholder="Assign to someone else"
-                  aria-label="Assign to"
-                  :loading="peopleState === 'loading' || saving === 'assignee'"
-                  :disabled="saving !== null || peopleState !== 'idle'"
-                  class="w-full"
-                  @update:model-value="assignTo"
-                />
-                <p v-if="peopleState === 'error'" class="text-[13px] text-(--ui-error)" role="alert">
-                  The list of people could not be loaded.
-                  <button type="button" class="underline" @click="loadPeople">Try again</button>
-                </p>
-              </template>
+              <p v-if="can('assign') && peopleState === 'error'" class="text-[13px] text-(--ui-error)" role="alert">
+                The list of people could not be loaded.
+                <button type="button" class="underline" @click="loadPeople">Try again</button>
+              </p>
             </div>
 
             <div class="flex flex-col gap-1.5">
@@ -533,7 +558,7 @@ onMounted(load)
               <span class="text-[13px] text-(--ui-text-muted)">Ticket Type</span>
               <div v-if="typeChoice === null" class="flex items-center justify-between gap-2">
                 <TicketTypeChip :name="ticket.ticket_type.name" :icon="ticket.ticket_type.icon" :color="ticket.ticket_type.color" />
-                <UButton v-if="can('change_type')" size="sm" variant="outline" color="neutral" @click="openTypePicker">
+                <UButton v-if="can('change_type')" size="sm" variant="ghost" color="neutral" @click="openTypePicker">
                   Change type
                 </UButton>
               </div>
@@ -549,7 +574,7 @@ onMounted(load)
                   <UButton type="submit" size="sm" :loading="saving === 'type'" :disabled="saving !== null || typeChoice === ticket.ticket_type.id">
                     Change type
                   </UButton>
-                  <UButton size="sm" variant="outline" color="neutral" :disabled="saving !== null" @click="typeChoice = null">
+                  <UButton size="sm" variant="ghost" color="neutral" :disabled="saving !== null" @click="typeChoice = null">
                     Cancel
                   </UButton>
                 </div>
