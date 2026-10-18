@@ -40,7 +40,7 @@ Each Ticket App gets an icon. It shows on the sidebar card title, on the app's t
 - Playwright: `e2e/ticket-apps.spec.ts` "app icons show on the card, the tab and the admin list" in light and dark, and "the admin form uploads …". `e2e/layout.spec.ts` seeds light and dark images and passes.
 - Migration: `migrations.test.ts` "issue 38: …".
 - Seen in a browser on the dev server (8838): the ticket page (card and tab) at 375 px light and dark and at desktop dark; the admin list at 375 px dark; the edit dialog in image mode at 375 px dark and in built-in mode at desktop light. No horizontal scroll at 375 px.
-- Runs: see the final report of the lead (counts are in the commit that closes this issue).
+- Runs: `pnpm test` 458 passed (42 files); `pnpm typecheck` passes; `pnpm lint:migrations` OK; `E2E_PORT=9838 pnpm e2e` 98 passed in two full runs.
 - Reviewer (opus): fixed the exact locators, the missing test for an API key and a context token, and the content type (now from the R2 object). Answered below.
 
 ## Not verified
