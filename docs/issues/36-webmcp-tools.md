@@ -84,6 +84,7 @@ Test with a stub of `document.modelContext`, not with a real agent. In `e2e/webm
 - [ ] The layout spec passes.
 - [ ] `docs/DECISIONS.md` gets rows: WebMCP tools call REST only; `X-Tikki-Channel: ai` is a label under the MCP rate limits; the `ai` chip says "AI".
 - [ ] `docs/architecture.md`, Principal section: the header is the third way to get channel `ai`.
+- [ ] `README.md`, "Use it from an AI assistant": one row for the ChatGPT desktop browser (WebMCP): open Tikki in the app's browser, and ChatGPT can search, open and update tickets in your tab with no connector. The `ai` source label change ("AI", not "Claude") is reflected wherever the README names the channel.
 
 ## Blocked by
 

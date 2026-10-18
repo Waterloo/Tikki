@@ -38,11 +38,11 @@ Vertical slices of [the PRD](../PRD.md). Each slice goes through every layer and
 | 29 | [Assign to any Agent, and move a ticket to another Team](29-assign-anyone-and-move-team.md) | AFK | — | Done |
 | 30 | [Claude checks for duplicates, and the Cron removes old uploads](30-duplicate-check-and-upload-cleanup.md) | AFK | — | Done |
 | 31 | [Calmer ticket page actions](31-ticket-page-actions.md) | AFK | — | Done |
-| 32 | [No framing of Tikki by other sites](32-frame-protection.md) | AFK | — | Planned |
-| 33 | [Ticket page tabs: Conversation and Activity](33-ticket-page-tabs.md) | AFK | — | Planned |
-| 34 | [Ticket Apps: an external page inside the ticket](34-ticket-apps.md) | AFK | 32, 33 | Planned |
+| 32 | [No framing of Tikki by other sites](32-frame-protection.md) | AFK | — | Done |
+| 33 | [Ticket page tabs: Conversation and Activity](33-ticket-page-tabs.md) | AFK | — | Done |
+| 34 | [Ticket Apps: an external page inside the ticket](34-ticket-apps.md) | AFK | 32, 33 | Done |
 | 35 | [Ticket Apps change the ticket through the API](35-ticket-app-writes.md) | AFK | 34 | Planned |
-| 36 | [WebMCP tools in the Tikki page](36-webmcp-tools.md) | AFK | None | Planned |
+| 36 | [WebMCP tools in the Tikki page](36-webmcp-tools.md) | AFK | 35 | Planned |
 
 All AFK issues except 02 are merged into `integration` on 2026-10-18. The cloud setup is deferred (issues 02, 24 and 25, and the staging checks).
 
