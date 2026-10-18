@@ -47,9 +47,15 @@ const back = computed(() => isStaff.value ? { label: 'All tickets', to: '/ticket
 // Ticket Apps are for staff only, and depend on the type. A failed load just shows no apps.
 const apps = ref<TicketAppFrame[]>([])
 // A text key, so a saved ticket with the same ref and type does not reload them.
-watch(() => isStaff.value && ticket.value ? `${ticket.value.ref} ${ticket.value.ticket_type.id}` : null, async (key) => {
-  if (!key) return
-  apps.value = await $fetch<{ data: TicketAppFrame[] }>(`/api/v1/tickets/${encodeURIComponent(key.split(' ')[0]!)}/apps`).then(r => r.data, () => [])
+watch(() => isStaff.value && ticket.value ? `${ticket.value.ref} ${ticket.value.ticket_type.id}` : null, async (key, _old, onCleanup) => {
+  let stale = false
+  onCleanup(() => { stale = true })
+  if (!key) {
+    apps.value = []
+    return
+  }
+  const list = await $fetch<{ data: TicketAppFrame[] }>(`/api/v1/tickets/${encodeURIComponent(key.split(' ')[0]!)}/apps`).then(r => r.data, () => [])
+  if (!stale) apps.value = list
 })
 const can = (action: TicketDetail['allowed_actions'][number]) => ticket.value?.allowed_actions.includes(action) ?? false
 const assignedToMe = computed(() => !!ticket.value?.assignee && ticket.value.assignee.id === user.value?.id)

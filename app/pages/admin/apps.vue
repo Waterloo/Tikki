@@ -96,7 +96,10 @@ async function save() {
   saving.value = true
   problems.value = {}
   formError.value = null
-  const body = { name: form.name, url: form.url, position: form.position, ticket_type_ids: form.showOn === 'all' ? null : form.typeIds.map(Number), enabled: form.enabled }
+  const typeIds = form.showOn === 'all' ? null : form.typeIds.map(Number)
+  // Unchanged types are not sent, so an app whose types were all archived can still be renamed.
+  const sameTypes = editing.value && JSON.stringify(editing.value.ticket_type_ids) === JSON.stringify(typeIds)
+  const body = { name: form.name, url: form.url, position: form.position, ...(sameTypes ? {} : { ticket_type_ids: typeIds }), enabled: form.enabled }
   try {
     if (editing.value) {
       const saved = await $fetch<TicketApp>(`/api/v1/admin/ticket-apps/${editing.value.id}`, { method: 'PATCH', body })

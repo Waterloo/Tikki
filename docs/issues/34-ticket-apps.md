@@ -93,6 +93,7 @@ Tikki sends every message only to the origin of the app URL (never `'*'`). Tikki
 
 - The 10 s timeout and Retry are tested with an app that never posts. A page that never loads (a hanging server) is not tested; it gives the same result, because only a message counts.
 - The sandbox is checked by its attribute value, not by a test that tries `top.location` from the app.
+- Popups: with `allow-popups-to-escape-sandbox` (the spec's flags), a popup of the app has no sandbox and keeps `opener`. It can probably navigate the Tikki tab through `opener.top`. Not tried in a browser. The guide now says only the frame cannot navigate the tab.
 
 ## Decisions made here
 
@@ -103,8 +104,11 @@ Tikki sends every message only to the origin of the app URL (never `'*'`). Tikki
 - **The route is session only, and any `Authorization` header gets 403**, also with a cookie. So in issue 35 a context token or API key can never mint a new token.
 - **The Agent or Admin check is `authorizeTicketApps` in `policy.ts`.** `GET /api/v1/tickets/{ref}/apps` lists the apps of a ticket, with the same checks.
 - **"Loaded" means the app sent its first message** within 10 s. A frame `load` event also fires for a browser error page, so it proves nothing. The guide says so (Messages, Errors).
-- **The page caches the token** and sends the cached one while more than 60 s are left. So an app that sends `tikki:fetch-context` often does not use up the Agent's web rate limit. A ticket change or a type change gets a new token.
+- **The page caches the token** and sends the cached one while more than 60 s are left. The renew time comes from the token's own lifetime (`exp - iat`) and the local time of receipt, so a wrong clock on the Agent's computer does not give the app an expired token. So an app that sends `tikki:fetch-context` often does not use up the Agent's web rate limit. A ticket change or a type change gets a new token.
 - **The context is sent again when the color mode changes**, with the cached token.
+- **"After the ticket changes" means a change on this page** (the Agent's own edit or revert). A change by another person does not send a new context; the page has no live updates. The guide says so.
+- **`GET /api/v1/tickets/{ref}/apps` also refuses any `Authorization` header** (403), like the token route.
+- **The admin form sends `ticket_type_ids` only when it changed**, so an app whose types are all archived can still be renamed.
 - **Order**: `sort_order`, with `POST /api/v1/admin/ticket-apps/{id}/move` `{ direction }`. It swaps with the neighbour in one batch and writes `ticket_app_moved` on the moved app.
 - **Audit actions**: `ticket_app_created`, `ticket_app_changed` (changed keys only, before and after), `ticket_app_enabled`, `ticket_app_disabled`, `ticket_app_moved`, `ticket_app_deleted`. Subject type `ticket_app`.
 - **Admin routes** are under `/api/v1/admin/ticket-apps`. The page is `/admin/apps`, nav item "Ticket Apps" after Webhooks.
@@ -116,6 +120,8 @@ Tikki sends every message only to the origin of the app URL (never `'*'`). Tikki
 
 - Issue 35: add the `access` column and its setting on the admin page, `tikki:refresh` in `TicketAppFrame.vue`, and the Bearer context token in `restPrincipal`. Keep the token route refusing every `Authorization` header. Check the app (on, shown on the type) on each API call.
 - Issue 35: the guide's "Status: planned" note is still there.
+- Popup `opener` (see Not verified): if it is real, `Cross-Origin-Opener-Policy` on the SPA pages (issue 32's `_headers`) would remove `opener` from cross-origin popups. Check the sign-in flows first.
+- `E2E_APP_PORT` (default `E2E_PORT + 100`) is a third port for each agent. `docs/agents/parallel-work.md` now says so.
 - `ticket_app` holds no personal data, so `eraseContact` needs no change. The privacy scan test passes.
 
 ## Glossary terms to add

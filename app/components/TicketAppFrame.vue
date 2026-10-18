@@ -25,18 +25,28 @@ const height = ref(200)
 const attempt = ref(0)
 
 let context: ContextToken | null = null
+// Local clock time to renew at. From the token's own lifetime, so a wrong clock on this computer does not matter.
+let renewAt = 0
 let inflight: Promise<ContextToken> | null = null
 // Bumped when the ticket changes, so an answer for the old ticket is never posted.
 let generation = 0
 let timer: ReturnType<typeof setTimeout> | undefined
 
+function lifetimeMs(token: string): number {
+  const claims = JSON.parse(atob(token.split('.')[1]!.replace(/-/g, '+').replace(/_/g, '/'))) as { iat: number, exp: number }
+  return (claims.exp - claims.iat) * 1000
+}
+
 function getContext(): Promise<ContextToken> {
-  if (context && Date.parse(context.expires_at) - Date.now() > RENEW_BEFORE_MS) return Promise.resolve(context)
+  if (context && Date.now() < renewAt) return Promise.resolve(context)
   if (inflight) return inflight
   const gen = generation
   const request = $fetch<ContextToken>(`/api/v1/tickets/${encodeURIComponent(props.ticketRef)}/apps/${props.app.id}/token`, { method: 'POST' })
     .then((c) => {
-      if (gen === generation) context = c
+      if (gen === generation) {
+        context = c
+        renewAt = Date.now() + lifetimeMs(c.token) - RENEW_BEFORE_MS
+      }
       return c
     })
     .finally(() => {

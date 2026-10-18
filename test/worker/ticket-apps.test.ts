@@ -40,6 +40,13 @@ async function raise(s: Session, ticketTypeId = gen): Promise<Ticket> {
   return res.json() as Promise<Ticket>
 }
 
+/** A valid API key of a new Application. */
+async function apiKey(): Promise<string> {
+  const created = await postJson('/api/v1/applications', { name: `Shop ${counter++}`, description: 'Shop.', permissions: ['tickets:read'], ticket_type_ids: [gen] }, h(admin))
+  const key = await (await postJson(`/api/v1/applications/${(await created.json() as { id: number }).id}/keys`, { name: 'Prod' }, h(admin))).json() as { key: string }
+  return key.key
+}
+
 async function jwks() {
   return createLocalJWKSet(await (await call('/api/auth/jwks')).json() as Parameters<typeof createLocalJWKSet>[0])
 }
@@ -80,6 +87,12 @@ describe('Ticket Apps: admin', () => {
       expect((await postJson(`/api/v1/admin/ticket-apps/${app.id}/move`, { direction: 'up' }, h(s))).status).toBe(403)
       expect((await call(`/api/v1/admin/ticket-apps/${app.id}`, { method: 'DELETE', headers: h(s) })).status).toBe(403)
     }
+    const bearer = { authorization: `Bearer ${await apiKey()}` }
+    expect((await call('/api/v1/admin/ticket-apps', { headers: bearer })).status).toBe(403)
+    expect((await postJson('/api/v1/admin/ticket-apps', { name: 'X', url: `${APP_ORIGIN}/`, position: 'tab' }, bearer)).status).toBe(403)
+    expect((await patchApp(admin, app.id, {})).status).toBe(200)
+    expect((await call(`/api/v1/admin/ticket-apps/${app.id}`, { method: 'PATCH', body: JSON.stringify({ enabled: false }), headers: bearer })).status).toBe(403)
+    expect((await call(`/api/v1/admin/ticket-apps/${app.id}`, { method: 'DELETE', headers: bearer })).status).toBe(403)
     expect((await adminAuditOf('ticket_app', app.id)).map(e => e.action)).toEqual(['ticket_app_created'])
   })
 
@@ -116,9 +129,17 @@ describe('Ticket Apps: admin', () => {
   it('drops an archived type out of the list and off its tickets', async () => {
     const type = await createRestrictedType()
     const app = await newApp({ ticket_type_ids: [type, gen] })
+    const onlyArchived = await newApp({ ticket_type_ids: [type] })
+    const old = await raise(admin, type)
+    expect((await token(admin, old.ref, onlyArchived.id)).status).toBe(200)
     await env.DB.prepare('UPDATE ticket_type SET archived_at = ? WHERE id = ?').bind(Date.now(), type).run()
     const list = await (await call('/api/v1/admin/ticket-apps', { headers: h(admin) })).json() as { data: App[] }
     expect(list.data.find(a => a.id === app.id)?.ticket_type_ids).toEqual([gen])
+
+    // And off the tickets of that type.
+    const shown = (await (await call(`/api/v1/tickets/${old.ref}/apps`, { headers: h(admin) })).json() as { data: App[] }).data.map(a => a.id)
+    expect(shown).not.toContain(onlyArchived.id)
+    expect((await token(admin, old.ref, onlyArchived.id)).status).toBe(404)
   })
 })
 
@@ -150,11 +171,10 @@ describe('Ticket Apps: the token route', () => {
     // Their own ticket, which they can read.
     expect((await token(requester, mine.ref, app.id)).status).toBe(403)
 
-    const created = await postJson('/api/v1/applications', { name: `Shop ${counter++}`, description: 'Shop.', permissions: ['tickets:read'], ticket_type_ids: [gen] }, h(admin))
-    const key = await (await postJson(`/api/v1/applications/${(await created.json() as { id: number }).id}/keys`, { name: 'Prod' }, h(admin))).json() as { key: string }
-    expect((await token(null, mine.ref, app.id, { authorization: `Bearer ${key.key}` })).status).toBe(403)
+    const key = await apiKey()
+    expect((await token(null, mine.ref, app.id, { authorization: `Bearer ${key}` })).status).toBe(403)
     // A cookie does not help a request that also sends a key.
-    expect((await token(agent, mine.ref, app.id, { authorization: `Bearer ${key.key}` })).status).toBe(403)
+    expect((await token(agent, mine.ref, app.id, { authorization: `Bearer ${key}` })).status).toBe(403)
 
     const restricted = await raise(admin, await createRestrictedType())
     expect((await token(agent, restricted.ref, app.id)).status).toBe(404)
@@ -217,13 +237,17 @@ describe('Ticket Apps: the list on a ticket', () => {
     const shown = await newApp({ position: 'tab' })
     const off = await newApp({ enabled: false })
     const bugOnly = await newApp({ ticket_type_ids: [bug] })
+    const last = await newApp()
+    const bearer = { authorization: `Bearer ${await apiKey()}` }
     const res = await call(`/api/v1/tickets/${t.ref}/apps`, { headers: h(agent) })
     expect(res.status).toBe(200)
     const ids = ((await res.json()) as { data: App[] }).data.map(a => a.id)
     expect(ids).toContain(shown.id)
     expect(ids).not.toContain(off.id)
     expect(ids).not.toContain(bugOnly.id)
+    expect(ids.indexOf(shown.id)).toBeLessThan(ids.indexOf(last.id))
     expect((await call(`/api/v1/tickets/${t.ref}/apps`, { headers: h(requester) })).status).toBe(403)
+    expect((await call(`/api/v1/tickets/${t.ref}/apps`, { headers: bearer })).status).toBe(403)
     expect((await call(`/api/v1/tickets/${t.ref}/apps`)).status).toBe(401)
   })
 })

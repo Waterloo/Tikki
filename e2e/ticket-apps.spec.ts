@@ -48,6 +48,8 @@ test('a sidebar app gets the context from its own origin only, and resizes withi
   stamp = Date.now()
   const { 'General request': general } = await types()
   const app = await addApp({ name: `Orders ${stamp}`, url: appUrl(baseURL!), position: 'sidebar' })
+  // Same origin as Orders: only the event source tells their messages apart.
+  const twin = await addApp({ name: `Refunds ${stamp}`, url: appUrl(baseURL!, 'normal', '&app=twin'), position: 'sidebar' })
   const ref = await raise(admin, general!, `Charged twice ${stamp}`)
 
   const context = await browser.newContext({ storageState: undefined, colorScheme: 'dark' })
@@ -77,6 +79,8 @@ test('a sidebar app gets the context from its own origin only, and resizes withi
   await expect.poll(() => frameHeight(page, app.name)).toBe(600)
   await resize(260)
   await expect.poll(() => frameHeight(page, app.name)).toBe(260)
+  await appFrame(page, twin.name)
+  expect(await frameHeight(page, twin.name)).toBe(200)
 
   // The ticket changes: the app gets a new context.
   const before = (await contexts(frame)).length

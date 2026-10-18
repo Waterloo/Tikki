@@ -14,7 +14,7 @@ Read this before you start work next to other agents, and before you write a mig
 
 - Dev server (background): `pnpm exec nuxt build && pnpm exec wrangler d1 migrations apply DB --local --persist-to .wrangler/dev && pnpm exec wrangler dev --port <DEV_PORT> --var APP_URL:http://localhost:<DEV_PORT> --persist-to .wrangler/dev`. Use a persist directory that is yours alone.
 - Sign-in codes print in the server output. The Admin is `admin@example.com`; other `@example.com` addresses become Requesters.
-- e2e: `E2E_PORT=<E2E_PORT> pnpm e2e`.
+- e2e: `E2E_PORT=<E2E_PORT> pnpm e2e`. It also starts the test Ticket App on `E2E_APP_PORT` (default `E2E_PORT + 100`). Ask the lead for that port too, or set it.
 
 ## Merge conflicts
 
