@@ -4,6 +4,7 @@ import { outboxEvent, TEST_EVENT, WEBHOOK_EVENTS, webhookDelivery, webhookEndpoi
 import type { Db } from './auth'
 import { config } from './env'
 import { notifyAdmins } from './notifications'
+import { publicUrlProblem } from './safe-fetch'
 
 const MINUTE = 60_000
 const HOUR = 60 * MINUTE
@@ -25,33 +26,9 @@ const TIMEOUT = 10_000
 
 // --- Endpoint URL (SSRF) -------------------------------------------------------------------------------------------
 
-const PRIVATE_NAMES = /(^|\.)(localhost|local|internal|intranet|lan|home\.arpa)$/
-
-function privateIpv4(host: string): boolean {
-  const m = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(host)
-  if (!m) return false
-  const [a, b] = [Number(m[1]), Number(m[2])]
-  return a === 0 || a === 10 || a === 127 || a >= 224
-    || (a === 100 && b >= 64 && b <= 127) // carrier-grade NAT
-    || (a === 169 && b === 254) // link-local, cloud metadata
-    || (a === 172 && b >= 16 && b <= 31)
-    || (a === 192 && b === 168)
-    || (a === 198 && (b === 18 || b === 19))
-}
-
-function privateIpv6(host: string): boolean {
-  if (!host.startsWith('[')) return false
-  const h = host.slice(1, -1)
-  // Loopback, unspecified, IPv4-mapped, unique local (fc00::/7), link-local (fe80::/10).
-  return h === '::1' || h === '::' || h.startsWith('::ffff:') || /^f[cd]/.test(h) || /^fe[89ab]/.test(h)
-}
-
-const isLoopback = (host: string) => host === 'localhost' || host === '127.0.0.1' || host === '[::1]'
-
 /**
- * Why the URL cannot be an endpoint, or null. Only https, and no private or link-local address by name. The URL
- * parser has already turned other IPv4 forms (`2130706433`, `0x7f.1`) into dotted form. The Worker cannot see the
- * address that a public name resolves to, so this check works on the name only.
+ * Why the URL cannot be an endpoint, or null. The rule is `publicUrlProblem`; only the message for a bad URL is
+ * specific to endpoints.
  */
 export function endpointUrlProblem(value: string, appEnv = config.appEnv): string | null {
   let url: URL
@@ -60,12 +37,7 @@ export function endpointUrlProblem(value: string, appEnv = config.appEnv): strin
   } catch {
     return 'Must be an absolute URL, for example https://hooks.example.com/tickets.'
   }
-  const host = url.hostname.toLowerCase()
-  if (appEnv === 'development' && isLoopback(host)) return url.protocol === 'http:' || url.protocol === 'https:' ? null : 'Must use https.'
-  if (url.protocol !== 'https:') return 'Must use https.'
-  if (url.username || url.password) return 'Must not contain a user name or password.'
-  if (PRIVATE_NAMES.test(host) || privateIpv4(host) || privateIpv6(host)) return 'Must be a public address. Private, loopback and link-local addresses are refused.'
-  return null
+  return publicUrlProblem(url, appEnv)
 }
 
 // --- Signing secret ------------------------------------------------------------------------------------------------

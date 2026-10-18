@@ -1,6 +1,7 @@
 /** The shapes the Ticket Apps API returns (server/utils/ticket-apps.ts). */
 
 import type { TicketAppIcon } from '~~/shared/ticket-app-icons'
+import type { ManifestChange, NormalizedManifest } from '~~/shared/ticket-app-manifest'
 
 export type TicketAppPlacement = 'sidebar' | 'tab' | 'page'
 /** The placements inside a ticket. */
@@ -21,7 +22,23 @@ export interface TicketApp {
   icon: TicketAppIcon
   /** Requesters also see the page (issue 39). */
   page_for_requesters: boolean
+  /** Added from this manifest (issue 40). `access` is the access the app asks for. */
+  manifest: { url: string, description: string | null, access: TicketAppAccess } | null
   created_at: string
+}
+
+/** A checked manifest (issue 40). The icons are `data:` URLs from Tikki. */
+export interface ManifestPreview {
+  manifest_url: string
+  hash: string
+  manifest: NormalizedManifest
+  icons: { light: string, dark: string | null } | null
+}
+
+/** "Check for updates". `changes` is empty when nothing changed. */
+export interface ManifestCheck extends ManifestPreview {
+  changes: ManifestChange[]
+  granted_access: TicketAppAccess
 }
 
 /** An app on the ticket page. */

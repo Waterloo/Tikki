@@ -57,12 +57,53 @@ Each failure gets a clear message: unreachable, too large, not JSON, unknown `ti
 
 ## Acceptance criteria
 
-- [ ] Test: a valid manifest from the e2e app server gives a preview; "Add app" saves the URLs, the copied icons and `manifest_url`.
-- [ ] Test: the Admin cannot grant more access than the manifest requests (422).
-- [ ] Test: a manifest on a private address (outside development), over 64 KB, not JSON, with `tikki_app: 2`, or without `urls` is refused with a clear error, and nothing is saved.
-- [ ] Test: "Check for updates" with a changed manifest returns the changes; a new origin and a higher access are marked as warnings; nothing changes until "Apply".
-- [ ] Playwright: add from manifest, see the preview with both icons, approve, and see the app on a ticket.
-- [ ] The guide has a "Manifest" section with the format, the rules and the update flow.
+- [x] Test: a valid manifest from the e2e app server gives a preview; "Add app" saves the URLs, the copied icons and `manifest_url`.
+- [x] Test: the Admin cannot grant more access than the manifest requests (422).
+- [x] Test: a manifest on a private address (outside development), over 64 KB, not JSON, with `tikki_app: 2`, or without `urls` is refused with a clear error, and nothing is saved.
+- [x] Test: "Check for updates" with a changed manifest returns the changes; a new origin and a higher access are marked as warnings; nothing changes until "Apply".
+- [x] Playwright: add from manifest, see the preview with both icons, approve, and see the app on a ticket.
+- [x] The guide has a "Manifest" section with the format, the rules and the update flow.
+
+### Evidence
+
+- Preview and add: `test/worker/ticket-app-manifest.test.ts` "previews a valid manifest, and "Add app" saves …" (relative URLs resolved, icons as `data:` URLs, no write on preview; the app row has `manifest_url` and `manifest_hash`; the icon route serves the fetched bytes; audit `ticket_app_created` with `manifest_url`, then `ticket_app_changed` with the icon). The worker test uses a fake site (fetch mock); the e2e test uses the e2e app server (below).
+- Access: same file, "refuses more access than the manifest requests (422), on add and on edit" (also a PATCH of a manifest app).
+- Refusals: same file, "refuses a private, loopback or plain-http address without a request" (no fetch), "refuses a manifest over 64 KB, not JSON, of an unknown version, or without urls …", "names the key of a bad URL and gives the reason of a bad icon", "refuses an unreachable server, an error status, and a redirect to another origin". Each checks that the count of apps and of audit entries stays the same.
+- Updates: same file, "returns the changes with warnings, and nothing changes until "Apply"" (the app and the audit log are unchanged after the check; apply needs `confirm_warnings`; a stale hash is 409), "raises the access only in the Admin's step …", "keeps an Admin's own edit …", "does not audit a failed fetch …", "is for Admins only".
+- Playwright: `e2e/ticket-app-manifest.spec.ts`: add from the test app server's `/tikki-app.json`, both icon tiles load `data:` images, "Update" is off above the requested access, approve with Read, the sidebar card on a ticket gets its context; then "Check for updates" with a new origin and a higher access, "Apply update" is off until the warnings are confirmed, and the row shows "Update access" and "Tab". No browser request goes to the app's icon URLs.
+- Guide: `docs/ticket-apps.md` "Manifest" (keys, rules, how Tikki reads it, errors, what the Admin approves, updates). The "Planned (issue 40)" note is removed.
+- Seen in a browser on the dev server (8840): the admin list with a manifest app, "Add from manifest" (preview, the error list for a bad manifest, the 409 reload), and "Check for updates" with a warning, at 375 px and desktop, light and dark. No horizontal scroll at 375 px.
+
+## Not verified
+
+- A real public HTTPS manifest. The tests use a fetch mock (worker) and a loopback server (e2e, development). The private-address rule works on the host name only: a public name that resolves to a private address is not caught (same limit as webhooks; Workers cannot pin the address).
+- The 5-second timeout: no test waits for it.
+
+## Decisions made here
+
+- **Safe fetch.** `server/utils/cimd-fetch.ts` has an allow list and no private-address check, timeout or size limit; it is the transport of the OAuth plugin and stays unchanged. The private-address rule was in `webhooks.ts` (`endpointUrlProblem`). It moved to `server/utils/safe-fetch.ts` as `publicUrlProblem`; `endpointUrlProblem` calls it, with the same messages. `safeGet` adds GET, a 5 s timeout over headers and body, a byte limit (`readLimited`, which now also takes a `Response`), and redirects only on the same origin (at most 3). Loopback only in development, as for webhooks (the spec says so); app URLs keep the issue 37 rule (development or test).
+- **Columns** (plain `ADD`, migration `0028_issue_40_ticket_app_manifest.sql`): `manifest_url`, `manifest_hash`, `manifest` (JSON: the approved manifest, normalized). The approved manifest is the base for "Check for updates"; the hash alone cannot show what changed, and the description is not on the app.
+- **Hash** = SHA-256 of the normalized manifest (URLs resolved, defaults set), with the SHA-256 of each icon's bytes in it. So white space does not count as a change, and new icon bytes at the same URL do.
+- **Preview, then approve by hash.** `POST /api/v1/admin/ticket-apps/manifest/preview` `{ manifest_url }` saves nothing. `POST /api/v1/admin/ticket-apps/manifest` `{ manifest_url, hash, access?, ticket_type_ids?, page_for_requesters?, enabled? }` fetches again and answers 409 `MANIFEST_CHANGED` when the hash differs, so the Admin approves exactly what they saw. The client never sends manifest content.
+- **Icons in the preview** are `data:` URLs from Tikki. On add, the app row is made first (one batch with `ticket_app_created`), then the icons go to R2 and the row update has its own `ticket_app_changed` (R2 first, then the row, as in issue 38). The R2 key needs the id.
+- **Errors** are 422 `VALIDATION_FAILED` with `details`: `manifest_url` for fetch, size, JSON and object problems; the manifest key otherwise (`tikki_app`, `name`, `urls`, `urls.tab`, `icons.dark`, `access`). `tikki_app` is checked first: other keys of an unknown version can mean something else. Null counts as absent for optional keys. Content type is not checked: static hosts differ; the body must be a JSON object.
+- **Updates.** `POST …/{id}/manifest/check` (fetches, compares with the approved manifest, changes nothing) and `POST …/{id}/manifest/apply` `{ hash, access?, confirm_warnings? }`. Only the keys that changed in the manifest change on the app, so an Admin's own edit of another key stays. 422 `confirm_warnings` when there is a warning and no confirmation.
+- **Warnings**: a placement URL on an origin that no placement URL of the approved manifest had, and a higher requested access. Icon URLs give no warning: Tikki copies the icons, so their origin never gets a token or a browser request.
+- **Access.** Granted ≤ requested always: on add, on apply, and on a PATCH of a manifest app (422 key `access`). Apply without `access` keeps the granted access, lowered to the new request when that is lower.
+- **Apply refuses** a change that leaves no URL, or removes the page while "Show the page to Requesters" is on (the rules of issues 37 and 39), and does not reset them silently.
+- **Audit**: `ticket_app_created` has `manifest_url` and `manifest_hash` in `after`. An applied update is one `ticket_app_changed` with the changed app keys and `manifest_update` (the changed manifest keys) in `before` and `after`. A preview, a check and a failed fetch write nothing.
+- **UI**: "Add from manifest" next to "Add app" (`TicketAppManifestDialog.vue`), "Check for updates" on a manifest app's row (`TicketAppUpdateDialog.vue`), one preview (`TicketAppManifestPreview.vue`). Access choices above the request are off (`accessItems` in `app/utils/ticket-app-access.ts`, also in the edit form). After a 409 the dialog loads the new preview and keeps the Admin's choices.
+
+## Notes for later issues
+
+- `examples/time-tracking` ("Then"): serve `/tikki-app.json` with relative URLs and icons; the e2e app server (`e2e/ticket-app-server.mjs`, `?key=` and `PUT`) shows the shape.
+- A new caller that fetches a URL from an Admin uses `safeGet` in `safe-fetch.ts`. Do not copy the private-address rule.
+- `manifest` on `ticket_app` is the approved manifest, not the current one. A later "re-import" must update `manifest_hash` and `manifest` in the same batch as the app.
+
+## Glossary terms to add
+
+- **Manifest**: a JSON file (`tikki-app.json`) in which a Ticket App describes itself: name, description, placement URLs, icons and the access it asks for. The Admin approves it; the granted access is never above the requested access.
+
 
 ## Blocked by
 
