@@ -52,9 +52,13 @@ Other criteria in "What to build":
 - The R2 bucket binding is `FILES`: `ticketing-files-dev` at the top level, `ticketing-files-staging` in `env.staging`.
 - Not done on purpose: delete an attachment, a limit for the number or total size of files per ticket, cleanup of unattached uploads, and range requests. See "Notes for later issues".
 
+Copied to DECISIONS.md (rows 2.9, 7.6 to 7.8).
+
 ## Glossary terms to add
 
 - **Unattached upload**: a file that a User uploaded before its ticket exists. Only the uploader can read it, until a new ticket claims it through a "file" Field.
+
+Copied to CONTEXT.md.
 
 ## Notes for later issues
 

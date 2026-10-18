@@ -63,10 +63,14 @@ Checked by hand in the browser against `wrangler dev` on 2026-10-18: empty state
 15. **UI.** `/webhooks` (Admin), sidebar item "Webhooks" before Settings. The log shows one endpoint: the first failing one by default, another through its "Deliveries" button. The canvas links to the Applications page; that page does not exist yet (issue 12), so the subtitle has no link. A Delete action is in the edit dialog, with a confirmation.
 16. Migration `0006_issue_14_outbox_and_webhooks.sql` (renumbered at merge): tables `webhook_endpoint`, `outbox_event`, `webhook_delivery`.
 
+Copied to DECISIONS.md (rows 8.16 to 8.23).
+
 ## Glossary terms to add
 
 - **Delivery**: one Event for one Webhook Endpoint, with its attempts and result. The delivery log of an endpoint lists them. Kept 30 days.
 - **Signing secret**: the secret of one Webhook Endpoint that signs each delivery (HMAC-SHA256, Standard Webhooks). Shown once, on create and rotate.
+
+Copied to CONTEXT.md.
 
 ## Notes for later issues
 

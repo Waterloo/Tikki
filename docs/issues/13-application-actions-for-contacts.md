@@ -36,9 +36,13 @@ Also: e2e `e2e/contact-actions.spec.ts` (the Admin sees "Contact · <Application
 - **Cancel and reopen for an Application** are in `authorize`: `tickets:read` first, then `tickets:update`, then the same rules as a Requester (no cancel when done; reopen only when `resolved`). The Application counts as the Requester of its own tickets. `cancelTicket` and `reopenTicket` are reused unchanged. A reopen after 14 days copies `contact_id`, so the new ticket is the same Contact's. A new Application ticket now lists `allowed_actions` `['comment', 'cancel']` with `tickets:update`.
 - **Staff privacy for Applications.** `assignee` is always `null` for an Application and the new field `assigned: boolean` says whether someone is assigned (`TicketSummary`, all channels; Users still get `assignee` plus `assigned`). In Activity and comments, a User actor shows as `{ kind: 'support' }` (no name, no email), and an assignee change shows the value "Support". Team name stays visible (it is the Ticket Type's Team, not a person).
 
+Copied to DECISIONS.md (rows 3.24, 14.10; changed rows 3.11, 4.19, 4.23, 8.6).
+
 ## Glossary terms to add
 
 - **Support**: How an Application sees any Agent or Admin: no name, no email.
+
+Copied to CONTEXT.md.
 
 ## Notes for later issues
 

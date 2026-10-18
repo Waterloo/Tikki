@@ -58,9 +58,13 @@ Agents fix a wrong Ticket Type, and every old reference keeps working.
 - **MCP** `change_ticket_type { ticket, ticket_type_id }`, same annotations as `change_status`. Added last in the tool list; `change()` in `mcp.ts` takes an optional runner.
 - **UI.** In the ticket properties, "Change type" (Agents and Admins) opens an inline select with a note and Change type / Cancel, instead of a modal (no modal exists in the app yet). The Activity line reads "changed the Ticket Type from Bug (BUG-1) to Payment issue (PAY-1)" with a "Did not move: ..." line.
 
+Copied to DECISIONS.md (rows 4.26, 4.33, 14.8; changed rows 4.8, 4.9b).
+
 ## Glossary terms to add
 
 - **Replaced prefix**: a prefix that a Ticket Type had before an Admin changed it. It stays reserved. Old references with it still open the ticket, because lookup uses only the number.
+
+Copied to CONTEXT.md.
 
 ## Notes for later issues
 

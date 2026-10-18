@@ -65,9 +65,13 @@ Run: `pnpm test` 14 files, 139 tests pass. `pnpm typecheck` passes. `E2E_PORT=88
 
 - **Audit entries for type changes (added by the Admin audit change).** `type_created` (after: name, prefix, `team_id`); `type_settings_changed` (one entry, before/after hold only the changed settings); `schema_version_created` (before: version; after: version plus added, renamed, archived, restored Fields and options by key); `type_archived`; `type_restored`.
 
+Copied to DECISIONS.md (rows 4.30 to 4.32, 14.7; changed rows 4.6, 4.15b, 4.15e).
+
 ## Glossary terms to add
 
 - **Archived (Ticket Type)**: a type that takes no new tickets. Old tickets keep it, its prefix stays reserved, and an Admin can restore it. Not the same as an archived Field or option, which stays in the Schema Version but is not asked for on new tickets.
+
+Copied to CONTEXT.md.
 
 ## Notes for later issues
 

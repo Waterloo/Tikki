@@ -54,10 +54,14 @@ Requesters can correct, cancel, and reopen their own tickets inside clear limits
 8. **Ticket view.** `schema_fields` now also has `required`, `help` and the active `options`, so the Requester can edit the Fields. The Edit form shows for anyone with `edit_description` or `edit_fields` (so Agents too).
 9. **Old tests changed:** the Requester now has `['edit_fields', 'edit_description', 'comment', 'cancel']` on an open own ticket; the "Field edit from a Requester" refusal test now moves the ticket to `in_progress` first.
 
+Copied to DECISIONS.md (rows 4.34 to 4.36).
+
 ## Glossary terms to add
 
 - **Cancel**: the Requester closes their own ticket before it is done. Status `closed`, reason "cancelled by requester".
 - **Reopen**: the Requester returns a `resolved` ticket to `open` within 14 days of the resolution. After that, a new ticket is created that links to the old one (`reopened_from`).
+
+Copied to CONTEXT.md.
 
 ## Notes for later issues
 

@@ -44,9 +44,13 @@ Requesters follow their tickets from Claude, and Agents work from Claude, with t
 - `add_comment` defaults follow `createComment` (Agent: internal, Requester: public). Annotations: not read-only, not destructive, not idempotent.
 - The tool helper `change()` is now one `run()` wrapper for all tools: policy refusals and validation problems are tool results (`isError`), with `structuredContent` `{ error }` or `{ problems }`.
 
+Copied to DECISIONS.md (rows 5.12, 5.13; changed row 5.11).
+
 ## Glossary terms to add
 
 - **Untrusted content marker:** the `<untrusted_content>` tags around text that Users wrote, in MCP tool results. The AI must treat it as data, not instructions.
+
+Copied to CONTEXT.md.
 
 ## Notes for later issues
 

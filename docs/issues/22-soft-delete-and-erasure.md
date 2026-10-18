@@ -51,6 +51,8 @@ Counts at commit: `pnpm test` 329 tests in 27 files pass; `pnpm typecheck` passe
 12. Migration `0017_issue_22_soft_delete_and_erasure.sql` (renumbered at merge): `ticket.deleted_at`, `contact.erased_at`, `attachment.erased_at`, plain `ALTER TABLE ADD` (no table rebuild). Audit actions `ticket_deleted`, `ticket_restored`, `ticket_erased` are TypeScript enum values only.
 13. **OpenAPI** documents `DELETE /api/v1/contacts/{id}` for Applications. The other new routes are Admin routes and are not in it.
 
+Copied to DECISIONS.md (rows 4.40, 4.41, 9.7 to 9.11; changed row 4.24).
+
 ## Notes for later issues
 
 - Any new table or column that holds ticket text or Contact data must be cleared in `eraseContact` (`server/utils/privacy.ts`). The test `databaseHits` scans every table, so a new table with such data fails the Erasure test until it is handled.
@@ -64,6 +66,8 @@ Counts at commit: `pnpm test` 329 tests in 27 files pass; `pnpm typecheck` passe
 ## Glossary terms to add
 
 - **Soft delete**: an Admin hides a ticket from every channel. It can be restored. _Avoid_: archive, trash.
+
+Copied to CONTEXT.md.
 
 ## Blocked by
 

@@ -55,10 +55,14 @@ Checked by hand in the browser against `wrangler dev` (2026-10-18), with 56 tick
 - **Branch filter in the UI.** The menus for Type, Priority, and Branch follow the canvas. Branch is a normal Field (4.12), so the menu reads the options of the Field with key `branch` from the Ticket Types, and is hidden if none has one. If the Ticket Type menu cannot load, the list still works.
 - **Filters in the address.** The search and the menus write to the address (`?q=&type=&priority=&branch=&filter=`), so a filtered list can be shared and the back button works. The search waits 300 ms after typing.
 
+Copied to DECISIONS.md (rows 4.37, 4.38, 6.5, 13.7, 14.9).
+
 ## Glossary terms to add
 
 - **Cursor** — the opaque value in `next_cursor` that a list call sends back as `cursor` to get the next page. It marks the position of the last row in the sort order.
 - **Similar tickets** — open tickets that the User can read whose titles share words with the title being typed in the New ticket form.
+
+Copied to CONTEXT.md.
 
 ## Notes for later issues
 

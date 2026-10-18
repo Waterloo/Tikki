@@ -54,10 +54,14 @@ Other checks:
 - Migration `0004_issue_20_people_and_teams.sql` (renumbered at merge): `invite`, `team_member`, and `user.deactivated_at`. No seed data.
 - The sign-in strip reads `GET /api/v1/settings/deployment` (issue 21), read-only.
 
+Copied to DECISIONS.md (rows 2.11, 3.28 to 3.30, 4.39).
+
 ## Glossary terms to add
 
 - **Invite**: an Admin's permission for one email outside the allowed domains to sign in. It expires after 30 days if unused.
 - **Deactivated** (User state): a User who cannot sign in and has no sessions or tokens. The User and their history stay.
+
+Copied to CONTEXT.md.
 
 ## Notes for later issues
 

@@ -41,6 +41,8 @@ Checked on 2026-10-18. `pnpm test` (100 tests, 10 files) and `pnpm typecheck` pa
 - Routes: `GET/PATCH /api/v1/organization`, `PUT/DELETE/GET /api/v1/organization/logo`, `GET /api/v1/settings/deployment` (Admin), `GET /api/v1/setup` (Admin, first-run data).
 - Migration `0003_organization.sql` (renumbered at merge, after issue 05's `0002`) adds the `organization` table and seeds the row with the earlier fixed values ("Ticketing", "Support desk").
 
+Copied to DECISIONS.md (no new rows: 12.3d and 12.3e already hold these decisions).
+
 ## Blocked by
 
 - [03 · Ticket Types with Fields](03-ticket-types-with-fields.md)

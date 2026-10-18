@@ -49,9 +49,13 @@ Claude can attach evidence even though it cannot send binary files.
 - **Sign-in and back:** `auth.global.ts` sends a signed-out visitor to `/sign-in?redirect=<path>`; the sign-in page goes there after success (only a path on this site: a leading `/` not followed by `/` or `\`). Other pages get this for free.
 - The upload page `/upload/[token]` uses the `auth` layout and the sign-in card style. No canvas screen exists.
 
+Copied to DECISIONS.md (rows 2.11, 3.31, 5.14 to 5.16).
+
 ## Glossary terms to add
 
 - **Upload Link**: a link that Claude gets for one ticket and one User. It expires after 15 minutes, works for one successful upload, and needs the web session of the same User. Only a hash of its token is stored.
+
+Copied to CONTEXT.md.
 
 ## Notes for later issues
 

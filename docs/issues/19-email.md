@@ -51,9 +51,13 @@ Users get the notifications they chose by email. The mail transport and the send
 - Test hooks: `failCapturedMail()` in `mail.ts`; `settleNoticeMail()` waits for in-flight sends.
 - Migration `0014_issue_19_notification_email.sql` (renumbered at merge).
 
+Copied to DECISIONS.md (rows 8.27 to 8.30).
+
 ## Glossary terms to add
 
 None.
+
+Nothing to copy to CONTEXT.md.
 
 ## Notes for later issues
 

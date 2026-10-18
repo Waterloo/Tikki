@@ -37,6 +37,8 @@ Tests: `test/worker/rate-limits.test.ts` (8 tests: 61st request, per-Application
 
 See DECISIONS.md 10.1 to 10.5 (D1 fixed-window counter instead of the binding; limits per Application, not per key; where each limit applies; `RATE_LIMITS=off` for dev and e2e only). Migration `0017_issue_23_rate_limits`: table `rate_counter`, columns `application.rate_limit` and `application.create_limit`.
 
+Copied to DECISIONS.md (rows 10.1 to 10.5; changed the section 10 table and intro).
+
 ## Notes for later issues
 
 - New limited routes need no work: REST goes through `restPrincipal`/`sessionPrincipal`, MCP tools through `registerTool`. A route that reads the session by itself must call `takeSlot` (`server/utils/rate-limit.ts`).

@@ -51,10 +51,14 @@ Every User sees what needs them in the in-app Inbox, with or without email.
 - Sidebar count: one indexed count (`notification_user_read_idx`), fetched on mount, on route change, and every 60 s while the tab is visible.
 - Migration: `0006_issue_18_notifications.sql` (tables `notification`, `notification_preference`).
 
+Copied to DECISIONS.md (rows 8.25, 8.26).
+
 ## Glossary terms to add
 
 - **Notice**: one entry in a User's Inbox. Made when a ticket changes or an endpoint fails. Never made for the actor of the change.
 - **Inbox**: the in-app list of a User's Notices. It always gets every Notice, with or without email.
+
+Copied to CONTEXT.md.
 
 ## Notes for later issues
 

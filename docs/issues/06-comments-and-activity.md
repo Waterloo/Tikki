@@ -53,10 +53,14 @@ Agents and Requesters talk on the ticket, and every change is visible and revers
 10. **IDs.** Comments have a UUID primary key made in code, so the comment and its audit entry fit in one batch. Audit entries have an integer ID (the Revert endpoint takes it).
 11. **Not done on purpose:** MCP comment tools (issue 11), an "Attach file" button (issue 16), a "Contact" badge on comments (issue 13).
 
+Copied to DECISIONS.md (rows 4.25, 4.26 to 4.29, 9.5, 9.6).
+
 ## Glossary terms to add
 
 - **Audit log**: the append-only table of every change, with Principal, channel, and values. Activity is the audit log of one ticket mixed with its comments. Only Erasure clears its values.
 - **Revert**: a new change that sets a value back to what an earlier Activity entry changed it from. It never deletes history.
+
+Copied to CONTEXT.md.
 
 ## Notes for later issues
 

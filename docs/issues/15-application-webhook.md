@@ -47,9 +47,13 @@ Migration `0017_issue_15_application_webhook.sql` was run by hand with sqlite3 (
 5. **Schema**: `webhook_endpoint.owner` allows `application`; `application_id` (FK); unique index on `application_id` (SQLite allows many NULLs); CHECK `(owner = 'application') = (application_id IS NOT NULL)`. The migration rebuilds the table by copying rows aside (the pattern of 0014), because `webhook_delivery` points to it.
 6. Disabling an Application does not stop its webhook; its tickets still change and the Application should hear it.
 
+Copied to DECISIONS.md (rows 8.24, 2.10; changed row 8.6).
+
 ## Glossary terms to add
 
 - **Application Webhook Endpoint**: the one Webhook Endpoint of an Application. It sends only `ticket.created`, `ticket.updated` and `comment.created` for the Application's own tickets, without Internal Comments and without staff emails. The Admin cannot widen this.
+
+Copied to CONTEXT.md.
 
 ## Notes for later issues
 

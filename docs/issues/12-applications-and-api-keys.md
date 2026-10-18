@@ -64,6 +64,8 @@ Also: `e2e/applications.spec.ts` (Playwright): an Admin creates an Application w
 - **UI**: `/applications` opens the first Application; `/applications/{id}` is the detail (`app/pages/applications/[[id]].vue`). A key gets a name in a small dialog (the canvas list has names, but no way to enter one). Permissions and allowed types save at once, with a toast. The canvas "Rate limit" row (issue 23) and the webhook section (issue 15) are not built. The subtitle leaves out "gets updates through its own webhook" until issue 15. The sidebar item "Applications" is current on every `/applications/...` page (`NavItem.prefix`). The first-run screen links to Applications and the OpenAPI document (the note from issue 21).
 - Migration `0004_issue_12_applications.sql` (renumbered at merge): tables `application`, `api_key`, `contact`, `idempotency_key`, and a rebuild of `ticket` for the nullable `requester_id`, the new `contact_id`, and the CHECK. The rebuild was edited by hand: `PRAGMA defer_foreign_keys = on` instead of `foreign_keys=OFF` (D1 ignores that), `NULL` for the new column in the copy (drizzle-kit selected a column the old table does not have), and the `sqlite_sequence` value is carried over, so the global counter never reuses a number (4.9). Checked with `wrangler d1 migrations apply` on a database with tickets: rows kept, the next number continues after the highest one ever used.
 
+Copied to DECISIONS.md (rows 2.10, 2.11, 3.22 to 3.27, 5.16, 6.6 to 6.8, 7.8, 8.27, 9.6, 14.11).
+
 ## Decisions made at merge
 
 Merged into `integration` on 2026-10-18, after issues 06, 07, 08, 09, 10, 11, 16, 17, 18, 20 and the admin audit fix.
@@ -82,10 +84,14 @@ Merged into `integration` on 2026-10-18, after issues 06, 07, 08, 09, 10, 11, 16
 - **OpenAPI:** `TicketDetail` has 06's `comment_count`, 09's `reopened_from`, 07's `required`/`help`/`options` on `schema_fields`, and all `TICKET_ACTIONS`. `ActivityItem` and `CommentView` are not in the document yet.
 - **e2e:** `e2e/auth.setup.ts` signs in `admin@example.com` once and stores the session (`e2e/.auth/admin.json`); specs use `signInAsAdmin(page)`. Seven specs signed in as the Admin, over the limit of 5 codes an hour for one address.
 
+Copied to DECISIONS.md (rows 2.10, 2.11, 3.22 to 3.27, 5.16, 6.6 to 6.8, 7.8, 8.27, 9.6, 14.11).
+
 ## Glossary terms to add
 
 - **API key**: The secret an Application sends to use the API. It starts with `gt_live_`, is shown once, and only its hash is kept. An Admin can revoke it.
 - **Idempotency-Key**: A header on a create. The same key from the same Application within 24 hours gives the first ticket again and creates nothing.
+
+Copied to CONTEXT.md.
 
 ## Notes for later issues
 
