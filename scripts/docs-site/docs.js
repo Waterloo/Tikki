@@ -112,7 +112,10 @@
   const open = async () => {
     if (!dialog.open) dialog.showModal()
     input.select()
-    index ??= fetch('/docs/search.json').then(r => r.json())
+    index ??= fetch('/docs/search.json').then((r) => {
+      if (!r.ok) throw new Error(`search.json: ${r.status}`)
+      return r.json()
+    })
     render()
   }
   document.querySelectorAll('[data-search-open]').forEach(b => b.addEventListener('click', open))
@@ -153,9 +156,20 @@
   }
   async function render() {
     const terms = words(input.value)
+    let entries = []
+    if (terms.length) {
+      try {
+        entries = await index
+      } catch {
+        index = undefined
+        list.replaceChildren(Object.assign(document.createElement('li'), { className: 'search-empty', textContent: 'Search could not load. Check your connection, then type again.' }))
+        return
+      }
+    }
+    // A later keystroke may have rendered while this one waited.
+    if (words(input.value).join(' ') !== terms.join(' ')) return
     list.replaceChildren()
     if (!terms.length) { count.textContent = ''; results = []; return }
-    const entries = await index
     results = entries.map((e) => {
       const title = e.title.toLowerCase()
       const text = e.text.toLowerCase()
@@ -202,6 +216,8 @@
   }
   input.addEventListener('input', render)
   input.addEventListener('keydown', (e) => {
+    // In a search field the browser's first Escape only clears the text.
+    if (e.key === 'Escape') { e.preventDefault(); dialog.close() }
     if (e.key === 'ArrowDown') { e.preventDefault(); move(active + 1) }
     if (e.key === 'ArrowUp') { e.preventDefault(); move(active - 1) }
     if (e.key === 'Enter') {

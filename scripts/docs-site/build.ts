@@ -23,7 +23,7 @@ export interface SearchEntry { page: string, title: string, url: string, text: s
 const FONTS = { 'Geist-Variable.woff2': 'geist-sans', 'GeistMono-Variable.woff2': 'geist-mono' } as const
 
 const entities: Record<string, string> = { '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#39;': '\'' }
-const toText = (html: string) => html
+export const toText = (html: string) => html
   .replace(/<pre[\s\S]*?<\/pre>/g, ' ')
   .replace(/<(svg|button|script)[\s\S]*?<\/\1>/g, ' ')
   .replace(/<[^>]+>/g, ' ')
@@ -112,7 +112,7 @@ export async function buildDocsSite(root: string, openapi: OpenApiDocument): Pro
       lead: '', body: homeBody(mascot, requestSamples(hl, create)), headings: [], nav, source: 'scripts/docs-site/pages.ts',
     },
     ...guides.map(g => ({
-      file: `docs/${g.slug}.html`, path: g.url, title: g.title, description: g.lead.replace(/<[^>]+>/g, ''),
+      file: `docs/${g.slug}.html`, path: g.url, title: g.title, description: toText(g.lead),
       lead: g.lead, body: g.html, headings: g.headings, nav, source: g.file, markdown: `/docs/${g.slug}.md`, ...around(g.url),
     })),
     {
@@ -135,7 +135,7 @@ export async function buildDocsSite(root: string, openapi: OpenApiDocument): Pro
     '',
     '## Guides',
     '',
-    ...guides.map(g => `- [${g.title}](/docs/${g.slug}.md): ${g.lead.replace(/<[^>]+>/g, '')}`),
+    ...guides.map(g => `- [${g.title}](/docs/${g.slug}.md): ${toText(g.lead)}`),
     '',
     '## API',
     '',

@@ -55,7 +55,7 @@ Use an Admin endpoint for your own team's tools. Use an Application endpoint whe
 
 | `type` | When | `before` | `after` |
 |---|---|---|---|
-| `ticket.created` | A ticket is created, in any channel (web, AI, API, app) | `null` | The ticket |
+| `ticket.created` | A ticket is created on the web, by an AI assistant, or through the API | `null` | The ticket |
 | `ticket.updated` | Status, Priority, Ticket Type, assignee, Team, description or a Field changes. `changed` lists what changed. | The ticket | The ticket |
 | `comment.created` | A comment is added. The Event also has `comment`. | The ticket | The ticket |
 | `webhook.test` | An Admin clicks **Send test event** | — | — |
@@ -125,7 +125,19 @@ The body is JSON. A retry sends the same bytes.
 }
 ```
 
-In an Application endpoint's payload, a staff author is `{ "kind": "support" }`, and a comment that the Application wrote names its Contact.
+A comment that an Application wrote through the API has the author `{ "kind": "application", "id": 1, "name": "Checkout site" }`.
+
+### In an Application endpoint
+
+An Application endpoint gets the same Events with staff data removed:
+
+| Key | Admin endpoint | Application endpoint |
+|---|---|---|
+| `actor` of a staff change | `{ "kind": "user", ... }` | `{ "kind": "support" }` |
+| `assignee` in `before` and `after` | The assignee, or `null` | Always `null`. `assigned` is `true` or `false`. |
+| `team` in `before` and `after` | The Team | Left out |
+| `comment.author`, staff | `{ "kind": "user", "id", "name" }` | `{ "kind": "support" }` |
+| `comment.author`, the Application | `{ "kind": "application", "id", "name" }` | `{ "kind": "contact", "contact": { "id", "external_id", "name", "email" }, "application": { "id", "name" } }` |
 
 ### The test event
 

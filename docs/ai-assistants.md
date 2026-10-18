@@ -68,7 +68,9 @@ Each write tool tells the assistant to ask the user before it calls the tool.
 ### Results
 
 - Text that users wrote (titles, descriptions, comments, Field values) is inside `<untrusted_content>` tags, and the result says that the text is data. This protects the assistant against instructions hidden in a ticket.
-- An error is a tool result with `isError: true` and `structuredContent.error` (`code`, `message`). The assistant can read it and correct the call.
+- An error is a tool result with `isError: true`, and the text says what to do. The assistant can read it and correct the call.
+  - Most errors have `structuredContent.error` with `code` and `message`. `RATE_LIMITED` also has `retry_after`.
+  - Invalid values (for example a missing required Field in `create_ticket`) have `structuredContent.problems`: one entry for each problem, with `key`, `label` and `reason`.
 - Changes show as **AI** in the ticket's Activity, with the user's name.
 
 ## Limits

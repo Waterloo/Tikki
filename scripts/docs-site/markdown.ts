@@ -67,7 +67,7 @@ function groupTabs(hl: Highlighter, tokens: Token[]): Token[] {
     }
     if (group.length) {
       const blocks = group.map(c => { const m = TAB.exec(c.lang!)!; return { label: m[1] ?? m[2]!, code: c.text, info: c.lang! } })
-      out.push({ type: 'html', block: true, pre: false, raw: '', text: codeTabs(hl, blocks) } as Tokens.HTML)
+      out.push({ type: 'html', block: true, pre: false, raw: '', text: codeTabs(hl, blocks), tabs: true } as Tokens.HTML)
     }
     if (i < tokens.length) out.push(tokens[i]!)
   }
@@ -94,7 +94,8 @@ export function renderMarkdown(hl: Highlighter, source: string, opts: RenderOpti
   const dir = posix.dirname(opts.file)
 
   const href = (link: string) => {
-    if (/^[a-z]+:/i.test(link) || link.startsWith('#')) return link
+    if (link.startsWith('#') || /^(https?|mailto):/i.test(link)) return link
+    if (/^[a-z][a-z0-9+.-]*:/i.test(link)) throw new Error(`Docs: ${opts.file} links to "${link}". Only http, https and mailto links are allowed.`)
     const [path = '', hash] = link.split('#')
     const target = posix.normalize(posix.join(dir, path))
     const page = opts.pages[target]
@@ -134,6 +135,11 @@ export function renderMarkdown(hl: Highlighter, source: string, opts: RenderOpti
           return '<p>'
         })
         return `<div class="callout callout-${kind}" role="note">${inner}</div>\n`
+      },
+      // The guides are Markdown only, so a page cannot carry a script or a style by mistake. Tab groups are ours.
+      html(token) {
+        if ((token as Tokens.HTML & { tabs?: true }).tabs) return token.text
+        throw new Error(`Docs: ${opts.file} has raw HTML: ${token.raw.trim().slice(0, 60)}`)
       },
       checkbox({ checked }) {
         return `<input type="checkbox" disabled${checked ? ' checked' : ''} aria-hidden="true"> `

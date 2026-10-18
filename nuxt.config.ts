@@ -56,6 +56,8 @@ export default defineNuxtConfig({
     hooks: {
       // The developer docs at /docs: static files made from docs/*.md and the OpenAPI document (docs/writing-docs.md).
       async 'compiled'(nitro) {
+        // The prerender build copies these hooks; its output is the same public folder, so once is enough.
+        if (nitro.options.preset === 'nitro-prerender' || nitro.options.dev) return
         const jiti = createJiti(import.meta.url)
         const { buildOpenApiDocument } = await jiti.import<typeof import('./server/utils/openapi')>('./server/utils/openapi')
         const { buildDocsSite } = await jiti.import<typeof import('./scripts/docs-site/build')>('./scripts/docs-site/build')

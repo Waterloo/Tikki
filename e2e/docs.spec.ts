@@ -11,9 +11,9 @@ test('every docs page is public and cannot be framed', async ({ request }) => {
   for (const path of PAGES) {
     const res = await request.get(path, { maxRedirects: 0 })
     expect(res.status(), path).toBe(200)
-    expect(res.headers()['content-type']).toContain('text/html')
-    expect(res.headers()['content-security-policy']).toBe("frame-ancestors 'none'")
-    expect(res.headers()['x-frame-options']).toBe('DENY')
+    expect(res.headers()['content-type'], path).toContain('text/html')
+    expect(res.headers()['content-security-policy'], path).toBe("frame-ancestors 'none'")
+    expect(res.headers()['x-frame-options'], path).toBe('DENY')
   }
   const md = await request.get('/docs/ticket-apps.md')
   expect(await md.text()).toContain('# Build a Ticket App')
@@ -34,8 +34,8 @@ test('examples show the address of this instance, and copy gives it too', async 
   expect(text).not.toContain('tikki.example.com')
 
   const block = page.locator('.operation').filter({ has: page.locator('#create-ticket') }).locator('[data-tabs]').first()
-  await block.getByRole('button', { name: 'Copy' }).click()
-  await expect(block.getByRole('button', { name: 'Copied' })).toBeVisible()
+  await block.getByRole('button', { name: 'Copy', exact: true }).click()
+  await expect(block.getByRole('button', { name: 'Copied', exact: true })).toBeVisible()
   expect(await page.evaluate(() => navigator.clipboard.readText())).toContain(`curl -X POST ${origin}/api/v1/tickets`)
 })
 
@@ -43,13 +43,13 @@ test('a language tab holds for every block and the next visit', async ({ page })
   await page.goto('/docs/api')
   const first = page.locator('[data-tabs]').first()
   await expect(first.getByRole('tabpanel').filter({ hasText: 'curl' })).toBeVisible()
-  await first.getByRole('tab', { name: 'JavaScript' }).click()
-  await expect(first.getByRole('tab', { name: 'JavaScript' })).toHaveAttribute('aria-selected', 'true')
+  await first.getByRole('tab', { name: 'JavaScript', exact: true }).click()
+  await expect(first.getByRole('tab', { name: 'JavaScript', exact: true })).toHaveAttribute('aria-selected', 'true')
   await expect(first.getByRole('tabpanel').filter({ hasText: 'await fetch' })).toBeVisible()
   await expect(first.getByRole('tabpanel').filter({ hasText: 'curl' })).toBeHidden()
 
   await page.reload()
-  await expect(page.locator('.operation-samples > [data-tabs]').last().getByRole('tab', { name: 'JavaScript' })).toHaveAttribute('aria-selected', 'true')
+  await expect(page.locator('.operation-samples > [data-tabs]').last().getByRole('tab', { name: 'JavaScript', exact: true })).toHaveAttribute('aria-selected', 'true')
 })
 
 test('search finds a section on another page and opens it', async ({ page }) => {
@@ -115,7 +115,7 @@ test('at 375 px the menu opens, and a link closes it', async ({ page }) => {
   await expect(nav).toBeHidden()
   await page.getByRole('button', { name: 'Open the menu' }).click()
   await expect(nav).toBeVisible()
-  await nav.getByRole('link', { name: 'Webhooks' }).click()
+  await nav.getByRole('link', { name: 'Webhooks', exact: true }).click()
   await expect(page).toHaveURL(/\/docs\/webhooks$/)
   await expect(nav).toBeHidden()
 })

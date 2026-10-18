@@ -2,9 +2,10 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { appTokens, buildDocsSite, GUIDES, type SearchEntry } from '../../scripts/docs-site/build'
-import { operationAnchor, type OpenApiDocument } from '../../scripts/docs-site/api'
+import { EXAMPLE_ORIGIN, operationAnchor, type OpenApiDocument } from '../../scripts/docs-site/api'
 import { REPO } from '../../scripts/docs-site/markdown'
 import { buildOpenApiDocument, openApiSchemas } from '../../server/utils/openapi'
+import { TYPE_ICONS } from '../../shared/ticket-type-rules'
 
 const ROOT = join(import.meta.dirname, '../..')
 const doc = buildOpenApiDocument() as unknown as OpenApiDocument
@@ -19,6 +20,16 @@ const html = (file: string) => String(files.get(file))
 /** `/docs/webhooks` → `docs/webhooks.html`, the file Workers static assets serve for it. */
 const fileOf = (path: string) => (path === '/docs/' ? 'docs/index.html' : `${path.slice(1)}${/\.\w+$/.test(path) ? '' : '.html'}`)
 const ids = (page: string) => new Set([...html(page).matchAll(/ id="([^"]+)"/g)].map(m => m[1]))
+/**
+ * A constant of a server file, read from its source: the server modules import `cloudflare:workers`, which does not
+ * load in Node. The expression may use MINUTE, HOUR and DAY.
+ */
+function constant(file: string, name: string): number {
+  const m = new RegExp(`const ${name} = (.+)$`, 'm').exec(readFileSync(join(ROOT, file), 'utf8'))
+  if (!m) throw new Error(`${name} not found in ${file}.`)
+  return new Function('MINUTE', 'HOUR', 'DAY', `return ${m[1]}`)(60_000, 3_600_000, 86_400_000) as number
+}
+const guide = (file: string) => readFileSync(join(ROOT, file), 'utf8')
 const links = (page: string) => [...html(page).matchAll(/ href="([^"]+)"/g)].map(m => m[1]!.replace(/&amp;/g, '&'))
 
 describe('docs site', () => {
@@ -64,9 +75,11 @@ describe('docs site', () => {
 
   it('has examples that the schemas accept', () => {
     type Name = keyof typeof openApiSchemas
-    const check = (where: string, schema: { $ref?: string, properties?: { data?: { items?: { $ref?: string } } } }, example: unknown) => {
+    const check = (where: string, schema: { $ref?: string, properties?: Record<string, { items?: { $ref?: string } }> }, example: unknown) => {
       const name = (schema.$ref ?? schema.properties?.data?.items?.$ref)?.replace('#/components/schemas/', '') as Name | undefined
       if (!name) throw new Error(`${where}: the test does not know how to check this example. Add its shape here.`)
+      // A list: the example has exactly the keys of the schema, and each item parses.
+      if (!schema.$ref) expect(Object.keys(example as object).sort(), where).toEqual(Object.keys(schema.properties!).sort())
       const values = schema.$ref ? [example] : (example as { data: unknown[] }).data
       for (const v of values) {
         const result = openApiSchemas[name].safeParse(v)
@@ -86,6 +99,42 @@ describe('docs site', () => {
       }
     }
     expect(count).toBeGreaterThan(10)
+
+    // Values the schemas allow but the API never sends.
+    const all = JSON.stringify(doc)
+    expect(all).not.toMatch(/"allowed_actions":\[[^\]]*"read"/)
+    for (const [, icon] of all.matchAll(/"icon":"([^"]+)"/g)) expect(TYPE_ICONS.map(i => i.icon), icon).toContain(icon)
+  })
+
+  it('states the paging of the list as the code does', () => {
+    const list = doc.paths['/api/v1/tickets']!.get!
+    const [def, max] = [constant('server/utils/tickets.ts', 'DEFAULT_LIMIT'), constant('server/utils/tickets.ts', 'MAX_LIMIT')]
+    expect(list.description).toContain(`${def} by default, at most ${max}`)
+    expect(list.parameters!.find(p => p.name === 'limit')!.schema).toMatchObject({ default: def, maximum: max })
+  })
+
+  it('states the numbers of the code in the guides', () => {
+    const wh = guide('docs/webhooks.md')
+    const delays = readFileSync(join(ROOT, 'server/utils/webhooks.ts'), 'utf8').match(/const RETRY_DELAYS = \[(.+)\]/)![1]!
+      .split(',').map(e => new Function('MINUTE', 'HOUR', `return ${e}`)(1, 60) as number)
+    const label = (min: number) => (min < 60 ? `${min} min` : `${min / 60} h`)
+    expect(wh).toContain(`**${delays.slice(0, -1).map(label).join(', ')}**, then every **${label(delays.at(-1)!)}**`)
+    expect(wh).toContain(`**${constant('server/utils/webhooks.ts', 'TIMEOUT') / 1000} seconds**`)
+    expect(wh).toContain(`**${constant('server/utils/webhooks.ts', 'RETRY_WINDOW') / 3_600_000} hours**`)
+    expect(wh).toContain(`**${constant('server/utils/webhooks.ts', 'DISABLE_AFTER') / 86_400_000} days**`)
+    expect(wh).toContain(`${constant('server/utils/webhooks.ts', 'KEEP_FOR') / 86_400_000} days`)
+
+    const ai = guide('docs/ai-assistants.md')
+    expect(ai).toContain(`| Tool calls | ${constant('server/utils/rate-limit.ts', 'USER_MCP_LIMIT')} a minute`)
+    expect(ai).toContain(`| Write tool calls | ${constant('server/utils/rate-limit.ts', 'USER_MCP_WRITE_LIMIT')} a minute`)
+    expect(ai).toContain(`| Search page | ${constant('server/utils/mcp.ts', 'PAGE_SIZE')} results, up to ${constant('server/utils/mcp.ts', 'MAX_PAGE_SIZE')}`)
+    expect(ai).toContain(`The newest ${constant('server/utils/mcp.ts', 'COMMENT_LIMIT')}`)
+    expect(ai).toContain(`up to ${constant('server/utils/attachments.ts', 'MAX_TEXT_BYTES') / 1024} KB`)
+    expect(ai).toContain(`One use, ${constant('server/utils/upload-links.ts', 'LINK_TTL_MS') / 60_000} minutes`)
+  })
+
+  it('swaps the same example origin that the pages use', () => {
+    expect(html('docs/assets/docs.js')).toContain(`const EXAMPLE_ORIGIN = '${EXAMPLE_ORIGIN}'`)
   })
 
   it('lists exactly the MCP tools and the page tools that the code registers', () => {

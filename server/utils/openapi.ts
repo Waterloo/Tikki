@@ -111,14 +111,14 @@ type SchemaName = keyof typeof openApiSchemas
 
 // --- Examples (shown in the docs at /docs/api) ------------------------------------------------------------------------
 
-const ticketTypeExample = { id: 3, name: 'Payment issue', description: 'A charge, refund or invoice is wrong.', icon: 'credit-card', color: '#A14B00', prefix: 'PAY', team: { id: 2, name: 'Billing' }, visibility: 'requester' }
+const ticketTypeExample = { id: 3, name: 'Payment issue', description: 'A charge, refund or invoice is wrong.', icon: 'i-lucide-credit-card', color: '#A14B00', prefix: 'PAY', team: { id: 2, name: 'Billing' }, visibility: 'requester' }
 const summaryExample = {
   number: 1048,
   ref: 'PAY-1048',
   title: 'Charged twice for order 5521',
   priority: 'high',
   status: { key: 'open', name: 'Open', category: 'open' },
-  ticket_type: { id: 3, name: 'Payment issue', prefix: 'PAY', icon: 'credit-card', color: '#A14B00' },
+  ticket_type: { id: 3, name: 'Payment issue', prefix: 'PAY', icon: 'i-lucide-credit-card', color: '#A14B00' },
   requester: { kind: 'contact', id: 77, external_id: 'cus_19ab', name: 'Jo Park', email: 'jo@example.org' },
   assignee: null,
   assigned: false,
@@ -139,7 +139,7 @@ const ticketExample = {
   schema_fields: fieldsExample,
   comment_count: 0,
   reopened_from: null,
-  allowed_actions: ['read', 'comment'],
+  allowed_actions: ['comment'],
   restricted: false,
 }
 const createExample = {
@@ -156,6 +156,13 @@ const ref = (name: SchemaName) => ({ $ref: `#/components/schemas/${name}` })
 const json = (name: SchemaName, example?: unknown) => ({ 'application/json': { schema: ref(name), ...(example === undefined ? {} : { example }) } })
 const error = (description: string, example?: ReturnType<typeof errorExample>) => ({ description, content: json('Error', example) })
 const unauthorized = () => error('The API key is missing, unknown, or revoked.', errorExample('UNAUTHENTICATED', 'The API key is not valid. It may be revoked. Send it as "Authorization: Bearer gt_live_...".'))
+const disabled = () => error('The Application is disabled.', errorExample('APPLICATION_DISABLED', 'This Application is disabled. An Admin can enable it again.'))
+// Every request of an Application counts against its limits (rest.ts), so every operation can answer 429.
+const rateLimited = () => ({
+  description: 'Too many requests in this minute. Wait the seconds in `Retry-After`.',
+  headers: { 'Retry-After': { description: 'Seconds to wait.', schema: { type: 'integer' } } },
+  content: json('Error', errorExample('RATE_LIMITED', 'Too many requests. Try again in 12 seconds.')),
+})
 
 /** Runs at build time (nuxt.config.ts), so no request pays for `z.toJSONSchema`. */
 export function buildOpenApiDocument() {
@@ -206,6 +213,7 @@ export function buildOpenApiDocument() {
             201: { description: 'The ticket.', content: json('Ticket', ticketExample) },
             400: error('The body is not JSON, or the Idempotency-Key is not valid.'),
             401: unauthorized(),
+            429: rateLimited(),
             403: error('The Application is disabled, has no `tickets:create`, or may not use this Ticket Type.'),
             409: error('The Idempotency-Key was used with another body.', errorExample('IDEMPOTENCY_KEY_REUSED', 'This Idempotency-Key was used with another request body in the last 24 hours. Use a new key for a new ticket.')),
             422: error('The body has invalid values. `details` lists each problem.', errorExample('VALIDATION_FAILED', 'The request has invalid values.', [{ key: 'order_id', label: 'Order ID', reason: 'Required.' }])),
@@ -215,16 +223,30 @@ export function buildOpenApiDocument() {
           operationId: 'listTickets',
           tags: ['Tickets'],
           summary: 'List the tickets of this Application',
-          description: 'Needs `tickets:read`. At most 200 tickets, in Status order.',
+          description: 'Needs `tickets:read`. One page of tickets, in Status order: 50 by default, at most 200 with `limit`. To get all tickets, call again with `cursor` set to `next_cursor` until it is null.',
+          parameters: [
+            { name: 'q', in: 'query', required: false, schema: { type: 'string', maxLength: 200 }, description: 'Words that must all be in the title or description, or a Ticket Reference.' },
+            { name: 'type', in: 'query', required: false, schema: { type: 'integer' }, description: 'Only this Ticket Type ID.' },
+            { name: 'priority', in: 'query', required: false, schema: { type: 'string', enum: [...PRIORITIES] } },
+            { name: 'field', in: 'query', required: false, schema: { type: 'string' }, description: 'A Field value, as `key:value`, for example `order_id:5521`. Repeat for more Fields.' },
+            { name: 'open', in: 'query', required: false, schema: { type: 'string', enum: ['true'] }, description: 'Only tickets that are not done.' },
+            { name: 'limit', in: 'query', required: false, schema: { type: 'integer', minimum: 1, maximum: 200, default: 50 } },
+            { name: 'cursor', in: 'query', required: false, schema: { type: 'string' }, description: 'The `next_cursor` of the page before.' },
+          ],
           responses: {
             200: {
               description: 'The tickets, and the number for each Status.',
               content: { 'application/json': {
-                schema: { type: 'object', required: ['data', 'counts'], properties: { data: { type: 'array', items: ref('TicketSummary') }, counts: { type: 'object', additionalProperties: { type: 'integer' } } } },
-                example: { data: [summaryExample], counts: { open: 1 } },
+                schema: { type: 'object', required: ['data', 'counts', 'next_cursor'], properties: {
+                  data: { type: 'array', items: ref('TicketSummary') },
+                  counts: { type: 'object', additionalProperties: { type: 'integer' }, description: 'The number of tickets for each Status key, for all pages.' },
+                  next_cursor: { type: ['string', 'null'], description: 'Send it as `cursor` for the next page. Null on the last page.' },
+                } },
+                example: { data: [summaryExample], counts: { open: 1 }, next_cursor: null },
               } },
             },
             401: unauthorized(),
+            429: rateLimited(),
             403: error('The Application is disabled or has no `tickets:read`.'),
           },
         },
@@ -239,6 +261,7 @@ export function buildOpenApiDocument() {
           responses: {
             200: { description: 'The ticket.', content: json('Ticket', ticketExample) },
             401: unauthorized(),
+            429: rateLimited(),
             403: error('The Application is disabled or has no `tickets:read`.'),
             404: error('No ticket of this Application has this reference.', errorExample('NOT_FOUND', 'No ticket with this reference.')),
           },
@@ -255,6 +278,8 @@ export function buildOpenApiDocument() {
               example: { data: [ticketTypeExample] },
             } } },
             401: unauthorized(),
+            403: disabled(),
+            429: rateLimited(),
           },
         },
       },
@@ -267,6 +292,8 @@ export function buildOpenApiDocument() {
           responses: {
             200: { description: 'The type and the Fields of its newest Schema Version.', content: json('TicketTypeWithFields', { ...ticketTypeExample, schema_version: 2, fields: fieldsExample }) },
             401: unauthorized(),
+            403: disabled(),
+            429: rateLimited(),
             404: error('No allowed Ticket Type has this ID.'),
           },
         },
@@ -281,6 +308,7 @@ export function buildOpenApiDocument() {
           responses: {
             204: { description: 'The Contact is erased.' },
             401: unauthorized(),
+            429: rateLimited(),
             403: error('The Application is disabled.'),
             404: error('No Contact of this Application has this ID.'),
           },
