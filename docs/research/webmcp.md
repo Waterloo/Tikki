@@ -18,10 +18,11 @@ The first version was wrong on point 1. Its other findings stay true: the API ca
 
 ### Where this plan differs from the owner's request
 
-The owner asked for: feature detection; REST from the page; current ticket get, comment, change Status; create ticket; search my tickets; `consequentialHint` on writes; `untrustedContentHint` on user text; a header for channel `ai`. We agree with all of it, with these changes:
+The owner asked for: feature detection; REST from the page; search any readable ticket; open it in the tab; current ticket get, comment, change Status; create ticket; `consequentialHint` on writes; `untrustedContentHint` on user text; a header for channel `ai`. We agree with all of it, with these changes:
 
 - **`create_ticket` needs the duplicate check and the Field schema.** `POST /api/v1/tickets` does not check for similar tickets; only the MCP tool and the web form do (5.17, 13.6). The page tool must call `/api/v1/tickets/similar` first and ask for `confirm_new`, as `/mcp` does. It also needs a read tool for the Ticket Type Fields, or the agent guesses Field values. Issue 36 adds `get_ticket_types`.
 - **Do not trust `consequentialHint` to get a confirmation.** OpenAI documents confirmation for purchases, deleting data, permission changes, sending messages and sharing personal data. It does not say it reads `consequentialHint`. A Status change is in none of these classes. We accept this: a Status change is visible, it shows in Activity with Revert, and the policy allows it only to Agents. Each tool description also tells the agent to confirm with the user, as the `/mcp` descriptions do.
+- **No `status` filter in search.** The REST list and `/mcp` have only `open_only`. A Status filter is server work outside the slice.
 - **The "Claude" label is wrong.** `SourceChip.vue` shows channel `ai` as "Claude". ChatGPT already uses `/mcp`, and now uses the page tools too. The page cannot know which agent calls. Change the label to "AI".
 - **The channel header: keep it, with three limits.** See [Audit channel](#audit-channel). We found no better way: the browser does not tell the page or the server which agent calls.
 
@@ -68,6 +69,8 @@ Not documented: which annotations ChatGPT reads, and whether the page can learn 
 - **REST only.** Each `execute` calls `/api/v1/...` with `$fetch` and the session cookie. The server uses `restPrincipal`, the read rule, `applyChange` and the comment batch, as for a click. The browser holds no rule.
 - **One composable** owns every `registerTool` call. A rename of the API touches one file.
 - **Page-aware.** Current-ticket tools exist only while the ticket page shows a ticket, and act only on that ticket. They take no ticket argument.
+- **Tools:** `search_tickets` (any ticket the user can read, summaries only, `readableTickets` decides), `open_ticket(ref)` (navigates the tab), `get_current_ticket`, `add_comment_to_current_ticket`, `change_current_ticket_status`, `get_ticket_types`, `create_ticket`. Details: [issue 36](../issues/36-webmcp-tools.md).
+- **No background read of another ticket.** `get_current_ticket` is the only full-content read; to read another ticket the agent calls `open_ticket` first. Reason: the user must see the ticket the agent reads and works on. `open_ticket` does not navigate while the composer holds an unsent reply.
 - **Results in the `/mcp` shape.** The same fields, the same `<untrusted_content>` wrap (5.12), the same notice. Move `server/utils/untrusted.ts` to `shared/`, so `app/` and `server/` use one wrapper.
 
 ### Audit channel
@@ -93,7 +96,7 @@ Rejected: a second route tree (`/api/v1/ai/...`). It doubles every route for one
 | Frames (issue 32) | `frame-ancestors 'none'` stays. ChatGPT loads Tikki as the top-level page, so framing is not needed. |
 | Ticket Apps (issues 34, 35) | **Keep this for issue 34:** the Ticket App `<iframe>` gets no `allow="tools"`. Chrome would otherwise let a cross-origin app show tools to the agent as if they were Tikki tools, with no context-token limit. ChatGPT ignores iframe tools today; Chrome does not. |
 | The API changes | Feature detection plus one composable. A change in spelling breaks only the WebMCP tools, never the page. |
-| Tool descriptions drift from `/mcp` | Accepted. Six page tools. The issue lists the `/mcp` tool each one mirrors. |
+| Tool descriptions drift from `/mcp` | Accepted. Seven page tools. The issue lists the `/mcp` tool each one mirrors. |
 
 ## Open questions
 
