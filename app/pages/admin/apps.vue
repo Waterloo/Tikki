@@ -14,12 +14,8 @@ const PLACEMENTS: { value: TicketAppPlacement, label: string, chip: string, help
 // Issue 38: the icon part of the form is TicketAppIconField. `commit` uploads after the app is saved.
 const iconField = ref<{ validate: () => boolean, commit: (id: number) => Promise<TicketApp | null> } | null>(null)
 const iconForm = reactive({ name: 'i-lucide-app-window', color: '#4B5563', key: 0 })
-const ACCESS: { value: TicketAppAccess, label: string, description: string }[] = [
-  { value: 'read', label: 'Read', description: 'The app\'s backend can read the ticket, its comments and its Activity.' },
-  { value: 'comment', label: 'Comment', description: 'Also add Public Comments and Internal Comments.' },
-  { value: 'update', label: 'Update', description: 'Also change the Status, Priority, assignee and Fields.' },
-]
-const ACCESS_LABEL: Record<TicketAppAccess, string> = { read: 'Read', comment: 'Comment', update: 'Update' }
+// Issue 40: a manifest app grants at most the access in its manifest.
+const formAccessItems = computed(() => accessItems(editing.value?.manifest?.access ?? null))
 const GUIDE = '/api/docs/ticket-apps.md'
 
 const toast = useToast()
@@ -140,6 +136,15 @@ async function save() {
   }
 }
 
+// --- Manifest (issue 40) ------------------------------------------------------------------------------------------
+
+const manifestOpen = ref(false)
+const updating = ref<TicketApp | null>(null)
+
+function replaced(app: TicketApp) {
+  apps.value = apps.value.map(a => a.id === app.id ? app : a)
+}
+
 async function remove() {
   if (!editing.value) return
   const id = editing.value.id
@@ -164,6 +169,9 @@ async function remove() {
       :breadcrumb="[{ label: 'Admin' }, { label: 'Ticket Apps' }]"
     >
       <template #actions>
+        <UButton icon="i-lucide-file-json" size="lg" color="neutral" variant="outline" @click="manifestOpen = true">
+          Add from manifest
+        </UButton>
         <UButton icon="i-lucide-plus" size="lg" @click="openForm(null)">
           Add app
         </UButton>
@@ -173,9 +181,14 @@ async function remove() {
     <ListSkeleton v-if="state === 'loading'" :rows="2" />
     <ErrorState v-else-if="state === 'error'" title="The Ticket Apps could not be loaded." description="Check your connection, then try again." @retry="load" />
     <EmptyState v-else-if="apps.length === 0" icon="i-lucide-app-window" title="No Ticket Apps yet" description="Add a page from one of your own tools. Tikki shows it on the ticket and tells it which ticket is open.">
-      <UButton icon="i-lucide-plus" @click="openForm(null)">
-        Add app
-      </UButton>
+      <div class="flex flex-wrap justify-center gap-2">
+        <UButton icon="i-lucide-file-json" color="neutral" variant="outline" @click="manifestOpen = true">
+          Add from manifest
+        </UButton>
+        <UButton icon="i-lucide-plus" @click="openForm(null)">
+          Add app
+        </UButton>
+      </div>
     </EmptyState>
 
     <ol v-else aria-label="Ticket Apps, in order" class="flex flex-col gap-3 list-none p-0 m-0">
@@ -193,14 +206,19 @@ async function remove() {
               </h2>
               <span v-for="p in PLACEMENTS.filter(p => app.urls[p.value])" :key="p.value" class="text-xs px-2 py-0.5 rounded-full bg-(--ui-bg-accented) text-(--ui-text-toned)">{{ p.chip }}</span>
               <span v-if="app.page_for_requesters" class="text-xs px-2 py-0.5 rounded-full bg-(--ui-bg-accented) text-(--ui-text-toned)">Requesters</span>
-              <span class="text-xs px-2 py-0.5 rounded-full bg-(--ui-bg-accented) text-(--ui-text-toned)">{{ ACCESS_LABEL[app.access] }} access</span>
+              <span class="text-xs px-2 py-0.5 rounded-full bg-(--ui-bg-accented) text-(--ui-text-toned)">{{ TICKET_APP_ACCESS_LABEL[app.access] }} access</span>
               <span v-if="!app.enabled" class="text-xs px-2 py-0.5 rounded-full bg-(--ui-bg-accented) text-(--ui-text-muted)">Off</span>
             </div>
+            <span v-if="app.manifest?.description" class="text-[13px] text-(--ui-text-toned) [overflow-wrap:anywhere]">{{ app.manifest.description }}</span>
             <span v-for="p in PLACEMENTS.filter(p => app.urls[p.value])" :key="p.value" class="font-mono text-[13px] text-(--ui-text-toned) truncate" :title="app.urls[p.value]!">{{ app.urls[p.value] }}</span>
             <span class="text-[13px] text-(--ui-text-muted) [overflow-wrap:anywhere]">Shows on: {{ showOnText(app) }}</span>
+            <span v-if="app.manifest" class="text-[13px] text-(--ui-text-muted) [overflow-wrap:anywhere]">From manifest: <span class="font-mono">{{ app.manifest.url }}</span></span>
           </div>
           <div class="flex items-center gap-3 ml-auto">
             <USwitch :model-value="app.enabled" :disabled="busy !== null" :aria-label="`${app.name} on`" @update:model-value="v => setEnabled(app, v)" />
+            <UButton v-if="app.manifest" color="neutral" variant="outline" size="sm" class="min-h-[34px]" icon="i-lucide-refresh-cw" @click="updating = app">
+              Check for updates
+            </UButton>
             <UButton color="neutral" variant="outline" size="sm" class="min-h-[34px]" @click="openForm(app)">
               Edit
             </UButton>
@@ -253,7 +271,7 @@ async function remove() {
           </fieldset>
           <TicketAppIconField :key="iconForm.key" ref="iconField" v-model:name="iconForm.name" v-model:color="iconForm.color" :app="editing" />
           <UFormField label="Access" :error="problems.access" help="What the app's backend can do with the token, as the Agent who has the ticket open.">
-            <URadioGroup v-model="form.access" :items="ACCESS" />
+            <URadioGroup v-model="form.access" :items="formAccessItems" />
           </UFormField>
           <UFormField label="Show on" :error="problems.ticket_type_ids">
             <URadioGroup v-model="form.showOn" :items="[{ value: 'all', label: 'All Ticket Types', description: 'Also types that are added later.' }, { value: 'only', label: 'Only these types' }]" />
@@ -283,5 +301,8 @@ async function remove() {
         </div>
       </template>
     </UModal>
+
+    <TicketAppManifestDialog v-model:open="manifestOpen" :types="types" @added="app => apps.push(app)" />
+    <TicketAppUpdateDialog :app="updating" @close="updating = null" @applied="replaced" />
   </AppPage>
 </template>

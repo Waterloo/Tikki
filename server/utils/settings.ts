@@ -54,7 +54,7 @@ export function checkLogo(contentType: string | null, bytes: Uint8Array): void {
 }
 
 /** Reads a body and stops as soon as it is larger than `max`, so a huge upload costs no CPU. `tooLarge` makes the error. */
-export async function readLimited(request: Request, max: number, tooLarge: () => Error): Promise<Uint8Array> {
+export async function readLimited(request: Pick<Request | Response, 'headers' | 'body'>, max: number, tooLarge: () => Error): Promise<Uint8Array> {
   const declared = Number(request.headers.get('content-length'))
   if (declared > max) throw tooLarge()
   const chunks: Uint8Array[] = []

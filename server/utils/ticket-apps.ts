@@ -2,6 +2,7 @@ import { and, asc, eq, inArray, isNotNull, isNull, sql, type SQLWrapper } from '
 import { waitUntil } from 'cloudflare:workers'
 import { createLocalJWKSet, errors as joseErrors, jwtVerify, type JSONWebKeySet } from 'jose'
 import { z } from 'zod'
+import { accessAbove, type NormalizedManifest } from '../../shared/ticket-app-manifest'
 import { APP_ICONS, DEFAULT_APP_ICON, DEFAULT_APP_ICON_COLOR, type AppIconMode, type TicketAppIcon } from '../../shared/ticket-app-icons'
 import { TYPE_COLORS } from '../../shared/ticket-type-rules'
 import { ticket, ticketApp, ticketType, TICKET_APP_ACCESS, user, type TicketAppAccess, type TicketAppPlacement } from '../db/schema'
@@ -17,7 +18,7 @@ import { parseTicketReference, type RequesterView, type TicketDetail, type UserP
 export const CONTEXT_TOKEN_SECONDS = 5 * 60
 
 export class TicketAppError extends Error {
-  constructor(readonly status: 404 | 422, readonly code: 'NOT_FOUND' | 'VALIDATION_FAILED', message: string, readonly details: { key: string, reason: string }[] | null = null) {
+  constructor(readonly status: 404 | 409 | 422, readonly code: 'NOT_FOUND' | 'VALIDATION_FAILED' | 'MANIFEST_CHANGED', message: string, readonly details: { key: string, reason: string }[] | null = null) {
     super(message)
     this.name = 'TicketAppError'
   }
@@ -56,12 +57,12 @@ const urlInput = z.string({ error: 'Must be text or null.' }).trim().max(2000, '
   .transform(value => value === '' ? null : value)
   .nullable()
 // Null is "All Ticket Types". A list must name at least one type.
-const typeIdsInput = z.array(z.number({ error: 'Must be Ticket Type IDs.' }).int().positive(), { error: 'Must be null or a list of Ticket Type IDs.' })
+export const typeIdsInput = z.array(z.number({ error: 'Must be Ticket Type IDs.' }).int().positive(), { error: 'Must be null or a list of Ticket Type IDs.' })
   .min(1, 'Choose at least one Ticket Type, or show the app on all types.')
   .nullable()
-const enabledInput = z.boolean({ error: 'Must be true or false.' })
-const accessInput = z.enum(TICKET_APP_ACCESS, { error: `Must be one of ${TICKET_APP_ACCESS.join(', ')}.` })
-const pageForRequestersInput = z.boolean({ error: 'Must be true or false.' })
+export const enabledInput = z.boolean({ error: 'Must be true or false.' })
+export const accessInput = z.enum(TICKET_APP_ACCESS, { error: `Must be one of ${TICKET_APP_ACCESS.join(', ')}.` })
+export const pageForRequestersInput = z.boolean({ error: 'Must be true or false.' })
 
 const iconNameInput = z.enum(APP_ICONS.map(i => i.icon) as [string, ...string[]], { error: 'Must be one of the built-in icons.' })
 const iconColorInput = z.enum(TYPE_COLORS.map(c => c.color) as [string, ...string[]], { error: 'Must be one of the Ticket Type colors.' })
@@ -112,6 +113,8 @@ export interface TicketAppView {
   icon: TicketAppIcon
   /** Issue 39: Requesters also see the page. False when there is no page URL. */
   page_for_requesters: boolean
+  /** Issue 40: the app was added from this manifest. `access` is the access the app asks for. */
+  manifest: { url: string, description: string | null, access: TicketAppAccess } | null
   created_at: string
 }
 
@@ -147,9 +150,11 @@ export function dropIconObjects(appId: number, modes: readonly AppIconMode[]): v
 }
 
 const urlColumns = { sidebarUrl: ticketApp.sidebarUrl, tabUrl: ticketApp.tabUrl, pageUrl: ticketApp.pageUrl }
-const noUrl = () => invalid([{ key: 'urls', reason: 'Set at least one URL: sidebar, tab or page.' }])
+export const noUrl = () => invalid([{ key: 'urls', reason: 'Set at least one URL: sidebar, tab or page.' }])
 // Refused, not reset: a silent change of who sees the page would surprise the Admin.
-const noPageForRequesters = () => invalid([{ key: 'page_for_requesters', reason: 'Set a page URL first. Only the page can show to Requesters.' }])
+export const noPageForRequesters = () => invalid([{ key: 'page_for_requesters', reason: 'Set a page URL first. Only the page can show to Requesters.' }])
+/** Issue 40: the granted access is never above the access in the manifest. */
+export const accessNotRequested = (requested: TicketAppAccess) => invalid([{ key: 'access', reason: `The app's manifest asks for ${requested} access. Grant ${requested} or lower.` }])
 
 async function activeTypeIds(db: Db): Promise<Set<number>> {
   const rows = await db.select({ id: ticketType.id }).from(ticketType).where(isNull(ticketType.archivedAt))
@@ -166,6 +171,7 @@ function toView(row: Row, active: Set<number>): TicketAppView {
     enabled: row.enabled,
     icon: iconOf(row),
     page_for_requesters: row.pageForRequesters,
+    manifest: row.manifestUrl && row.manifest ? { url: row.manifestUrl, description: row.manifest.description, access: row.manifest.access } : null,
     created_at: row.createdAt.toISOString(),
   }
 }
@@ -190,23 +196,32 @@ async function checkTypeIds(db: Db, ids: number[] | null): Promise<number[] | nu
   return unique
 }
 
-type Audited = Pick<Row, 'name' | 'sidebarUrl' | 'tabUrl' | 'pageUrl' | 'ticketTypeIds' | 'access' | 'pageForRequesters'> & IconColumns
+export type Audited = Pick<Row, 'name' | 'sidebarUrl' | 'tabUrl' | 'pageUrl' | 'ticketTypeIds' | 'access' | 'pageForRequesters'> & IconColumns
 // The icon is the kind and the version, never the bytes.
-const audited = (row: Audited) => ({ name: row.name, sidebar_url: row.sidebarUrl, tab_url: row.tabUrl, page_url: row.pageUrl, ticket_type_ids: row.ticketTypeIds, access: row.access, page_for_requesters: row.pageForRequesters, icon: iconOf(row) })
+export const audited = (row: Audited) => ({ name: row.name, sidebar_url: row.sidebarUrl, tab_url: row.tabUrl, page_url: row.pageUrl, ticket_type_ids: row.ticketTypeIds, access: row.access, page_for_requesters: row.pageForRequesters, icon: iconOf(row) })
 
-export async function createTicketApp(db: Db, principal: UserPrincipal, input: z.infer<typeof ticketAppCreateInput>): Promise<TicketAppView> {
+/** The manifest that the Admin approved (issue 40). */
+export interface ApprovedManifest {
+  url: string
+  hash: string
+  manifest: NormalizedManifest
+}
+
+export async function createTicketApp(db: Db, principal: UserPrincipal, input: z.infer<typeof ticketAppCreateInput>, approved?: ApprovedManifest): Promise<TicketAppView> {
   if (!input.sidebar_url && !input.tab_url && !input.page_url) throw noUrl()
   if (input.page_for_requesters && !input.page_url) throw noPageForRequesters()
   const ticketTypeIds = await checkTypeIds(db, input.ticket_type_ids)
+  const manifestColumns = approved ? { manifestUrl: approved.url, manifestHash: approved.hash, manifest: approved.manifest } : {}
   const values = { name: input.name, sidebarUrl: input.sidebar_url, tabUrl: input.tab_url, pageUrl: input.page_url, ticketTypeIds, access: input.access, iconName: input.icon_name, iconColor: input.icon_color, iconLightType: null, iconDarkType: null, iconVersion: 0, pageForRequesters: input.page_for_requesters }
   const [[created]] = await db.batch([
     db.insert(ticketApp).values({
       ...values,
+      ...manifestColumns,
       enabled: input.enabled,
       sortOrder: sql`(SELECT coalesce(max(${ticketApp.sortOrder}), 0) + 1 FROM ${ticketApp})`,
       createdAt: new Date(),
     }).returning(),
-    adminAuditEntry(db, principal, { subject: { type: 'ticket_app', id: sql`last_insert_rowid()` }, action: 'ticket_app_created', values: { after: { ...audited(values), enabled: input.enabled } } }),
+    adminAuditEntry(db, principal, { subject: { type: 'ticket_app', id: sql`last_insert_rowid()` }, action: 'ticket_app_created', values: { after: { ...audited(values), enabled: input.enabled, ...(approved && { manifest_url: approved.url, manifest_hash: approved.hash }) } } }),
   ])
   return toView(created!, await activeTypeIds(db))
 }
@@ -229,6 +244,7 @@ export async function updateTicketApp(db: Db, principal: UserPrincipal, id: numb
   }
   if (!next.sidebarUrl && !next.tabUrl && !next.pageUrl) throw noUrl()
   if (next.pageForRequesters && !next.pageUrl) throw noPageForRequesters()
+  if (input.access && current.manifest && accessAbove(input.access, current.manifest.access)) throw accessNotRequested(current.manifest.access)
   if (input.ticket_type_ids !== undefined) next.ticketTypeIds = await checkTypeIds(db, input.ticket_type_ids)
   const before = audited(current)
   const after = audited(next)
