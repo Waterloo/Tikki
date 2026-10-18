@@ -42,7 +42,7 @@ None.
 
 ## Notes for later issues
 
-- Issue 34 frames external apps from Tikki. That needs `frame-src` or `child-src` on Tikki pages, which a static `_headers` file cannot hold. Keep `frame-ancestors` separate when you add it, because `_headers` and `withFrameHeaders` set `Content-Security-Policy` as a whole.
+- Issue 34 frames external apps from Tikki. That needs `frame-src` or `child-src` on Tikki pages, which a static `_headers` file cannot hold. Keep `frame-ancestors` separate when you add it, because `withFrameHeaders` appends `frame-ancestors` to a CSP that a response already has (downloads, logo).
 
 ## Glossary terms to add
 

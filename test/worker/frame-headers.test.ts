@@ -9,6 +9,11 @@ describe('frame headers', () => {
     for (const [name, value] of Object.entries(FRAME_HEADERS)) expect(framed.headers.get(name)).toBe(value)
   })
 
+  it('keep a CSP that the response already has', () => {
+    const framed = withFrameHeaders(new Response('x', { headers: { 'content-security-policy': "default-src 'none'; sandbox" } }))
+    expect(framed.headers.get('content-security-policy')).toBe("default-src 'none'; sandbox; frame-ancestors 'none'")
+  })
+
   it('match the static _headers file', () => {
     for (const [name, value] of Object.entries(FRAME_HEADERS)) expect(staticHeaders).toContain(`  ${name}: ${value}`)
   })
