@@ -169,7 +169,8 @@ describe('Ticket App manifest: refusals', () => {
 
   it('refuses a private, loopback or plain-http address without a request', async () => {
     const before = await counts()
-    for (const url of ['https://10.0.0.8/tikki-app.json', 'https://169.254.169.254/latest', 'https://localhost/tikki-app.json', 'http://127.0.0.1:8080/x.json', 'https://[::1]/x.json', 'https://printer.local/x.json', 'http://time.example.com/tikki-app.json']) {
+    for (const url of ['https://10.0.0.8/tikki-app.json', 'https://169.254.169.254/latest', 'https://localhost/tikki-app.json', 'http://127.0.0.1:8080/x.json', 'https://[::1]/x.json', 'https://printer.local/x.json', 'http://time.example.com/tikki-app.json',
+      'https://localhost./x.json', 'https://db.internal./x.json', 'https://[::127.0.0.1]/x.json', 'https://[::ffff:10.0.0.1]/x.json', 'https://[64:ff9b::a00:1]/x.json', 'https://[fec0::1]/x.json']) {
       await refused(await preview(url), 'manifest_url', /public address|https/)
     }
     expect(fetched).toEqual([])
@@ -325,12 +326,19 @@ describe('Ticket App manifest: updates', () => {
     expect((await check(id)).status).toBe(422)
   })
 
-  it('is for Admins only', async () => {
+  it('is for Admins only: an Agent and an Application get 403 on each route, and Tikki fetches nothing', async () => {
     const app = await added()
     const agent = await signInAs('agent')
+    const created = await postJson('/api/v1/applications', { name: `Shop ${n}`, description: 'Shop.', permissions: ['tickets:read'] }, h())
+    const { key } = await (await postJson(`/api/v1/applications/${(await created.json() as { id: number }).id}/keys`, { name: 'Prod' }, h())).json() as { key: string }
+    const p = await (await preview()).json() as Preview
     fetched = []
-    expect((await postJson('/api/v1/admin/ticket-apps/manifest/preview', { manifest_url: `${SITE}/tikki-app.json` }, { cookie: agent.cookie })).status).toBe(403)
-    expect((await postJson(`/api/v1/admin/ticket-apps/${app.id}/manifest/check`, {}, { cookie: agent.cookie })).status).toBe(403)
+    for (const headers of [{ cookie: agent.cookie }, { authorization: `Bearer ${key}` }]) {
+      expect((await postJson('/api/v1/admin/ticket-apps/manifest/preview', { manifest_url: `${SITE}/tikki-app.json` }, headers)).status).toBe(403)
+      expect((await postJson('/api/v1/admin/ticket-apps/manifest', { manifest_url: p.manifest_url, hash: p.hash }, headers)).status).toBe(403)
+      expect((await postJson(`/api/v1/admin/ticket-apps/${app.id}/manifest/check`, {}, headers)).status).toBe(403)
+      expect((await postJson(`/api/v1/admin/ticket-apps/${app.id}/manifest/apply`, { hash: p.hash }, headers)).status).toBe(403)
+    }
     expect(fetched).toEqual([])
   })
 })

@@ -87,7 +87,7 @@ test('add from manifest: preview with both icons, approve, see the app on a tick
   await page.goto('/admin/apps')
   await row.getByRole('button', { name: 'Check for updates', exact: true }).click()
   const update = page.getByRole('dialog', { name: `Updates for ${name}` })
-  const changes = update.getByRole('list', { name: 'Changes' })
+  const changes = update.getByRole('list', { name: 'Changes', exact: true })
   await expect(changes.getByText(`New origin: ${other}`)).toBeVisible()
   await expect(changes.getByText('The app asks for more access: update.')).toBeVisible()
   await expect(changes.getByText('Page URL', { exact: true })).toBeVisible()

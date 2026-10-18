@@ -7,6 +7,7 @@ const props = defineProps<{ types: { id: number, name: string }[] }>()
 const open = defineModel<boolean>('open', { required: true })
 const emit = defineEmits<{ added: [app: TicketApp] }>()
 
+const toast = useToast()
 const url = ref('')
 const preview = ref<ManifestPreview | null>(null)
 const loading = ref(false)
@@ -55,7 +56,7 @@ async function add() {
   saving.value = true
   formError.value = null
   try {
-    const app = await $fetch<TicketApp>('/api/v1/admin/ticket-apps/manifest', {
+    const app = await $fetch<TicketApp & { warnings?: string[] }>('/api/v1/admin/ticket-apps/manifest', {
       method: 'POST',
       body: {
         manifest_url: preview.value.manifest_url,
@@ -66,6 +67,7 @@ async function add() {
       },
     })
     emit('added', app)
+    if (app.warnings?.length) toast.add({ title: 'The app was added.', description: app.warnings.join(' '), color: 'warning' })
     open.value = false
   } catch (e) {
     const problem = apiProblem(e)

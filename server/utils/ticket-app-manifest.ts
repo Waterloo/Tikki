@@ -191,7 +191,7 @@ async function viewOf(db: Db, id: number): Promise<TicketAppView> {
  * Adds the app of the manifest. Tikki fetches the manifest again: it must be the one of the preview (`hash`), so the
  * Admin approves exactly what they saw. The icons are copied into R2 after the app exists, because the R2 key needs the id.
  */
-export async function createFromManifest(db: Db, bucket: R2Bucket, principal: UserPrincipal, input: z.infer<typeof manifestCreateInput>): Promise<TicketAppView> {
+export async function createFromManifest(db: Db, bucket: R2Bucket, principal: UserPrincipal, input: z.infer<typeof manifestCreateInput>): Promise<TicketAppView & { warnings?: string[] }> {
   const read = await readManifest(input.manifest_url)
   if (read.hash !== input.hash) throw manifestChanged()
   const { manifest } = read
@@ -211,9 +211,15 @@ export async function createFromManifest(db: Db, bucket: R2Bucket, principal: Us
   }, { url: read.url, hash: read.hash, manifest })
   if (!read.images) return created
   const { light, dark } = read.images
-  await putIconObjects(bucket, created.id, dark ? { light, dark } : { light })
-  const row = await getRow(db, created.id)
-  await writeIcon(db, principal, row, { ...row, iconLightType: light.type, iconDarkType: dark?.type ?? null, iconVersion: row.iconVersion + 1 })
+  try {
+    await putIconObjects(bucket, created.id, dark ? { light, dark } : { light })
+    const row = await getRow(db, created.id)
+    await writeIcon(db, principal, row, { ...row, iconLightType: light.type, iconDarkType: dark?.type ?? null, iconVersion: row.iconVersion + 1 })
+  } catch (error) {
+    // The app exists. An error answer would make the Admin add it again, so answer it with a warning.
+    console.error(`The icons of Ticket App ${created.id} were not copied`, error)
+    return { ...created, warnings: ['The app was added, but its icons were not copied. Upload them in Edit, or apply a manifest update later.'] }
+  }
   return viewOf(db, created.id)
 }
 
@@ -273,9 +279,12 @@ export async function checkManifestUpdate(db: Db, id: number): Promise<ManifestC
  * most the new requested access. A lower requested access lowers the granted access.
  */
 export async function applyManifestUpdate(db: Db, bucket: R2Bucket, principal: UserPrincipal, id: number, input: z.infer<typeof manifestApplyInput>): Promise<TicketAppView> {
+  const url = (await getRow(db, id)).manifestUrl
+  if (!url) throw notFromManifest()
+  const read = await readManifest(url)
+  // Read the row after the fetch, which can take seconds: an Admin's edit in that time must stay.
   const row = await getRow(db, id)
   if (!row.manifestUrl || !row.manifest) throw notFromManifest()
-  const read = await readManifest(row.manifestUrl)
   if (read.hash !== input.hash) throw manifestChanged()
   if (read.hash === row.manifestHash) return viewOf(db, id)
   const changes = manifestChanges(row.manifest, read.manifest)

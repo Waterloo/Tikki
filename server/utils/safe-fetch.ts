@@ -22,8 +22,9 @@ function privateIpv4(host: string): boolean {
 function privateIpv6(host: string): boolean {
   if (!host.startsWith('[')) return false
   const h = host.slice(1, -1)
-  // Loopback, unspecified, IPv4-mapped, unique local (fc00::/7), link-local (fe80::/10).
-  return h === '::1' || h === '::' || h.startsWith('::ffff:') || /^f[cd]/.test(h) || /^fe[89ab]/.test(h)
+  // `::` first: loopback, unspecified, IPv4-mapped and IPv4-compatible. Then NAT64, unique local (fc00::/7),
+  // link-local (fe80::/10) and site-local (fec0::/10).
+  return h.startsWith('::') || h.startsWith('64:ff9b:') || /^f[cd]/.test(h) || /^fe[89a-f]/.test(h)
 }
 
 const isLoopback = (host: string) => host === 'localhost' || host === '127.0.0.1' || host === '[::1]'
@@ -34,7 +35,8 @@ const isLoopback = (host: string) => host === 'localhost' || host === '127.0.0.1
  * into dotted form. The Worker cannot see the address that a public name resolves to, so this check works on the name only.
  */
 export function publicUrlProblem(url: URL, appEnv: AppEnv = config.appEnv): string | null {
-  const host = url.hostname.toLowerCase()
+  // A trailing dot names the same host: `localhost.` is `localhost`.
+  const host = url.hostname.toLowerCase().replace(/\.$/, '')
   if (appEnv === 'development' && isLoopback(host)) return url.protocol === 'http:' || url.protocol === 'https:' ? null : 'Must use https.'
   if (url.protocol !== 'https:') return 'Must use https.'
   if (url.username || url.password) return 'Must not contain a user name or password.'
