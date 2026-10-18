@@ -1,17 +1,17 @@
-import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm'
+import { and, asc, eq, inArray, isNull, sql, type SQLWrapper } from 'drizzle-orm'
+import { createLocalJWKSet, errors as joseErrors, jwtVerify, type JSONWebKeySet } from 'jose'
 import { z } from 'zod'
-import { ticketApp, ticketType, TICKET_APP_POSITIONS, user, type TicketAppPosition } from '../db/schema'
+import { ticket, ticketApp, ticketType, TICKET_APP_ACCESS, TICKET_APP_POSITIONS, user, type TicketAppAccess, type TicketAppPosition } from '../db/schema'
 import { adminAuditEntry } from './audit'
-import type { Db } from './auth'
+import type { Db, Role } from './auth'
 import type { AppEnv } from './config'
 import { config } from './env'
+import { isStaffRole } from './policy'
 import { useAuth } from './services'
-import type { RequesterView, TicketDetail, UserPrincipal } from './tickets'
+import { parseTicketReference, type RequesterView, type TicketDetail, type UserPrincipal } from './tickets'
 
 /** The token lives 5 minutes (ADR 0004). */
 export const CONTEXT_TOKEN_SECONDS = 5 * 60
-/** Issue 35 adds `comment` and `update`. */
-const SCOPE = 'read'
 
 export class TicketAppError extends Error {
   constructor(readonly status: 404 | 422, readonly code: 'NOT_FOUND' | 'VALIDATION_FAILED', message: string, readonly details: { key: string, reason: string }[] | null = null) {
@@ -55,12 +55,14 @@ const typeIdsInput = z.array(z.number({ error: 'Must be Ticket Type IDs.' }).int
   .min(1, 'Choose at least one Ticket Type, or show the app on all types.')
   .nullable()
 const enabledInput = z.boolean({ error: 'Must be true or false.' })
+const accessInput = z.enum(TICKET_APP_ACCESS, { error: `Must be one of ${TICKET_APP_ACCESS.join(', ')}.` })
 
 export const ticketAppCreateInput = z.strictObject({
   name: nameInput,
   url: urlInput,
   position: positionInput,
   ticket_type_ids: typeIdsInput.default(null),
+  access: accessInput.default('read'),
   enabled: enabledInput.default(true),
 })
 
@@ -69,6 +71,7 @@ export const ticketAppUpdateInput = z.strictObject({
   url: urlInput.optional(),
   position: positionInput.optional(),
   ticket_type_ids: typeIdsInput.optional(),
+  access: accessInput.optional(),
   enabled: enabledInput.optional(),
 })
 
@@ -81,6 +84,7 @@ export interface TicketAppView {
   position: TicketAppPosition
   /** Null: all Ticket Types. Archived types are left out. */
   ticket_type_ids: number[] | null
+  access: TicketAppAccess
   enabled: boolean
   created_at: string
 }
@@ -107,6 +111,7 @@ function toView(row: Row, active: Set<number>): TicketAppView {
     url: row.url,
     position: row.position,
     ticket_type_ids: row.ticketTypeIds === null ? null : row.ticketTypeIds.filter(id => active.has(id)),
+    access: row.access,
     enabled: row.enabled,
     created_at: row.createdAt.toISOString(),
   }
@@ -132,11 +137,11 @@ async function checkTypeIds(db: Db, ids: number[] | null): Promise<number[] | nu
   return unique
 }
 
-const audited = (row: Pick<Row, 'name' | 'url' | 'position' | 'ticketTypeIds'>) => ({ name: row.name, url: row.url, position: row.position, ticket_type_ids: row.ticketTypeIds })
+const audited = (row: Pick<Row, 'name' | 'url' | 'position' | 'ticketTypeIds' | 'access'>) => ({ name: row.name, url: row.url, position: row.position, ticket_type_ids: row.ticketTypeIds, access: row.access })
 
 export async function createTicketApp(db: Db, principal: UserPrincipal, input: z.infer<typeof ticketAppCreateInput>): Promise<TicketAppView> {
   const ticketTypeIds = await checkTypeIds(db, input.ticket_type_ids)
-  const values = { name: input.name, url: input.url, position: input.position, ticketTypeIds }
+  const values = { name: input.name, url: input.url, position: input.position, ticketTypeIds, access: input.access }
   const [[created]] = await db.batch([
     db.insert(ticketApp).values({
       ...values,
@@ -156,6 +161,7 @@ export async function updateTicketApp(db: Db, principal: UserPrincipal, id: numb
     url: input.url ?? current.url,
     position: input.position ?? current.position,
     ticketTypeIds: input.ticket_type_ids === undefined ? current.ticketTypeIds : await checkTypeIds(db, input.ticket_type_ids),
+    access: input.access ?? current.access,
   }
   const before = audited(current)
   const after = audited(next)
@@ -208,7 +214,7 @@ export async function deleteTicketApp(db: Db, principal: UserPrincipal, id: numb
 }
 
 /** On, and shown on this type: all types, or a chosen type that is not archived. */
-function shownOn(typeId: number) {
+function shownOn(typeId: number | SQLWrapper) {
   return and(
     eq(ticketApp.enabled, true),
     sql`(${ticketApp.ticketTypeIds} IS NULL OR EXISTS (
@@ -260,7 +266,7 @@ export interface ContextToken {
  */
 export async function contextToken(db: Db, principal: UserPrincipal, appId: number, t: TicketDetail, now = Date.now()): Promise<ContextToken> {
   const [[app], [agent]] = await Promise.all([
-    db.select({ id: ticketApp.id, name: ticketApp.name, url: ticketApp.url, position: ticketApp.position }).from(ticketApp)
+    db.select({ id: ticketApp.id, name: ticketApp.name, url: ticketApp.url, position: ticketApp.position, access: ticketApp.access }).from(ticketApp)
       .where(and(eq(ticketApp.id, appId), shownOn(t.ticket_type.id))).limit(1),
     db.select({ id: user.id, name: user.name, email: user.email, role: user.role }).from(user).where(eq(user.id, principal.userId)).limit(1),
   ])
@@ -277,7 +283,7 @@ export async function contextToken(db: Db, principal: UserPrincipal, appId: numb
         sub: agent.id,
         tikki_app: app.id,
         tikki_ticket: t.ref,
-        tikki_scope: SCOPE,
+        tikki_scope: app.access,
         iat,
         exp,
       },
@@ -310,4 +316,46 @@ export async function contextToken(db: Db, principal: UserPrincipal, appId: numb
       requester: t.requester,
     },
   }
+}
+
+/** Each level includes the ones before it. */
+const ACCESS_RANK: Record<TicketAppAccess, number> = { read: 0, comment: 1, update: 2 }
+
+const isAccess = (v: unknown): v is TicketAppAccess => typeof v === 'string' && (TICKET_APP_ACCESS as readonly string[]).includes(v)
+
+/** A JWT in compact form. An API key (`gt_live_...`) has no dots. */
+export function looksLikeJwt(credential: string): boolean {
+  return /^[\w-]+\.[\w-]+\.[\w-]+$/.test(credential)
+}
+
+/**
+ * The User behind a context token, limited to its ticket and access (issue 35), or null for any token that is not
+ * valid now. Valid: Tikki's signature and issuer, not expired, `aud` the origin of the app in `tikki_app`, that app on
+ * and still shown on the ticket's type, and `sub` an active Agent or Admin. An MCP access token has no `tikki_app` and
+ * fails. The access is the lower of the token's and the app's current one, so a lowered access applies at once.
+ */
+export async function principalForContextToken(db: Db, token: string): Promise<UserPrincipal | null> {
+  let claims
+  try {
+    const jwks = createLocalJWKSet(await useAuth().api.getJwks() as JSONWebKeySet)
+    ;({ payload: claims } = await jwtVerify(token, jwks, { issuer: `${config.appUrl}/api/auth`, requiredClaims: ['exp', 'sub', 'aud'] }))
+  } catch (error) {
+    if (error instanceof joseErrors.JOSEError) return null
+    throw error
+  }
+  const { aud, sub, tikki_app: appId, tikki_ticket: ref, tikki_scope: scope } = claims
+  if (typeof aud !== 'string' || typeof sub !== 'string' || !Number.isSafeInteger(appId) || typeof ref !== 'string' || !isAccess(scope)) return null
+  const number = parseTicketReference(ref)
+  if (number === null) return null
+
+  const [[app], [agent]] = await Promise.all([
+    db.select({ url: ticketApp.url, access: ticketApp.access }).from(ticketApp)
+      .innerJoin(ticket, eq(ticket.number, number))
+      .where(and(eq(ticketApp.id, appId as number), shownOn(ticket.ticketTypeId))).limit(1),
+    db.select({ role: user.role, deactivatedAt: user.deactivatedAt }).from(user).where(eq(user.id, sub)).limit(1),
+  ])
+  if (!app || new URL(app.url).origin !== aud) return null
+  if (!agent || agent.deactivatedAt !== null || !isStaffRole(agent.role)) return null
+  const access = ACCESS_RANK[app.access] < ACCESS_RANK[scope] ? app.access : scope
+  return { kind: 'user', userId: sub, role: agent.role as Role, channel: 'app', ticketApp: { id: appId as number, ticketNumber: number, access } }
 }

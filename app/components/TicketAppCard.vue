@@ -3,6 +3,7 @@ import type { TicketAppFrame } from '~/types/ticket-apps'
 
 /** A sidebar Ticket App: a card with the app name and a collapse button. It loads when the ticket opens. */
 defineProps<{ app: TicketAppFrame, ticketRef: string, ticketVersion: string }>()
+defineEmits<{ refresh: [] }>()
 
 const open = ref(true)
 const id = useId()
@@ -27,7 +28,7 @@ const id = useId()
     </div>
     <!-- v-show, so a collapsed app keeps its state. -->
     <div v-show="open" :id="`${id}-body`">
-      <TicketAppFrame :app="app" :ticket-ref="ticketRef" :ticket-version="ticketVersion" />
+      <TicketAppFrame :app="app" :ticket-ref="ticketRef" :ticket-version="ticketVersion" @refresh="$emit('refresh')" />
     </div>
   </section>
 </template>

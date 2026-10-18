@@ -213,10 +213,9 @@ describe('Ticket Apps: the token route', () => {
     const mcp = await getMcpToken(agent.cookie)
     expect(decodeJwt(mcp.access_token).aud).not.toBe(APP_ORIGIN)
     expect((await call('/mcp', { ...list, headers: { ...list.headers, authorization: `Bearer ${mcp.access_token}` } })).status).toBe(200)
-    // The other Bearer verifiers refuse it too. Issue 35 opens the REST API to it.
-    for (const path of ['/api/auth/oauth2/userinfo', `/api/v1/tickets/${t.ref}`]) {
-      expect((await call(path, { headers: { authorization: `Bearer ${jwt}` } })).status, path).toBe(401)
-    }
+    // The OAuth userinfo verifier refuses it too. The REST API accepts it for its own ticket (issue 35).
+    expect((await call('/api/auth/oauth2/userinfo', { headers: { authorization: `Bearer ${jwt}` } })).status).toBe(401)
+    expect((await call(`/api/v1/tickets/${t.ref}`, { headers: { authorization: `Bearer ${jwt}` } })).status).toBe(200)
   })
 
   it('gives a token on a Restricted ticket only to its Participants and Admins', async () => {

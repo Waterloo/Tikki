@@ -1,7 +1,10 @@
 /** The shapes the REST API returns (server/utils/tickets.ts). */
 
 export type Priority = 'low' | 'normal' | 'high' | 'urgent'
-export type Channel = 'web' | 'ai' | 'api'
+export type Channel = 'web' | 'ai' | 'api' | 'app'
+
+/** The Ticket App of a change with channel `app`. Null after the app was deleted. */
+export interface TicketAppRef { id: number, name: string }
 export type StatusCategory = 'open' | 'active' | 'waiting' | 'done'
 export type TicketAction = 'change_status' | 'change_priority' | 'assign' | 'edit_fields' | 'edit_description' | 'change_type' | 'move_team' | 'comment' | 'comment_internal' | 'cancel' | 'reopen' | 'delete' | 'manage_participants'
 
@@ -76,6 +79,7 @@ export interface CommentView {
   body: string
   author: Actor
   channel: Channel
+  ticket_app: TicketAppRef | null
   created_at: string
 }
 
@@ -88,6 +92,7 @@ export type ActivityItem =
     action: 'ticket_created' | 'status_changed' | 'priority_changed' | 'assignee_changed' | 'field_changed' | 'type_changed' | 'team_changed' | 'description_changed' | 'ticket_cancelled' | 'ticket_reopened' | 'attachment_added' | 'ticket_deleted' | 'ticket_restored' | 'ticket_erased' | 'participant_added' | 'participant_removed'
     principal: Actor
     channel: Channel
+    ticket_app: TicketAppRef | null
     field: { key: string, label: string } | null
     before: string | null
     after: string | null

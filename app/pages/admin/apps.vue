@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { TicketApp, TicketAppPosition } from '~/types/ticket-apps'
+import type { TicketApp, TicketAppAccess, TicketAppPosition } from '~/types/ticket-apps'
 
 definePageMeta({ roles: ['admin'] })
 
@@ -9,6 +9,12 @@ const POSITIONS: { value: TicketAppPosition, label: string, description: string 
   { value: 'sidebar', label: 'Sidebar card', description: 'Below Requester. 120 to 600 px high. Loads when the ticket opens.' },
   { value: 'tab', label: 'Tab', description: 'After Conversation and Activity. Loads when the Agent opens the tab.' },
 ]
+const ACCESS: { value: TicketAppAccess, label: string, description: string }[] = [
+  { value: 'read', label: 'Read', description: 'The app\'s backend can read the ticket, its comments and its Activity.' },
+  { value: 'comment', label: 'Comment', description: 'Also add Public Comments and Internal Comments.' },
+  { value: 'update', label: 'Update', description: 'Also change the Status, Priority, assignee and Fields.' },
+]
+const ACCESS_LABEL: Record<TicketAppAccess, string> = { read: 'Read', comment: 'Comment', update: 'Update' }
 const GUIDE = '/api/docs/ticket-apps.md'
 
 const toast = useToast()
@@ -68,7 +74,7 @@ async function setEnabled(app: TicketApp, enabled: boolean) {
 
 const editing = ref<TicketApp | null>(null)
 const formOpen = ref(false)
-const form = reactive({ name: '', url: '', position: 'sidebar' as TicketAppPosition, showOn: 'all' as 'all' | 'only', typeIds: [] as string[], enabled: true })
+const form = reactive({ name: '', url: '', position: 'sidebar' as TicketAppPosition, access: 'read' as TicketAppAccess, showOn: 'all' as 'all' | 'only', typeIds: [] as string[], enabled: true })
 const problems = ref<Record<string, string>>({})
 const formError = ref<string | null>(null)
 const saving = ref(false)
@@ -78,8 +84,8 @@ const typeItems = computed(() => types.value.map(t => ({ value: String(t.id), la
 function openForm(app: TicketApp | null) {
   editing.value = app
   Object.assign(form, app
-    ? { name: app.name, url: app.url, position: app.position, showOn: app.ticket_type_ids === null ? 'all' : 'only', typeIds: (app.ticket_type_ids ?? []).map(String), enabled: app.enabled }
-    : { name: '', url: '', position: 'sidebar', showOn: 'all', typeIds: [], enabled: true })
+    ? { name: app.name, url: app.url, position: app.position, access: app.access, showOn: app.ticket_type_ids === null ? 'all' : 'only', typeIds: (app.ticket_type_ids ?? []).map(String), enabled: app.enabled }
+    : { name: '', url: '', position: 'sidebar', access: 'read', showOn: 'all', typeIds: [], enabled: true })
   problems.value = {}
   formError.value = null
   confirmDelete.value = false
@@ -99,7 +105,7 @@ async function save() {
   const typeIds = form.showOn === 'all' ? null : form.typeIds.map(Number)
   // Unchanged types are not sent, so an app whose types were all archived can still be renamed.
   const sameTypes = editing.value && JSON.stringify(editing.value.ticket_type_ids) === JSON.stringify(typeIds)
-  const body = { name: form.name, url: form.url, position: form.position, ...(sameTypes ? {} : { ticket_type_ids: typeIds }), enabled: form.enabled }
+  const body = { name: form.name, url: form.url, position: form.position, access: form.access, ...(sameTypes ? {} : { ticket_type_ids: typeIds }), enabled: form.enabled }
   try {
     if (editing.value) {
       const saved = await $fetch<TicketApp>(`/api/v1/admin/ticket-apps/${editing.value.id}`, { method: 'PATCH', body })
@@ -166,6 +172,7 @@ async function remove() {
                 {{ app.name }}
               </h2>
               <span class="text-xs px-2 py-0.5 rounded-full bg-(--ui-bg-accented) text-(--ui-text-toned)">{{ app.position === 'tab' ? 'Tab' : 'Sidebar' }}</span>
+              <span class="text-xs px-2 py-0.5 rounded-full bg-(--ui-bg-accented) text-(--ui-text-toned)">{{ ACCESS_LABEL[app.access] }} access</span>
               <span v-if="!app.enabled" class="text-xs px-2 py-0.5 rounded-full bg-(--ui-bg-accented) text-(--ui-text-muted)">Off</span>
             </div>
             <span class="font-mono text-[13px] text-(--ui-text-toned) truncate" :title="app.url">{{ app.url }}</span>
@@ -190,8 +197,9 @@ async function remove() {
         <li><code class="font-mono text-[13px]">tikki:fetch-context</code> (app to Tikki): ask for the context.</li>
         <li><code class="font-mono text-[13px]">tikki:context</code> (Tikki to app): the ticket, the requester, the Agent, and a signed token for your backend. It also comes when the frame loads and when the ticket changes.</li>
         <li><code class="font-mono text-[13px]">tikki:resize</code> with <code class="font-mono text-[13px]">height</code> (app to Tikki): the sidebar card height, 120 to 600 px.</li>
+        <li><code class="font-mono text-[13px]">tikki:refresh</code> (app to Tikki): reload the ticket after your backend changed it.</li>
       </ul>
-      <p>Your app must send a message within 10 seconds, or the Agent sees "The app did not answer". Check the token on your backend with the keys at <code class="font-mono text-[13px]">/api/auth/jwks</code>.</p>
+      <p>Your app must send a message within 10 seconds, or the Agent sees "The app did not answer". Check the token on your backend with the keys at <code class="font-mono text-[13px]">/api/auth/jwks</code>. With Comment or Update access, your backend sends the same token to the REST API to change this one ticket.</p>
       <p>
         <a :href="GUIDE" target="_blank" rel="noopener" class="text-(--ui-primary) hover:underline">Read the developer guide</a>
       </p>
@@ -208,6 +216,9 @@ async function remove() {
           </UFormField>
           <UFormField label="Position" :error="problems.position">
             <URadioGroup v-model="form.position" :items="POSITIONS" />
+          </UFormField>
+          <UFormField label="Access" :error="problems.access" help="What the app's backend can do with the token, as the Agent who has the ticket open.">
+            <URadioGroup v-model="form.access" :items="ACCESS" />
           </UFormField>
           <UFormField label="Show on" :error="problems.ticket_type_ids">
             <URadioGroup v-model="form.showOn" :items="[{ value: 'all', label: 'All Ticket Types', description: 'Also types that are added later.' }, { value: 'only', label: 'Only these types' }]" />

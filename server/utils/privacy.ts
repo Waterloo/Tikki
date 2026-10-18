@@ -150,7 +150,7 @@ export async function eraseContact(db: Db, bucket: R2Bucket, principal: Principa
     db.delete(outboxEvent).where(of(outboxEvent.ticketNumber)),
     // The fact of the Erasure, without values. After the audit update, which would not change it anyway.
     db.insert(auditLog).select(sql`SELECT NULL, t.number, NULL, NULL, ${who.principalId}, ${who.applicationId}, ${principal.channel},
-      'ticket_erased', NULL, NULL, NULL, NULL, NULL, ${now.getTime()} FROM ticket t WHERE t.contact_id = ${contactId}`),
+      'ticket_erased', NULL, NULL, NULL, ${who.ticketAppId}, NULL, NULL, ${now.getTime()} FROM ticket t WHERE t.contact_id = ${contactId}`),
   ])
 
   const files = await db.select({ id: attachment.id }).from(attachment).where(and(of(attachment.ticketNumber), isNotNull(attachment.erasedAt)))

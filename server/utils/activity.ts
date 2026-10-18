@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, inArray, ne } from 'drizzle-orm'
 import { z } from 'zod'
-import { application, auditLog, comment, COMMENT_VISIBILITIES, status, ticket, user, type AuditAction, type CommentVisibility } from '../db/schema'
+import { application, auditLog, comment, COMMENT_VISIBILITIES, status, ticket, ticketApp, user, type AuditAction, type CommentVisibility } from '../db/schema'
 import { auditEntry } from './audit'
 import type { Db } from './auth'
 import { noticeComment } from './notifications'
@@ -16,8 +16,12 @@ export interface CommentView {
   body: string
   author: ActorView
   channel: Channel
+  /** The Ticket App, for channel `app`. Null for an Application viewer, and after the app was deleted. */
+  ticket_app: TicketAppRef | null
   created_at: string
 }
+
+export interface TicketAppRef { id: number, name: string }
 
 /** A refused revert. 409: the entry cannot be reverted now. */
 export class RevertRefusal extends Error {
@@ -32,9 +36,14 @@ const commentInput = z.object({
   visibility: z.enum(COMMENT_VISIBILITIES, { error: 'Must be public or internal.' }).optional(),
 })
 
-const actorColumns = { userId: user.id, userName: user.name, userEmail: user.email, applicationId: application.id, applicationName: application.name }
+const actorColumns = { userId: user.id, userName: user.name, userEmail: user.email, applicationId: application.id, applicationName: application.name, ticketAppId: ticketApp.id, ticketAppName: ticketApp.name }
 
-interface ActorRow { userId: string | null, userName: string | null, userEmail: string | null, applicationId: number | null, applicationName: string | null }
+interface ActorRow { userId: string | null, userName: string | null, userEmail: string | null, applicationId: number | null, applicationName: string | null, ticketAppId: number | null, ticketAppName: string | null }
+
+/** The app name is staff data, like staff names: an Application viewer never gets it. */
+function toTicketApp(r: ActorRow, viewer: Principal): TicketAppRef | null {
+  return viewer.kind === 'application' || r.ticketAppId === null ? null : { id: r.ticketAppId, name: r.ticketAppName! }
+}
 
 /**
  * The row must left join `user` and `application` on its two actor columns; a CHECK sets exactly one. An Application
@@ -54,13 +63,14 @@ function toActor(r: ActorRow, viewer: Principal, t: DetailRow): ActorView {
 const commentColumns = { id: comment.id, visibility: comment.visibility, body: comment.body, channel: comment.channel, createdAt: comment.createdAt, ...actorColumns }
 
 function toComment(r: { id: string, visibility: CommentVisibility, body: string, channel: Channel, createdAt: Date } & ActorRow, viewer: Principal, t: DetailRow): CommentView {
-  return { id: r.id, visibility: r.visibility, body: r.body, channel: r.channel, created_at: r.createdAt.toISOString(), author: toActor(r, viewer, t) }
+  return { id: r.id, visibility: r.visibility, body: r.body, channel: r.channel, ticket_app: toTicketApp(r, viewer), created_at: r.createdAt.toISOString(), author: toActor(r, viewer, t) }
 }
 
 function selectComments(db: Db, principal: Principal, number: number, id?: string) {
   return db.select(commentColumns).from(comment)
     .leftJoin(user, eq(comment.authorId, user.id))
     .leftJoin(application, eq(comment.applicationId, application.id))
+    .leftJoin(ticketApp, eq(comment.ticketAppId, ticketApp.id))
     .where(and(visibleComments(principal, number), id === undefined ? undefined : eq(comment.id, id)))
 }
 
@@ -90,7 +100,7 @@ export async function createComment(db: Db, principal: Principal, number: number
   const id = crypto.randomUUID()
   const now = new Date()
   await db.batch(withEvent(db, principal, { type: 'comment.created', ticketNumber: number, comment: { id, visibility } }, [
-    db.insert(comment).values({ id, ticketNumber: number, ...commentAuthor(principal), channel: principal.channel, visibility, body: parsed.data.body, createdAt: now }),
+    db.insert(comment).values({ id, ticketNumber: number, ...commentAuthor(principal), channel: principal.channel, ticketAppId: principal.kind === 'user' ? principal.ticketApp?.id ?? null : null, visibility, body: parsed.data.body, createdAt: now }),
     auditEntry(db, principal, { ticketNumber: number, action: 'comment_added', commentId: id }),
     db.update(ticket).set({ updatedAt: now }).where(eq(ticket.number, number)),
     noticeComment(db, actorId(principal), number, id, visibility),
@@ -122,6 +132,7 @@ export type ActivityItem =
     action: Exclude<AuditAction, 'comment_added'>
     principal: ActorView
     channel: Channel
+    ticket_app: TicketAppRef | null
     field: { key: string, label: string } | null
     /** Readable values. Null: no value (a Field not set, or no assignee). */
     before: string | null
@@ -172,6 +183,7 @@ export async function listActivity(db: Db, principal: Principal, number: number)
     }).from(auditLog)
       .leftJoin(user, eq(auditLog.principalId, user.id))
       .leftJoin(application, eq(auditLog.applicationId, application.id))
+      .leftJoin(ticketApp, eq(auditLog.ticketAppId, ticketApp.id))
       .where(and(eq(auditLog.ticketNumber, number), ne(auditLog.action, 'comment_added'), principal.kind === 'application' ? ne(auditLog.action, 'team_changed') : undefined)).orderBy(asc(auditLog.id)),
     selectComments(db, principal, number).orderBy(asc(comment.createdAt), asc(comment.id)),
     db.select({ key: status.key, name: status.name }).from(status),
@@ -236,6 +248,7 @@ export async function listActivity(db: Db, principal: Principal, number: number)
       action: e.action as Exclude<AuditAction, 'comment_added'>,
       principal: toActor(e, principal, row),
       channel: e.channel,
+      ticket_app: toTicketApp(e, principal),
       field: e.fieldKey === null ? null : { key: e.fieldKey, label: defByKey.get(e.fieldKey)?.label ?? e.fieldKey },
       before: show(e, e.before),
       after: show(e, e.after),

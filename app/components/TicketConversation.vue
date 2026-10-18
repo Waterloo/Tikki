@@ -9,7 +9,7 @@ const props = defineProps<{
   /** Ticket Apps with the `tab` position. */
   apps?: TicketAppFrame[]
 }>()
-const emit = defineEmits<{ reverted: [ticket: TicketDetail] }>()
+const emit = defineEmits<{ reverted: [ticket: TicketDetail], refresh: [] }>()
 
 const toast = useToast()
 const route = useRoute()
@@ -112,12 +112,13 @@ async function revert(id: string) {
 }
 
 const SOURCE = { web: '', ai: ' (via Claude)', api: ' (via API)' } as const
+const via = (e: EventItem) => e.channel === 'app' ? ` (via ${e.ticket_app?.name ?? 'a Ticket App'})` : SOURCE[e.channel]
 const cap = (v: string | null) => v ? v.charAt(0).toUpperCase() + v.slice(1) : ''
 
 /** The parts of one line: plain text and the bold new value. */
 function describe(e: EventItem): { text: string, strong?: string }[] {
   const source = actorSource(e.principal)
-  const who = `${displayName(actorPerson(e.principal))}${source ? ` (${source})` : ''}${SOURCE[e.channel]}`
+  const who = `${displayName(actorPerson(e.principal))}${source ? ` (${source})` : ''}${via(e)}`
   const prefix = e.reverts_id ? `${who} reverted a change: ` : `${who} `
   const [before, after] = e.action === 'priority_changed' ? [cap(e.before), cap(e.after)] : [e.before, e.after]
   const from = before ?? 'none'
@@ -190,7 +191,7 @@ onMounted(() => load())
                     <UIcon name="i-lucide-lock" class="size-3" aria-hidden="true" />
                     Internal
                   </span>
-                  <SourceChip v-if="item.comment.channel !== 'web'" :channel="item.comment.channel" />
+                  <SourceChip v-if="item.comment.channel !== 'web'" :channel="item.comment.channel" :ticket-app="item.comment.ticket_app?.name" />
                   <time :datetime="item.at" :title="formatDateTime(item.at)" class="text-[13px] text-(--ui-text-muted)">{{ timeAgo(item.at) }}</time>
                 </div>
                 <p class="text-sm leading-relaxed text-(--ui-text) whitespace-pre-wrap [overflow-wrap:anywhere]">
@@ -240,7 +241,7 @@ onMounted(() => load())
         <ol v-if="state === 'ready'" class="flex flex-col gap-3.5 list-none p-0 m-0">
           <li v-for="item in events" :key="item.id">
             <div class="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 px-1 text-[13px] text-(--ui-text-muted)">
-              <UIcon :name="item.channel === 'ai' ? 'i-lucide-sparkles' : item.action === 'ticket_created' ? 'i-lucide-ticket' : 'i-lucide-pencil'" class="size-3.5 shrink-0" aria-hidden="true" />
+              <UIcon :name="item.channel === 'ai' ? 'i-lucide-sparkles' : item.channel === 'app' ? 'i-lucide-app-window' : item.action === 'ticket_created' ? 'i-lucide-ticket' : 'i-lucide-pencil'" class="size-3.5 shrink-0" aria-hidden="true" />
               <span class="min-w-0 [overflow-wrap:anywhere]" :class="item.reverted ? 'line-through decoration-(--ui-text-dimmed)' : ''">
                 <template v-for="(part, i) in describe(item)" :key="i">
                   <strong v-if="part.strong !== undefined" class="font-medium text-(--ui-text)">{{ part.strong }}</strong>
@@ -269,7 +270,7 @@ onMounted(() => load())
       </template>
 
       <template v-for="app in apps ?? []" :key="app.id" #[appTab(app)]>
-        <TicketAppFrame v-if="openedApps.has(appTab(app))" :app="app" :ticket-ref="ticket.ref" :ticket-version="ticket.updated_at" />
+        <TicketAppFrame v-if="openedApps.has(appTab(app))" :app="app" :ticket-ref="ticket.ref" :ticket-version="ticket.updated_at" @refresh="emit('refresh')" />
       </template>
     </UTabs>
 

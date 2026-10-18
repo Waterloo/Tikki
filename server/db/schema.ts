@@ -5,6 +5,10 @@ import { user } from './auth-schema'
 
 export * from './auth-schema'
 
+/** How a change reached Tikki: the web app, Claude (MCP), an API key, or a Ticket App's context token (issue 35). No CHECK. */
+export const CHANNELS = ['web', 'ai', 'api', 'app'] as const
+export type Channel = typeof CHANNELS[number]
+
 export const PRIORITIES = ['low', 'normal', 'high', 'urgent'] as const
 export type Priority = typeof PRIORITIES[number]
 
@@ -74,7 +78,7 @@ export const ticket = sqliteTable('ticket', {
   // The Requester is a User or a Contact, never both and never neither (the CHECK below).
   requesterId: text('requester_id').references(() => user.id),
   contactId: integer('contact_id').references(() => contact.id),
-  channel: text('channel', { enum: ['web', 'ai', 'api'] }).notNull(),
+  channel: text('channel', { enum: CHANNELS }).notNull(),
   // Nullable only because SQLite cannot add a NOT NULL column with a foreign key. Every ticket has a Status.
   status: text('status').references(() => status.key),
   assigneeId: text('assignee_id').references(() => user.id),
@@ -127,7 +131,9 @@ export const comment = sqliteTable('comment', {
   // The author is a User or an Application (issue 12), exactly one (the CHECK below).
   authorId: text('author_id').references(() => user.id),
   applicationId: integer('application_id').references(() => application.id),
-  channel: text('channel', { enum: ['web', 'ai', 'api'] }).notNull(),
+  channel: text('channel', { enum: CHANNELS }).notNull(),
+  // Issue 35: the Ticket App of a comment with channel `app`. No foreign key: the app may be deleted, the comment stays.
+  ticketAppId: integer('ticket_app_id'),
   visibility: text('visibility', { enum: COMMENT_VISIBILITIES }).notNull(),
   /** Personal data. Erasure clears it. */
   body: text('body').notNull(),
@@ -175,7 +181,7 @@ export const auditLog = sqliteTable('audit_log', {
   // The Principal is a User or an Application (issue 12), exactly one (the CHECK below).
   principalId: text('principal_id').references(() => user.id),
   applicationId: integer('application_id').references(() => application.id),
-  channel: text('channel', { enum: ['web', 'ai', 'api'] }).notNull(),
+  channel: text('channel', { enum: CHANNELS }).notNull(),
   action: text('action', { enum: AUDIT_ACTIONS }).notNull(),
   /** The Field Key, for `field_changed`. */
   fieldKey: text('field_key'),
@@ -183,6 +189,8 @@ export const auditLog = sqliteTable('audit_log', {
   commentId: text('comment_id').references(() => comment.id),
   /** The entry that this one reverts. */
   revertsId: integer('reverts_id'),
+  /** Issue 35: the Ticket App, for channel `app`. A fact, no personal data. No foreign key: the app may be deleted, the entry stays. */
+  ticketAppId: integer('ticket_app_id'),
   before: text('before'),
   after: text('after'),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(() => new Date()),
@@ -484,6 +492,9 @@ export const inviteTeam = sqliteTable('invite_team', {
 
 export const TICKET_APP_POSITIONS = ['sidebar', 'tab'] as const
 export type TicketAppPosition = typeof TICKET_APP_POSITIONS[number]
+/** Issue 35: what the app's backend may do with a context token. Each level includes the one before. */
+export const TICKET_APP_ACCESS = ['read', 'comment', 'update'] as const
+export type TicketAppAccess = typeof TICKET_APP_ACCESS[number]
 
 /** An external page that Agents see inside the ticket (ADR 0004). It holds no personal data. */
 export const ticketApp = sqliteTable('ticket_app', {
@@ -497,4 +508,6 @@ export const ticketApp = sqliteTable('ticket_app', {
   sortOrder: integer('sort_order').notNull(),
   enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(() => new Date()),
+  // Issue 35
+  access: text('access', { enum: TICKET_APP_ACCESS }).notNull().default('read'),
 })

@@ -9,7 +9,7 @@ const PRIORITIES: { value: Priority, label: string }[] = [
   { value: 'high', label: 'High' },
   { value: 'urgent', label: 'Urgent' },
 ]
-const SOURCE: Record<TicketDetail['channel'], string> = { web: 'the web app', ai: 'Claude', api: 'an Application' }
+const SOURCE: Record<TicketDetail['channel'], string> = { web: 'the web app', ai: 'Claude', api: 'an Application', app: 'a Ticket App' }
 
 const route = useRoute()
 const router = useRouter()
@@ -84,6 +84,21 @@ async function load() {
     const status = (e as { status?: number }).status
     if (status === 401) return navigateTo('/sign-in')
     state.value = status === 404 ? 'not-found' : 'error'
+  }
+}
+
+// `tikki:refresh` from a Ticket App. Quiet, so the app frames stay loaded. One at a time, so an app cannot flood the API.
+let refreshing = false
+async function refreshTicket() {
+  if (refreshing || !ticket.value) return
+  refreshing = true
+  try {
+    ticket.value = await $fetch<TicketDetail>(`/api/v1/tickets/${encodeURIComponent(ticket.value.ref)}`)
+    activityVersion.value++
+  } catch {
+    await load()
+  } finally {
+    refreshing = false
   }
 }
 
@@ -482,7 +497,7 @@ onMounted(load)
           </div>
 
           <TicketAttachments :ticket-ref="ticket.ref" :attachments="attachments" :state="attachmentsState" @uploaded="attachments.push($event)" @retry="loadAttachments(ticket.ref)" />
-          <TicketConversation :ticket="ticket" :version="activityVersion" :apps="apps.filter(a => a.position === 'tab')" @reverted="ticket = $event" />
+          <TicketConversation :ticket="ticket" :version="activityVersion" :apps="apps.filter(a => a.position === 'tab')" @reverted="ticket = $event" @refresh="refreshTicket" />
         </div>
 
         <aside aria-label="Ticket properties" class="flex-[1_1_300px] min-w-0 flex flex-col gap-4">
@@ -623,7 +638,7 @@ onMounted(load)
             </dl>
           </div>
 
-          <TicketAppCard v-for="app in apps.filter(a => a.position === 'sidebar')" :key="app.id" :app="app" :ticket-ref="ticket.ref" :ticket-version="ticket.updated_at" />
+          <TicketAppCard v-for="app in apps.filter(a => a.position === 'sidebar')" :key="app.id" :app="app" :ticket-ref="ticket.ref" :ticket-version="ticket.updated_at" @refresh="refreshTicket" />
 
           <div class="flex flex-col gap-1.5 px-1 text-[13px] text-(--ui-text-muted)">
             <span>Created <time :datetime="ticket.created_at">{{ formatDateTime(ticket.created_at) }}</time></span>

@@ -1,6 +1,7 @@
 /** The shapes the Ticket Apps API returns (server/utils/ticket-apps.ts). */
 
 export type TicketAppPosition = 'sidebar' | 'tab'
+export type TicketAppAccess = 'read' | 'comment' | 'update'
 
 export interface TicketApp {
   id: number
@@ -9,6 +10,7 @@ export interface TicketApp {
   position: TicketAppPosition
   /** Null: all Ticket Types. */
   ticket_type_ids: number[] | null
+  access: TicketAppAccess
   enabled: boolean
   created_at: string
 }
