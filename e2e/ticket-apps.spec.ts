@@ -366,19 +366,19 @@ test('the admin form uploads a light and a dark image, refuses a wrong file, and
   expect(await iconOf(row)).toEqual({ kind: 'image', mode: 'light' })
 
   // Remove the dark image alone.
-  await row.getByRole('button', { name: 'Edit' }).click()
+  await row.getByRole('button', { name: 'Edit', exact: true }).click()
   await expect(dialog.getByTestId('icon-preview-dark')).toBeVisible()
   await dialog.getByRole('button', { name: 'Remove the dark image' }).click()
-  await dialog.getByRole('button', { name: 'Save' }).click()
+  await dialog.getByRole('button', { name: 'Save', exact: true }).click()
   await expect(dialog).toBeHidden()
   const after = (await (await admin.get('/api/v1/admin/ticket-apps')).json()).data as typeof list
   expect(after.find(a => a.id === mine.id)!.icon).toMatchObject({ light: true, dark: false })
 
   // Back to a built-in icon: the images go.
-  await row.getByRole('button', { name: 'Edit' }).click()
+  await row.getByRole('button', { name: 'Edit', exact: true }).click()
   await dialog.getByRole('button', { name: 'Built-in icon' }).click()
   await dialog.getByRole('button', { name: 'Bug icon' }).click()
-  await dialog.getByRole('button', { name: 'Save' }).click()
+  await dialog.getByRole('button', { name: 'Save', exact: true }).click()
   await expect(dialog).toBeHidden()
   const final = (await (await admin.get('/api/v1/admin/ticket-apps')).json()).data as (typeof list[number] & { icon: { name: string, kind: string } })[]
   expect(final.find(a => a.id === mine.id)!.icon).toMatchObject({ kind: 'builtin', name: 'i-lucide-bug', light: false })

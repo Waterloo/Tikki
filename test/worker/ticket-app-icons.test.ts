@@ -142,6 +142,15 @@ describe('Ticket App icons', () => {
     expect((await get(999999, 'light', requester)).status).toBe(404)
   })
 
+  it('never serves the image to an API key or a context token without a session', async () => {
+    const app = await newApp()
+    await put(app.id, 'light', PNG)
+    for (const authorization of ['Bearer gt_live_nope', 'Bearer a.b.c']) {
+      const res = await call(`/api/v1/ticket-apps/${app.id}/icon?mode=light`, { headers: { authorization } })
+      expect(res.status).toBe(401)
+    }
+  })
+
   it('removes the dark image alone, and the dark image with the light one', async () => {
     const app = await newApp()
     await put(app.id, 'light', PNG)

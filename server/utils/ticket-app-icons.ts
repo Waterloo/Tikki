@@ -83,7 +83,8 @@ export async function readTicketAppIcon(db: Db, bucket: R2Bucket, id: number, mo
   if (!object) throw new Error(`Ticket App ${id} has a ${served} icon record but no object in the bucket.`)
   return new Response(object.body, {
     headers: {
-      'content-type': served === 'dark' ? row.dark! : row.light,
+      // The type of the object, so bytes and type always match, even if a row update failed after the put.
+      'content-type': object.httpMetadata?.contentType ?? 'application/octet-stream',
       'content-length': String(object.size),
       'x-content-type-options': 'nosniff',
       'content-security-policy': 'default-src \'none\'; sandbox',
