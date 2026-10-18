@@ -33,8 +33,8 @@ Vertical slices of [the PRD](../PRD.md). Each slice goes through every layer and
 | 24 | [Production baseline and self-hosting](24-production-baseline.md) | HITL | 01 | Deferred |
 | 25 | [SSO sign-in: Google, Microsoft, generic OIDC](25-sso-sign-in.md) | HITL | 01 | Deferred |
 | 26 | [UI foundation: theme, app shell, shared parts](26-ui-foundation.md) | AFK | 01 | Done |
-| 27 | [Restricted tickets: Participants only](27-restricted-tickets.md) | AFK | — | In progress |
-| 28 | [Invite with a role and Teams](28-invite-with-role-and-teams.md) | AFK | — | In progress |
+| 27 | [Restricted tickets: Participants only](27-restricted-tickets.md) | AFK | — | Done |
+| 28 | [Invite with a role and Teams](28-invite-with-role-and-teams.md) | AFK | — | Done |
 
 All AFK issues except 02 are merged into `integration` on 2026-10-18. The cloud setup is deferred (issues 02, 24 and 25, and the staging checks).
 

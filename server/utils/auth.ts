@@ -5,7 +5,7 @@ import type { ClientMetadataResourceFetch } from '@better-auth/oauth-provider'
 import { betterAuth } from 'better-auth'
 import { APIError, createAuthMiddleware } from 'better-auth/api'
 import { emailOTP, jwt } from 'better-auth/plugins'
-import { and, eq, gt, isNotNull, isNull, lt, or } from 'drizzle-orm'
+import { and, eq, gt, isNotNull, isNull, lt, or, sql } from 'drizzle-orm'
 import type { DrizzleD1Database } from 'drizzle-orm/d1'
 import * as schema from '../db/schema'
 import { emailDomainAllowed, type Config } from './config'
@@ -56,7 +56,7 @@ export async function emailMaySignIn(config: Config, db: Db, email: string, now 
 }
 
 async function assertNotDeactivated(db: Db, email: string) {
-  const [row] = await db.select({ at: schema.user.deactivatedAt }).from(schema.user).where(eq(schema.user.email, email.toLowerCase())).limit(1)
+  const [row] = await db.select({ at: schema.user.deactivatedAt, email: schema.user.email }).from(schema.user).where(eq(schema.user.email, email.toLowerCase())).limit(1)
   if (row?.at) throw deactivated()
 }
 
@@ -77,6 +77,27 @@ async function takeOtpSlot(db: Db, email: string, now: number) {
 }
 
 export function createAuth({ config, db, mail, fetchClientMetadataResource, isMetadataDocumentUrlAllowed }: AuthDeps) {
+  /** Gives the User the Teams of their pending invite and marks it used, in one batch (3.33). */
+  async function acceptInvite(userId: string, rawEmail: string) {
+    const email = rawEmail.toLowerCase()
+    const pending = and(eq(schema.invite.email, email), isNull(schema.invite.acceptedAt), gt(schema.invite.expiresAt, new Date()))
+    try {
+      await db.batch([
+        db.insert(schema.teamMember).select(
+          db.select({
+            teamId: schema.inviteTeam.teamId,
+            userId: sql<string>`${userId}`.as('user_id'),
+            createdAt: sql<number>`${Date.now()}`.as('created_at'),
+          }).from(schema.inviteTeam).innerJoin(schema.invite, eq(schema.invite.id, schema.inviteTeam.inviteId)).where(pending),
+        ).onConflictDoNothing(),
+        db.update(schema.invite).set({ acceptedAt: new Date() }).where(pending),
+      ])
+    } catch (error) {
+      console.error('invite: Teams were not applied for', email, error)
+      throw error
+    }
+  }
+
   return betterAuth({
     appName: 'Ticketing',
     baseURL: config.appUrl,
@@ -107,16 +128,21 @@ export function createAuth({ config, db, mail, fetchClientMetadataResource, isMe
           async before(user) {
             const email = user.email.toLowerCase()
             if (!await emailMaySignIn(config, db, email)) throw domainNotAllowed()
+            // A pending invite presets the role (3.33), also on an allowed domain. An expired one does not.
+            const [pending] = await db.select({ role: schema.invite.role }).from(schema.invite)
+              .where(and(eq(schema.invite.email, email), isNull(schema.invite.acceptedAt), gt(schema.invite.expiresAt, new Date()))).limit(1)
+            let role: Role = pending?.role ?? 'requester'
             // The variable has no effect once an Admin exists (3.13).
-            let role: Role = 'requester'
             if (config.adminEmail === email) {
               const admins = await db.$count(schema.user, eq(schema.user.role, 'admin'))
               if (admins === 0) role = 'admin'
             }
             return { data: { ...user, role } }
           },
+          // The User row is already saved here, and Better-Auth gives no hook inside its insert, so the Teams are a second
+          // batch. If it fails, the sign-in fails visibly, and the next sign-in applies them (session hook below).
           async after(user) {
-            await db.update(schema.invite).set({ acceptedAt: new Date() }).where(and(eq(schema.invite.email, user.email.toLowerCase()), isNull(schema.invite.acceptedAt)))
+            await acceptInvite(user.id, user.email)
           },
         },
       },
@@ -124,8 +150,10 @@ export function createAuth({ config, db, mail, fetchClientMetadataResource, isMe
       session: {
         create: {
           async before(session) {
-            const [row] = await db.select({ at: schema.user.deactivatedAt }).from(schema.user).where(eq(schema.user.id, session.userId)).limit(1)
+            const [row] = await db.select({ at: schema.user.deactivatedAt, email: schema.user.email }).from(schema.user).where(eq(schema.user.id, session.userId)).limit(1)
             if (row?.at) throw deactivated()
+            // Finishes an invite whose Teams were not applied at the first sign-in. Without a pending invite it changes nothing.
+            await acceptInvite(session.userId, row!.email)
           },
         },
       },

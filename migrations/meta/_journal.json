@@ -148,6 +148,13 @@
       "when": 1792315957168,
       "tag": "0020_issue_27_restricted_tickets",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "6",
+      "when": 1792317165646,
+      "tag": "0021_issue_28_invite_role",
+      "breakpoints": true
     }
   ]
 }

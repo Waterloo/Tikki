@@ -9,7 +9,7 @@ export default defineEventHandler(async (event) => {
   const parsed = inviteInput.safeParse(await readBody(event))
   if (!parsed.success) return validationFailed(parsed.error.issues)
   try {
-    const invited = await createInvites(db, { mail: useMail(), config }, principal, parsed.data.emails)
+    const invited = await createInvites(db, { mail: useMail(), config }, principal, parsed.data.emails, parsed.data.role, parsed.data.team_ids)
     setResponseStatus(event, 201)
     return { invited }
   } catch (error) {
