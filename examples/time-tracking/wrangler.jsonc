@@ -7,6 +7,8 @@
   "name": "tikki-time",
   "main": "src/index.js",
   "compatibility_date": "2026-10-01",
+  // src/page.js sends a function to the browser with toString(); kept names would add a server-only `__name` helper.
+  "keep_names": false,
   "vars": { "TIKKI_ORIGIN": "http://localhost:8787" },
   "d1_databases": [
     { "binding": "TIME", "database_name": "tikki-time", "database_id": "00000000-0000-0000-0000-000000000000", "migrations_dir": "migrations" }
