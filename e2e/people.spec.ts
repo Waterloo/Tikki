@@ -1,4 +1,6 @@
+import { readFileSync } from 'node:fs'
 import { expect, test, type Browser } from '@playwright/test'
+import { logSize } from './mail'
 import { signIn, signInAsAdmin } from './sign-in'
 
 // A fresh context: the shared session belongs to a Requester.
@@ -64,6 +66,16 @@ test('an Admin invites, creates a Team and deactivates a User', async ({ browser
   // The other User is signed out at once.
   await otherPage.reload()
   await expect(otherPage).toHaveURL(/sign-in/)
+
+  // Settings: the Admin sends a test email (issue 19). It reuses this sign-in, because the code limit is 5 per hour per address.
+  await page.goto('/settings')
+  const mailFrom = logSize()
+  await page.getByRole('button', { name: 'Send test email' }).click()
+  await expect(page.getByText('Test email sent to admin@example.com')).toBeVisible()
+  await expect(page.getByText('The last email did not go out')).toHaveCount(0)
+  await expect(async () => {
+    expect(readFileSync(new URL('./.server.log', import.meta.url)).subarray(mailFrom).toString('utf8')).toContain('Subject: Test email')
+  }).toPass({ timeout: 10_000 })
 
   await context.close()
   await other.close()

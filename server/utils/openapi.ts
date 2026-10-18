@@ -3,7 +3,8 @@ import { FIELD_TYPES, type FieldError } from './fields'
 import { PRIORITIES, STATUS_CATEGORIES } from '../db/schema'
 import { TICKET_ACTIONS } from './policy'
 import type { TicketTypeView, TicketTypeWithFields } from './ticket-types'
-import { applicationTicketInput, type TicketDetail, type TicketSummary } from './tickets'
+import { applicationTicketInput } from './ticket-input'
+import type { TicketDetail, TicketSummary } from './tickets'
 
 /**
  * The OpenAPI document of the API for Applications (6.2). Requests use the zod schemas that validate them.

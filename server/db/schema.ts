@@ -394,3 +394,21 @@ export const webhookDelivery = sqliteTable('webhook_delivery', {
   index('webhook_delivery_due_idx').on(t.state, t.nextAttemptAt),
   index('webhook_delivery_endpoint_idx').on(t.endpointId, t.id),
 ])
+
+// Issue 19: notification email
+
+/** One row (id 1). The last transport error, for Admins in Settings. Cleared when a send works. */
+export const mailStatus = sqliteTable('mail_status', {
+  id: integer('id').primaryKey(),
+  lastError: text('last_error'),
+  lastErrorAt: integer('last_error_at', { mode: 'timestamp_ms' }),
+})
+
+/**
+ * A row means the email step ran for that notice (sent, skipped or failed). It is never retried. A separate table, because
+ * the notice writers use positional INSERT ... SELECT on `notification`.
+ */
+export const notificationMail = sqliteTable('notification_mail', {
+  notificationId: integer('notification_id').primaryKey().references(() => notification.id, { onDelete: 'cascade' }),
+  at: integer('at', { mode: 'timestamp_ms' }).notNull(),
+})

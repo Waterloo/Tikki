@@ -8,6 +8,7 @@ import type { Db, Role } from './auth'
 import { checkFileRefs, claimUploads } from './attachments'
 import { activeOptions, validateFields, type FieldDef, type FieldError, type FieldType, type FieldValues } from './fields'
 import { noticeTicketCreated, noticesForChange } from './notifications'
+import { queueNoticeMail } from './notice-mail'
 import { allowedActions, assertAllowed, assertMayCreate, canBeAssignee, canReadInternalComments, NOT_FOUND, PolicyRefusal, readableTickets, type PolicyTicket, type TicketAction } from './policy'
 import type { StatusView } from './statuses'
 import { loadTicketType } from './ticket-types'
@@ -99,32 +100,9 @@ export interface TicketDetail extends TicketSummary {
 }
 
 /** The title and description, the part of a new ticket that does not depend on its type. */
-export const ticketTextInput = z.object({
-  title: z.string({ error: 'Must be text.' }).trim().min(1, 'Title is required.').max(200, 'Title must be 200 characters or fewer.'),
-  description: z.string({ error: 'Must be text.' }).trim().max(20_000, 'Description must be 20000 characters or fewer.').default(''),
-})
-
-export const coreInput = ticketTextInput.extend({
-  priority: z.enum(PRIORITIES, { error: 'Must be one of the options.' }).default('normal'),
-})
-
-export const typeInput = z.object({
-  ticket_type_id: z.number({ error: 'Choose a Ticket Type.' }).int('Choose a Ticket Type.').positive('Choose a Ticket Type.'),
-  fields: z.record(z.string(), z.unknown(), { error: 'Must be an object keyed by Field Key.' }).default({}),
-})
-
-/** The Contact a ticket from an Application is for. The same `external_id` always finds the same Contact (3.8). */
-export const contactInput = z.object({
-  external_id: z.string({ error: 'Must be text.' }).trim().min(1, 'The external ID is required.').max(200, 'Must be 200 characters or fewer.')
-    .describe('Your ID for this person. The same ID always gives the same Contact.'),
-  name: z.string({ error: 'Must be text.' }).trim().min(1, 'The name is required.').max(200, 'Must be 200 characters or fewer.'),
-  email: z.email({ error: 'Must be an email address.' }).max(320, 'Must be 320 characters or fewer.'),
-}, { error: 'Send the Contact: external_id, name, and email.' })
-
-const contactPart = z.object({ contact: contactInput })
-
-/** The body of a create from an Application. Validation checks the same parts one by one, to report every problem at once. */
-export const applicationTicketInput = coreInput.extend(typeInput.shape).extend(contactPart.shape)
+// In their own module, so the build-time OpenAPI step can load them without the Worker runtime.
+import { applicationTicketInput, contactInput, contactPart, coreInput, ticketTextInput, typeInput } from './ticket-input'
+export { applicationTicketInput, contactInput, coreInput, ticketTextInput, typeInput }
 
 const UPDATABLE = { status: 'change_status', priority: 'change_priority', assignee_id: 'assign', fields: 'edit_fields', description: 'edit_description' } as const satisfies Record<string, TicketAction>
 
@@ -393,6 +371,7 @@ export async function createTicket(db: Db, principal: UserPrincipal, input: unkn
     auditEntry(db, principal, { ticketNumber: sql`last_insert_rowid()`, action: 'ticket_created' }),
     noticeTicketCreated(db, principal.userId),
   ])) as [{ number: number }[]]
+  queueNoticeMail({ ticket: created[0]!.number })
   return getTicket(db, principal, created[0]!.number)
 }
 
@@ -477,6 +456,7 @@ export async function createApplicationTicket(db: Db, principal: ApplicationPrin
   try {
     if (!idempotency) {
       const [, inserted] = await db.batch(withEvent(db, principal, newTicketEvent, [upsertContact, insertTicket, ...created(sql`last_insert_rowid()`)])) as [unknown, { number: number }[]]
+      queueNoticeMail({ ticket: inserted[0]!.number })
       return { ticket: await createdTicket(db, principal, inserted[0]!.number), replayed: false }
     }
     const [, , inserted] = await db.batch(withEvent(db, principal, newTicketEvent, [
@@ -488,6 +468,7 @@ export async function createApplicationTicket(db: Db, principal: ApplicationPrin
       db.insert(idempotencyKey).values({ applicationId: appId, key: idempotency.key, requestHash: idempotency.requestHash, ticketNumber: sql`last_insert_rowid()`, createdAt: new Date(now) }),
       ...created(sql`(SELECT ${idempotencyKey.ticketNumber} FROM ${idempotencyKey} WHERE ${idempotencyKey.applicationId} = ${appId} AND ${idempotencyKey.key} = ${idempotency.key})`),
     ])) as [unknown, unknown, { number: number }[]]
+    queueNoticeMail({ ticket: inserted[0]!.number })
     return { ticket: await createdTicket(db, principal, inserted[0]!.number), replayed: false }
   } catch (error) {
     if (!idempotency || !isIdempotencyConflict(error)) throw error
@@ -746,4 +727,5 @@ export async function applyChange(db: Db, principal: Principal, number: number, 
     ...extra,
     ...noticesForChange(db, principal.kind === 'user' ? principal.userId : null, number, entries),
   ]))
+  queueNoticeMail({ ticket: number })
 }

@@ -4,7 +4,7 @@ interface Deployment {
   connector_url: string
   environment: string
   sign_in: { methods: string[], allowed_domains: string[] }
-  mail: { transport: string, from: string | null }
+  mail: { transport: string, from: string | null, last_error: { message: string, at: string } | null }
 }
 
 definePageMeta({
@@ -30,6 +30,8 @@ const logoBusy = ref(false)
 const logoError = ref<string | null>(null)
 
 const deployment = ref<Deployment | null>(null)
+const testing = ref(false)
+const testError = ref<string | null>(null)
 const state = ref<'loading' | 'ready' | 'error'>('loading')
 
 const dirty = computed(() => name.value.trim() !== org.value.name || subtitle.value.trim() !== org.value.subtitle)
@@ -39,14 +41,29 @@ function errorOf(e: unknown): { status?: number, message: string, details: { key
   return { status: (e as { status?: number }).status, message: data?.message ?? 'Something went wrong. Try again.', details: data?.details ?? [] }
 }
 
-async function load() {
-  state.value = 'loading'
+async function load(quiet = false) {
+  if (!quiet) state.value = 'loading'
   try {
     deployment.value = await $fetch<Deployment>('/api/v1/settings/deployment')
     state.value = 'ready'
   } catch (e) {
     if (errorOf(e).status === 401) return navigateTo('/sign-in')
     state.value = 'error'
+  }
+}
+
+async function sendTest() {
+  testing.value = true
+  testError.value = null
+  try {
+    const { sent_to } = await $fetch<{ sent_to: string }>('/api/v1/settings/mail/test', { method: 'POST' })
+    toast.add({ title: `Test email sent to ${sent_to}`, icon: 'i-lucide-check', color: 'success' })
+  } catch (e) {
+    testError.value = errorOf(e).message
+  } finally {
+    // The server stores or clears the last error, so show its state.
+    await load(true)
+    testing.value = false
   }
 }
 
@@ -163,7 +180,7 @@ onMounted(load)
 
       <SettingsSection title="Deployment" description="These values come from the environment of the Worker. Change them in the deployment, not here.">
         <ListSkeleton v-if="state === 'loading'" />
-        <ErrorState v-else-if="state === 'error'" title="The deployment values could not be loaded." description="Check your connection, then try again." @retry="load" />
+        <ErrorState v-else-if="state === 'error'" title="The deployment values could not be loaded." description="Check your connection, then try again." @retry="load()" />
         <dl v-else-if="deployment" class="grid grid-cols-1 sm:grid-cols-[180px_minmax(0,1fr)] gap-x-6 gap-y-4 text-sm">
           <dt class="text-(--ui-text-muted)">
             Address
@@ -202,6 +219,24 @@ onMounted(load)
             {{ deployment.mail.transport }}<template v-if="deployment.mail.from">
               , from <span class="font-mono text-[13px]">{{ deployment.mail.from }}</span>
             </template>
+            <div v-if="deployment.mail.transport !== 'none'" class="mt-2 flex flex-wrap items-center gap-2">
+              <UButton color="neutral" variant="outline" icon="i-lucide-send" size="sm" :loading="testing" @click="sendTest">
+                Send test email
+              </UButton>
+              <span class="text-xs text-(--ui-text-muted)">Sends to your own address.</span>
+            </div>
+            <p v-else class="mt-1 text-xs text-(--ui-text-muted)">
+              No email is sent. Notifications still reach the Inbox.
+            </p>
+            <UAlert
+              v-if="testError || deployment.mail.last_error"
+              class="mt-3"
+              color="error"
+              variant="subtle"
+              icon="i-lucide-circle-alert"
+              title="The last email did not go out"
+              :description="testError ?? `${deployment.mail.last_error!.message} (${new Date(deployment.mail.last_error!.at).toLocaleString()})`"
+            />
           </dd>
 
           <dt class="text-(--ui-text-muted)">

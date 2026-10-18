@@ -113,6 +113,13 @@
       "when": 1792281997404,
       "tag": "0015_issue_14_outbox_and_webhooks",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "6",
+      "when": 1792282237793,
+      "tag": "0016_issue_19_notification_email",
+      "breakpoints": true
     }
   ]
 }

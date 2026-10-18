@@ -4,6 +4,7 @@ import { application, auditLog, comment, COMMENT_VISIBILITIES, status, ticket, u
 import { auditEntry } from './audit'
 import type { Db } from './auth'
 import { noticeComment } from './notifications'
+import { queueNoticeMail } from './notice-mail'
 import type { FieldDef } from './fields'
 import { withEvent } from './outbox'
 import { assertAllowed, authorize, canBeAssignee, canReadInternalComments, NOT_FOUND, PolicyRefusal, type TicketAction } from './policy'
@@ -86,6 +87,7 @@ export async function createComment(db: Db, principal: Principal, number: number
     db.update(ticket).set({ updatedAt: now }).where(eq(ticket.number, number)),
     noticeComment(db, actorId(principal), number, id, visibility),
   ]))
+  queueNoticeMail({ ticket: number })
   return (await getComment(db, principal, number, id))!
 }
 

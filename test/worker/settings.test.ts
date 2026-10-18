@@ -113,7 +113,7 @@ describe('organization settings REST API', () => {
       connector_url: 'http://localhost:8787/mcp',
       environment: 'test',
       sign_in: { methods: ['Email code'], allowed_domains: ['example.com', 'example.org'] },
-      mail: { transport: 'capture', from: null },
+      mail: { transport: 'capture', from: null, last_error: null },
     })
     expect(JSON.stringify(body)).not.toContain('test-secret')
   })
