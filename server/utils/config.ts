@@ -103,8 +103,6 @@ export function readConfig(env: RawEnv): Config {
     throw new ConfigError(`RATE_LIMITS=off is allowed only when APP_ENV is development or test (APP_ENV is "${appEnv}").`)
   }
 
-  if (!env.DB) throw new ConfigError('The DB (D1) binding is required.')
-
   return {
     appEnv,
     appUrl,
