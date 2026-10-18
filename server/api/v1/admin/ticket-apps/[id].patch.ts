@@ -2,7 +2,7 @@ import { adminPrincipal, apiError, readJson, routeId, ticketAppError, validation
 import { db } from '../../../../utils/services'
 import { ticketAppUpdateInput, updateTicketApp } from '../../../../utils/ticket-apps'
 
-/** Any of `name`, `url`, `position`, `ticket_type_ids`, `enabled`. */
+/** Any of `name`, `sidebar_url`, `tab_url`, `page_url` (null turns the placement off), `ticket_type_ids`, `access`, `enabled`. */
 export default defineEventHandler(async (event) => {
   const principal = await adminPrincipal(event)
   if (principal instanceof Response) return principal

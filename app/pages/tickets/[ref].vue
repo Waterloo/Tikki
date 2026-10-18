@@ -514,7 +514,7 @@ onMounted(load)
           </div>
 
           <TicketAttachments :ticket-ref="ticket.ref" :attachments="attachments" :state="attachmentsState" @uploaded="attachments.push($event)" @retry="loadAttachments(ticket.ref)" />
-          <TicketConversation v-model:draft="draft" :ticket="ticket" :version="activityVersion" :apps="apps.filter(a => a.position === 'tab')" @reverted="ticket = $event" @refresh="refreshTicket" />
+          <TicketConversation v-model:draft="draft" :ticket="ticket" :version="activityVersion" :apps="apps.filter(a => a.urls.tab)" @reverted="ticket = $event" @refresh="refreshTicket" />
         </div>
 
         <aside aria-label="Ticket properties" class="flex-[1_1_300px] min-w-0 flex flex-col gap-4">
@@ -655,7 +655,7 @@ onMounted(load)
             </dl>
           </div>
 
-          <TicketAppCard v-for="app in apps.filter(a => a.position === 'sidebar')" :key="app.id" :app="app" :ticket-ref="ticket.ref" :ticket-version="ticket.updated_at" @refresh="refreshTicket" />
+          <TicketAppCard v-for="app in apps.filter(a => a.urls.sidebar)" :key="app.id" :app="app" :ticket-ref="ticket.ref" :ticket-version="ticket.updated_at" @refresh="refreshTicket" />
 
           <div class="flex flex-col gap-1.5 px-1 text-[13px] text-(--ui-text-muted)">
             <span>Created <time :datetime="ticket.created_at">{{ formatDateTime(ticket.created_at) }}</time></span>

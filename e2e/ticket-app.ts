@@ -13,9 +13,9 @@ export function appUrl(tikkiOrigin: string, mode: 'normal' | 'silent' | 'writer'
 
 export interface ContextMessage { ref: string, theme: string, token: string, expires_at: string, data: Record<string, any> }
 
-/** The frame of the app with this name, once the app got its first context. */
-export async function appFrame(page: Page, name: string): Promise<Frame> {
-  const handle = await page.locator(`iframe[title="${name}"]`).elementHandle()
+/** The frame of the app with this name (and placement, for an app with two), once the app got its first context. */
+export async function appFrame(page: Page, name: string, placement?: 'sidebar' | 'tab'): Promise<Frame> {
+  const handle = await page.locator(`iframe[title="${name}"]${placement ? `[data-placement="${placement}"]` : ''}`).elementHandle()
   const frame = await handle!.contentFrame()
   await expect.poll(async () => (await contexts(frame!)).length).toBeGreaterThan(0)
   return frame!

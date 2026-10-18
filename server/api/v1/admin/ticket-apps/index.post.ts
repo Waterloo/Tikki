@@ -2,7 +2,7 @@ import { adminPrincipal, readJson, ticketAppError, validationFailed } from '../.
 import { db } from '../../../../utils/services'
 import { createTicketApp, ticketAppCreateInput } from '../../../../utils/ticket-apps'
 
-/** `{ name, url, position, ticket_type_ids?, enabled? }`. `ticket_type_ids: null` is all Ticket Types. */
+/** `{ name, sidebar_url?, tab_url?, page_url?, ticket_type_ids?, access?, enabled? }`. At least one URL. `ticket_type_ids: null` is all Ticket Types. */
 export default defineEventHandler(async (event) => {
   const principal = await adminPrincipal(event)
   if (principal instanceof Response) return principal

@@ -1,7 +1,7 @@
 // A complete example Ticket App: one page, plus a backend route that checks the context token.
 // Run from the repository root: node examples/ticket-app/server.mjs
 //   TIKKI   Tikki's origin (default http://localhost:8787)
-//   PORT    this app's port (default 5173); add http://localhost:<PORT>/ as a Ticket App in Tikki
+//   PORT    this app's port (default 5173); add http://localhost:<PORT>/ as the Sidebar URL of a Ticket App in Tikki
 import { createServer } from 'node:http'
 import { createRemoteJWKSet, jwtVerify } from 'jose'
 

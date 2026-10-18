@@ -1,7 +1,7 @@
 import { and, asc, eq, inArray, isNull, sql, type SQLWrapper } from 'drizzle-orm'
 import { createLocalJWKSet, errors as joseErrors, jwtVerify, type JSONWebKeySet } from 'jose'
 import { z } from 'zod'
-import { ticket, ticketApp, ticketType, TICKET_APP_ACCESS, TICKET_APP_POSITIONS, user, type TicketAppAccess, type TicketAppPosition } from '../db/schema'
+import { ticket, ticketApp, ticketType, TICKET_APP_ACCESS, user, type TicketAppAccess, type TicketAppPlacement } from '../db/schema'
 import { adminAuditEntry } from './audit'
 import type { Db, Role } from './auth'
 import type { AppEnv } from './config'
@@ -44,12 +44,14 @@ export function appUrlProblem(value: string, appEnv: AppEnv = config.appEnv, app
 }
 
 const nameInput = z.string({ error: 'Must be text.' }).trim().min(1, 'Name is required.').max(40, 'Name must be 40 characters or fewer.')
-const urlInput = z.string({ error: 'Must be text.' }).trim().max(2000, 'URL must be 2000 characters or fewer.')
+// Null or empty: the placement is off.
+const urlInput = z.string({ error: 'Must be text or null.' }).trim().max(2000, 'URL must be 2000 characters or fewer.')
   .superRefine((value, ctx) => {
-    const problem = appUrlProblem(value)
+    const problem = value === '' ? null : appUrlProblem(value)
     if (problem) ctx.addIssue({ code: 'custom', message: problem })
   })
-const positionInput = z.enum(TICKET_APP_POSITIONS, { error: `Must be one of ${TICKET_APP_POSITIONS.join(', ')}.` })
+  .transform(value => value === '' ? null : value)
+  .nullable()
 // Null is "All Ticket Types". A list must name at least one type.
 const typeIdsInput = z.array(z.number({ error: 'Must be Ticket Type IDs.' }).int().positive(), { error: 'Must be null or a list of Ticket Type IDs.' })
   .min(1, 'Choose at least one Ticket Type, or show the app on all types.')
@@ -59,8 +61,9 @@ const accessInput = z.enum(TICKET_APP_ACCESS, { error: `Must be one of ${TICKET_
 
 export const ticketAppCreateInput = z.strictObject({
   name: nameInput,
-  url: urlInput,
-  position: positionInput,
+  sidebar_url: urlInput.default(null),
+  tab_url: urlInput.default(null),
+  page_url: urlInput.default(null),
   ticket_type_ids: typeIdsInput.default(null),
   access: accessInput.default('read'),
   enabled: enabledInput.default(true),
@@ -68,8 +71,9 @@ export const ticketAppCreateInput = z.strictObject({
 
 export const ticketAppUpdateInput = z.strictObject({
   name: nameInput.optional(),
-  url: urlInput.optional(),
-  position: positionInput.optional(),
+  sidebar_url: urlInput.optional(),
+  tab_url: urlInput.optional(),
+  page_url: urlInput.optional(),
   ticket_type_ids: typeIdsInput.optional(),
   access: accessInput.optional(),
   enabled: enabledInput.optional(),
@@ -77,11 +81,17 @@ export const ticketAppUpdateInput = z.strictObject({
 
 export const ticketAppMoveInput = z.strictObject({ direction: z.enum(['up', 'down'], { error: 'Must be up or down.' }) })
 
+/** The URL of each placement. Null: the placement is off. At least one is set. */
+export type TicketAppUrls = Record<TicketAppPlacement, string | null>
+
+/** The placements that show in a ticket. `page` shows outside tickets (issue 39). */
+export const FRAME_PLACEMENTS = ['sidebar', 'tab'] as const satisfies readonly TicketAppPlacement[]
+export type FramePlacement = typeof FRAME_PLACEMENTS[number]
+
 export interface TicketAppView {
   id: number
   name: string
-  url: string
-  position: TicketAppPosition
+  urls: TicketAppUrls
   /** Null: all Ticket Types. Archived types are left out. */
   ticket_type_ids: number[] | null
   access: TicketAppAccess
@@ -93,11 +103,14 @@ export interface TicketAppView {
 export interface TicketAppFrame {
   id: number
   name: string
-  url: string
-  position: TicketAppPosition
+  urls: TicketAppUrls
 }
 
 type Row = typeof ticketApp.$inferSelect
+
+const urlsOf = (row: Pick<Row, 'sidebarUrl' | 'tabUrl' | 'pageUrl'>): TicketAppUrls => ({ sidebar: row.sidebarUrl, tab: row.tabUrl, page: row.pageUrl })
+const urlColumns = { sidebarUrl: ticketApp.sidebarUrl, tabUrl: ticketApp.tabUrl, pageUrl: ticketApp.pageUrl }
+const noUrl = () => invalid([{ key: 'urls', reason: 'Set at least one URL: sidebar, tab or page.' }])
 
 async function activeTypeIds(db: Db): Promise<Set<number>> {
   const rows = await db.select({ id: ticketType.id }).from(ticketType).where(isNull(ticketType.archivedAt))
@@ -108,8 +121,7 @@ function toView(row: Row, active: Set<number>): TicketAppView {
   return {
     id: row.id,
     name: row.name,
-    url: row.url,
-    position: row.position,
+    urls: urlsOf(row),
     ticket_type_ids: row.ticketTypeIds === null ? null : row.ticketTypeIds.filter(id => active.has(id)),
     access: row.access,
     enabled: row.enabled,
@@ -137,11 +149,13 @@ async function checkTypeIds(db: Db, ids: number[] | null): Promise<number[] | nu
   return unique
 }
 
-const audited = (row: Pick<Row, 'name' | 'url' | 'position' | 'ticketTypeIds' | 'access'>) => ({ name: row.name, url: row.url, position: row.position, ticket_type_ids: row.ticketTypeIds, access: row.access })
+type Audited = Pick<Row, 'name' | 'sidebarUrl' | 'tabUrl' | 'pageUrl' | 'ticketTypeIds' | 'access'>
+const audited = (row: Audited) => ({ name: row.name, sidebar_url: row.sidebarUrl, tab_url: row.tabUrl, page_url: row.pageUrl, ticket_type_ids: row.ticketTypeIds, access: row.access })
 
 export async function createTicketApp(db: Db, principal: UserPrincipal, input: z.infer<typeof ticketAppCreateInput>): Promise<TicketAppView> {
+  if (!input.sidebar_url && !input.tab_url && !input.page_url) throw noUrl()
   const ticketTypeIds = await checkTypeIds(db, input.ticket_type_ids)
-  const values = { name: input.name, url: input.url, position: input.position, ticketTypeIds, access: input.access }
+  const values = { name: input.name, sidebarUrl: input.sidebar_url, tabUrl: input.tab_url, pageUrl: input.page_url, ticketTypeIds, access: input.access }
   const [[created]] = await db.batch([
     db.insert(ticketApp).values({
       ...values,
@@ -158,11 +172,14 @@ export async function updateTicketApp(db: Db, principal: UserPrincipal, id: numb
   const current = await getRow(db, id)
   const next = {
     name: input.name ?? current.name,
-    url: input.url ?? current.url,
-    position: input.position ?? current.position,
-    ticketTypeIds: input.ticket_type_ids === undefined ? current.ticketTypeIds : await checkTypeIds(db, input.ticket_type_ids),
+    sidebarUrl: input.sidebar_url === undefined ? current.sidebarUrl : input.sidebar_url,
+    tabUrl: input.tab_url === undefined ? current.tabUrl : input.tab_url,
+    pageUrl: input.page_url === undefined ? current.pageUrl : input.page_url,
+    ticketTypeIds: current.ticketTypeIds,
     access: input.access ?? current.access,
   }
+  if (!next.sidebarUrl && !next.tabUrl && !next.pageUrl) throw noUrl()
+  if (input.ticket_type_ids !== undefined) next.ticketTypeIds = await checkTypeIds(db, input.ticket_type_ids)
   const before = audited(current)
   const after = audited(next)
   const changed = (Object.keys(after) as (keyof typeof after)[]).filter(k => JSON.stringify(before[k]) !== JSON.stringify(after[k]))
@@ -225,14 +242,15 @@ function shownOn(typeId: number | SQLWrapper) {
 
 /** The apps of a ticket of this type, in the admin order. The caller checked that the User may see them. */
 export async function appsForType(db: Db, typeId: number): Promise<TicketAppFrame[]> {
-  return db.select({ id: ticketApp.id, name: ticketApp.name, url: ticketApp.url, position: ticketApp.position }).from(ticketApp)
+  const rows = await db.select({ id: ticketApp.id, name: ticketApp.name, ...urlColumns }).from(ticketApp)
     .where(shownOn(typeId)).orderBy(asc(ticketApp.sortOrder), asc(ticketApp.id))
+  return rows.map(r => ({ id: r.id, name: r.name, urls: urlsOf(r) }))
 }
 
 /** The context of the guide (docs/ticket-apps.md#the-context), without `theme`: the browser adds it. */
 export interface AppContext {
   version: 1
-  app: { id: number, name: string, position: TicketAppPosition }
+  app: { id: number, name: string, placement: FramePlacement }
   agent: { id: string, name: string, email: string, role: string }
   ticket: {
     ref: string
@@ -260,17 +278,24 @@ export interface ContextToken {
   data: AppContext
 }
 
+export const contextTokenInput = z.strictObject({
+  placement: z.enum(FRAME_PLACEMENTS, { error: `Must be one of ${FRAME_PLACEMENTS.join(', ')}.` }),
+})
+
 /**
- * A signed context token and the context for one app on one ticket. The caller checked the role and the read rule
- * (`getTicket`). Throws NOT_FOUND for an app that is off or not shown on the ticket's type.
+ * A signed context token and the context for one placement of one app on one ticket. The caller checked the role and
+ * the read rule (`getTicket`). Throws NOT_FOUND for an app that is off, not shown on the ticket's type, or has no URL
+ * for the placement.
  */
-export async function contextToken(db: Db, principal: UserPrincipal, appId: number, t: TicketDetail, now = Date.now()): Promise<ContextToken> {
-  const [[app], [agent]] = await Promise.all([
-    db.select({ id: ticketApp.id, name: ticketApp.name, url: ticketApp.url, position: ticketApp.position, access: ticketApp.access }).from(ticketApp)
+export async function contextToken(db: Db, principal: UserPrincipal, appId: number, placement: FramePlacement, t: TicketDetail, now = Date.now()): Promise<ContextToken> {
+  const [[row], [agent]] = await Promise.all([
+    db.select({ id: ticketApp.id, name: ticketApp.name, ...urlColumns, access: ticketApp.access }).from(ticketApp)
       .where(and(eq(ticketApp.id, appId), shownOn(t.ticket_type.id))).limit(1),
     db.select({ id: user.id, name: user.name, email: user.email, role: user.role }).from(user).where(eq(user.id, principal.userId)).limit(1),
   ])
-  if (!app) throw notFound()
+  const url = row && urlsOf(row)[placement]
+  if (!row || !url) throw notFound()
+  const app = { ...row, url }
   if (!agent) throw new Error(`User ${principal.userId} has a session but no row.`)
 
   const iat = Math.floor(now / 1000)
@@ -282,6 +307,7 @@ export async function contextToken(db: Db, principal: UserPrincipal, appId: numb
         aud: new URL(app.url).origin,
         sub: agent.id,
         tikki_app: app.id,
+        tikki_placement: placement,
         tikki_ticket: t.ref,
         tikki_scope: app.access,
         iat,
@@ -294,7 +320,7 @@ export async function contextToken(db: Db, principal: UserPrincipal, appId: numb
     expires_at: new Date(exp * 1000).toISOString(),
     data: {
       version: 1,
-      app: { id: app.id, name: app.name, position: app.position },
+      app: { id: app.id, name: app.name, placement },
       agent,
       ticket: {
         ref: t.ref,
@@ -322,6 +348,7 @@ export async function contextToken(db: Db, principal: UserPrincipal, appId: numb
 const ACCESS_RANK: Record<TicketAppAccess, number> = { read: 0, comment: 1, update: 2 }
 
 const isAccess = (v: unknown): v is TicketAppAccess => typeof v === 'string' && (TICKET_APP_ACCESS as readonly string[]).includes(v)
+const isFramePlacement = (v: unknown): v is FramePlacement => typeof v === 'string' && (FRAME_PLACEMENTS as readonly string[]).includes(v)
 
 /** A JWT in compact form. An API key (`gt_live_...`) has no dots. */
 export function looksLikeJwt(credential: string): boolean {
@@ -330,7 +357,8 @@ export function looksLikeJwt(credential: string): boolean {
 
 /**
  * The User behind a context token, limited to its ticket and access (issue 35), or null for any token that is not
- * valid now. Valid: Tikki's signature and issuer, not expired, `aud` the origin of the app in `tikki_app`, that app on
+ * valid now. Valid: Tikki's signature and issuer, not expired, `aud` the origin of the URL of `tikki_placement` of the
+ * app in `tikki_app` (so a token for one view cannot be used by another view's origin, ADR 0005), that app on
  * and still shown on the ticket's type, and `sub` an active Agent or Admin. An MCP access token has no `tikki_app` and
  * fails. The access is the lower of the token's and the app's current one, so a lowered access applies at once.
  */
@@ -343,18 +371,19 @@ export async function principalForContextToken(db: Db, token: string): Promise<U
     if (error instanceof joseErrors.JOSEError) return null
     throw error
   }
-  const { aud, sub, tikki_app: appId, tikki_ticket: ref, tikki_scope: scope } = claims
-  if (typeof aud !== 'string' || typeof sub !== 'string' || !Number.isSafeInteger(appId) || typeof ref !== 'string' || !isAccess(scope)) return null
+  const { aud, sub, tikki_app: appId, tikki_placement: placement, tikki_ticket: ref, tikki_scope: scope } = claims
+  if (typeof aud !== 'string' || typeof sub !== 'string' || !Number.isSafeInteger(appId) || !isFramePlacement(placement) || typeof ref !== 'string' || !isAccess(scope)) return null
   const number = parseTicketReference(ref)
   if (number === null) return null
 
   const [[app], [agent]] = await Promise.all([
-    db.select({ url: ticketApp.url, access: ticketApp.access }).from(ticketApp)
+    db.select({ ...urlColumns, access: ticketApp.access }).from(ticketApp)
       .innerJoin(ticket, eq(ticket.number, number))
       .where(and(eq(ticketApp.id, appId as number), shownOn(ticket.ticketTypeId))).limit(1),
     db.select({ role: user.role, deactivatedAt: user.deactivatedAt }).from(user).where(eq(user.id, sub)).limit(1),
   ])
-  if (!app || new URL(app.url).origin !== aud) return null
+  const url = app && urlsOf(app)[placement]
+  if (!app || !url || new URL(url).origin !== aud) return null
   if (!agent || agent.deactivatedAt !== null || !isStaffRole(agent.role)) return null
   const access = ACCESS_RANK[app.access] < ACCESS_RANK[scope] ? app.access : scope
   return { kind: 'user', userId: sub, role: agent.role as Role, channel: 'app', ticketApp: { id: appId as number, ticketNumber: number, access } }

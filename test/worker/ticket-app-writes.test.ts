@@ -29,7 +29,7 @@ beforeAll(async () => {
 })
 
 async function newApp(access: Access, body: Record<string, unknown> = {}): Promise<App> {
-  const res = await postJson('/api/v1/admin/ticket-apps', { name: `Orders ${counter++}`, url: `${APP_ORIGIN}/app.html`, position: 'sidebar', access, ...body }, h(admin))
+  const res = await postJson('/api/v1/admin/ticket-apps', { name: `Orders ${counter++}`, sidebar_url: `${APP_ORIGIN}/app.html`, access, ...body }, h(admin))
   expect(res.status, await res.clone().text()).toBe(201)
   return res.json() as Promise<App>
 }
@@ -41,7 +41,7 @@ async function raise(s: Session = requester, ticketTypeId = gen): Promise<Ticket
 }
 
 async function tokenFor(s: Session, t: Ticket, app: App): Promise<string> {
-  const res = await call(`/api/v1/tickets/${t.ref}/apps/${app.id}/token`, { method: 'POST', headers: h(s) })
+  const res = await call(`/api/v1/tickets/${t.ref}/apps/${app.id}/token`, { method: 'POST', body: JSON.stringify({ placement: 'sidebar' }), headers: h(s) })
   expect(res.status, await res.clone().text()).toBe(200)
   return ((await res.json()) as { token: string }).token
 }
@@ -140,7 +140,7 @@ describe('Ticket App writes: one ticket only', () => {
     }
     expect((await postJson('/api/v1/ticket-types', { name: 'X' }, bearer(jwt))).status).toBe(403)
     expect((await postJson('/api/v1/tickets', { ticket_type_id: gen, title: 'X', description: 'Y' }, bearer(jwt))).status).toBe(403)
-    expect((await postJson(`/api/v1/tickets/${t.ref}/apps/1/token`, {}, bearer(jwt))).status).toBe(403)
+    expect((await postJson(`/api/v1/tickets/${t.ref}/apps/1/token`, { placement: 'sidebar' }, bearer(jwt))).status).toBe(403)
     expect((await call(`/api/v1/tickets/${t.ref}/attachments`, { method: 'PUT', body: 'x', headers: { ...bearer(jwt), 'content-type': 'text/plain' } })).status).toBe(403)
   })
 })
@@ -150,7 +150,7 @@ describe('Ticket App writes: when the token stops', () => {
     const t = await raise()
     const app = await newApp('comment')
     const ticket = await getTicket(db, { kind: 'user', userId: agent.user.id, role: 'agent', channel: 'web' }, t.number)
-    const expired = await contextToken(db, { kind: 'user', userId: agent.user.id, role: 'agent', channel: 'web' }, app.id, ticket, Date.now() - 6 * 60_000)
+    const expired = await contextToken(db, { kind: 'user', userId: agent.user.id, role: 'agent', channel: 'web' }, app.id, 'sidebar', ticket, Date.now() - 6 * 60_000)
     expect((await get(`/api/v1/tickets/${t.ref}`, expired.token)).status).toBe(401)
 
     const off = await tokenFor(agent, t, app)

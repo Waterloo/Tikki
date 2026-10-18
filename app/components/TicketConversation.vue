@@ -6,7 +6,7 @@ const props = defineProps<{
   ticket: TicketDetail
   /** Changes when the page saved a property, so the timeline reloads. */
   version: number
-  /** Ticket Apps with the `tab` position. */
+  /** Ticket Apps with a tab URL. */
   apps?: TicketAppFrame[]
 }>()
 const emit = defineEmits<{ reverted: [ticket: TicketDetail], refresh: [] }>()
@@ -270,7 +270,7 @@ onMounted(() => load())
       </template>
 
       <template v-for="app in apps ?? []" :key="app.id" #[appTab(app)]>
-        <TicketAppFrame v-if="openedApps.has(appTab(app))" :app="app" :ticket-ref="ticket.ref" :ticket-version="ticket.updated_at" @refresh="emit('refresh')" />
+        <TicketAppFrame v-if="openedApps.has(appTab(app))" :app="app" placement="tab" :ticket-ref="ticket.ref" :ticket-version="ticket.updated_at" @refresh="emit('refresh')" />
       </template>
     </UTabs>
 

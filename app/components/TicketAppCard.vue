@@ -28,7 +28,7 @@ const id = useId()
     </div>
     <!-- v-show, so a collapsed app keeps its state. -->
     <div v-show="open" :id="`${id}-body`">
-      <TicketAppFrame :app="app" :ticket-ref="ticketRef" :ticket-version="ticketVersion" @refresh="$emit('refresh')" />
+      <TicketAppFrame :app="app" placement="sidebar" :ticket-ref="ticketRef" :ticket-version="ticketVersion" @refresh="$emit('refresh')" />
     </div>
   </section>
 </template>

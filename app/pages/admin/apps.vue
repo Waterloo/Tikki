@@ -1,13 +1,15 @@
 <script setup lang="ts">
-import type { TicketApp, TicketAppAccess, TicketAppPosition } from '~/types/ticket-apps'
+import type { TicketApp, TicketAppAccess, TicketAppPlacement } from '~/types/ticket-apps'
 
 definePageMeta({ roles: ['admin'] })
 
 interface TypeOption { id: number, name: string }
 
-const POSITIONS: { value: TicketAppPosition, label: string, description: string }[] = [
-  { value: 'sidebar', label: 'Sidebar card', description: 'Below Requester. 120 to 600 px high. Loads when the ticket opens.' },
-  { value: 'tab', label: 'Tab', description: 'After Conversation and Activity. Loads when the Agent opens the tab.' },
+// One URL field for each placement. A placement is on when its URL is set.
+const PLACEMENTS: { value: TicketAppPlacement, label: string, chip: string, help: string, placeholder: string }[] = [
+  { value: 'sidebar', label: 'Sidebar URL', chip: 'Sidebar', help: 'A card in the ticket sidebar.', placeholder: 'https://orders.example.com/card' },
+  { value: 'tab', label: 'Tab URL', chip: 'Tab', help: 'A tab next to Conversation and Activity.', placeholder: 'https://orders.example.com/history' },
+  { value: 'page', label: 'Page URL', chip: 'Page', help: 'A page in the Apps menu (coming soon).', placeholder: 'https://orders.example.com/page' },
 ]
 const ACCESS: { value: TicketAppAccess, label: string, description: string }[] = [
   { value: 'read', label: 'Read', description: 'The app\'s backend can read the ticket, its comments and its Activity.' },
@@ -74,7 +76,9 @@ async function setEnabled(app: TicketApp, enabled: boolean) {
 
 const editing = ref<TicketApp | null>(null)
 const formOpen = ref(false)
-const form = reactive({ name: '', url: '', position: 'sidebar' as TicketAppPosition, access: 'read' as TicketAppAccess, showOn: 'all' as 'all' | 'only', typeIds: [] as string[], enabled: true })
+const emptyUrls = (): Record<TicketAppPlacement, string> => ({ sidebar: '', tab: '', page: '' })
+const form = reactive({ name: '', urls: emptyUrls(), access: 'read' as TicketAppAccess, showOn: 'all' as 'all' | 'only', typeIds: [] as string[], enabled: true })
+const hasUrl = computed(() => PLACEMENTS.some(p => form.urls[p.value].trim()))
 const problems = ref<Record<string, string>>({})
 const formError = ref<string | null>(null)
 const saving = ref(false)
@@ -84,8 +88,8 @@ const typeItems = computed(() => types.value.map(t => ({ value: String(t.id), la
 function openForm(app: TicketApp | null) {
   editing.value = app
   Object.assign(form, app
-    ? { name: app.name, url: app.url, position: app.position, access: app.access, showOn: app.ticket_type_ids === null ? 'all' : 'only', typeIds: (app.ticket_type_ids ?? []).map(String), enabled: app.enabled }
-    : { name: '', url: '', position: 'sidebar', access: 'read', showOn: 'all', typeIds: [], enabled: true })
+    ? { name: app.name, urls: { sidebar: app.urls.sidebar ?? '', tab: app.urls.tab ?? '', page: app.urls.page ?? '' }, access: app.access, showOn: app.ticket_type_ids === null ? 'all' : 'only', typeIds: (app.ticket_type_ids ?? []).map(String), enabled: app.enabled }
+    : { name: '', urls: emptyUrls(), access: 'read', showOn: 'all', typeIds: [], enabled: true })
   problems.value = {}
   formError.value = null
   confirmDelete.value = false
@@ -105,7 +109,9 @@ async function save() {
   const typeIds = form.showOn === 'all' ? null : form.typeIds.map(Number)
   // Unchanged types are not sent, so an app whose types were all archived can still be renamed.
   const sameTypes = editing.value && JSON.stringify(editing.value.ticket_type_ids) === JSON.stringify(typeIds)
-  const body = { name: form.name, url: form.url, position: form.position, access: form.access, ...(sameTypes ? {} : { ticket_type_ids: typeIds }), enabled: form.enabled }
+  // An empty field turns its placement off.
+  const urls = Object.fromEntries(PLACEMENTS.map(p => [`${p.value}_url`, form.urls[p.value].trim() || null]))
+  const body = { name: form.name, ...urls, access: form.access, ...(sameTypes ? {} : { ticket_type_ids: typeIds }), enabled: form.enabled }
   try {
     if (editing.value) {
       const saved = await $fetch<TicketApp>(`/api/v1/admin/ticket-apps/${editing.value.id}`, { method: 'PATCH', body })
@@ -171,11 +177,11 @@ async function remove() {
               <h2 class="text-base font-semibold text-(--ui-text-highlighted) truncate">
                 {{ app.name }}
               </h2>
-              <span class="text-xs px-2 py-0.5 rounded-full bg-(--ui-bg-accented) text-(--ui-text-toned)">{{ app.position === 'tab' ? 'Tab' : 'Sidebar' }}</span>
+              <span v-for="p in PLACEMENTS.filter(p => app.urls[p.value])" :key="p.value" class="text-xs px-2 py-0.5 rounded-full bg-(--ui-bg-accented) text-(--ui-text-toned)">{{ p.chip }}</span>
               <span class="text-xs px-2 py-0.5 rounded-full bg-(--ui-bg-accented) text-(--ui-text-toned)">{{ ACCESS_LABEL[app.access] }} access</span>
               <span v-if="!app.enabled" class="text-xs px-2 py-0.5 rounded-full bg-(--ui-bg-accented) text-(--ui-text-muted)">Off</span>
             </div>
-            <span class="font-mono text-[13px] text-(--ui-text-toned) truncate" :title="app.url">{{ app.url }}</span>
+            <span v-for="p in PLACEMENTS.filter(p => app.urls[p.value])" :key="p.value" class="font-mono text-[13px] text-(--ui-text-toned) truncate" :title="app.urls[p.value]!">{{ app.urls[p.value] }}</span>
             <span class="text-[13px] text-(--ui-text-muted) [overflow-wrap:anywhere]">Shows on: {{ showOnText(app) }}</span>
           </div>
           <div class="flex items-center gap-3 ml-auto">
@@ -211,12 +217,20 @@ async function remove() {
           <UFormField label="Name" :error="problems.name" help="The card title or the tab name. Keep it short." required>
             <UInput v-model="form.name" maxlength="40" placeholder="Orders" class="w-full" />
           </UFormField>
-          <UFormField label="URL" :error="problems.url" help="Must use https. Its origin is the audience of the token." required>
-            <UInput v-model="form.url" type="url" placeholder="https://orders.example.com/tikki" class="w-full font-mono" />
-          </UFormField>
-          <UFormField label="Position" :error="problems.position">
-            <URadioGroup v-model="form.position" :items="POSITIONS" />
-          </UFormField>
+          <fieldset class="flex flex-col gap-3 min-w-0">
+            <legend class="text-sm font-medium text-(--ui-text-highlighted)">
+              Where it shows
+            </legend>
+            <p class="-mt-1 text-[13px] text-(--ui-text-muted)">
+              Set at least one URL. Each must use https. Its origin is the audience of the token for that placement.
+            </p>
+            <UFormField v-for="p in PLACEMENTS" :key="p.value" :label="p.label" :help="p.help" :error="problems[`${p.value}_url`]">
+              <UInput v-model="form.urls[p.value]" type="url" :placeholder="p.placeholder" class="w-full font-mono" />
+            </UFormField>
+            <p v-if="problems.urls" class="text-sm text-(--ui-error)">
+              {{ problems.urls }}
+            </p>
+          </fieldset>
           <UFormField label="Access" :error="problems.access" help="What the app's backend can do with the token, as the Agent who has the ticket open.">
             <URadioGroup v-model="form.access" :items="ACCESS" />
           </UFormField>
@@ -242,7 +256,7 @@ async function remove() {
           <UButton color="neutral" variant="ghost" @click="formOpen = false">
             Cancel
           </UButton>
-          <UButton type="submit" form="app-form" :loading="saving" :disabled="!form.name.trim() || !form.url.trim()">
+          <UButton type="submit" form="app-form" :loading="saving" :disabled="!form.name.trim() || !hasUrl">
             {{ editing ? 'Save' : 'Add app' }}
           </UButton>
         </div>
