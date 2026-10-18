@@ -9,6 +9,8 @@ People raise a ticket in three ways:
 - **An AI assistant.** Connect Claude, ChatGPT, Gemini CLI, GitHub Copilot, Cursor or any other MCP client. Write one sentence. The assistant selects the type, fills in the fields, and asks only for what is missing.
 - **The REST API.** Other systems raise tickets for their customers and get signed webhooks back.
 
+Agents can also see your own tools inside each ticket with **Ticket Apps**.
+
 You own the code, the data and the server. On a small team, it can run on the Cloudflare Free plan.
 
 ## Why minimal, why complete
@@ -75,6 +77,26 @@ In the ChatGPT desktop browser, the page gives ChatGPT a smaller set of tools ([
 Admins create an **Application** and give it an API key, permissions and the Ticket Types it can use. The Application raises tickets for its **Contacts** (its own customers). Contacts do not need an account.
 
 The API is described in OpenAPI at `/api/v1/openapi.json`. Each Application has its own rate limit.
+
+## Show your own tools inside a ticket
+
+A **Ticket App** is your own web page, shown inside a ticket as a sidebar card or as a tab next to Conversation and Activity. For example: the customer's orders next to a payment ticket, an account lookup next to a bug, or a refund tool.
+
+1. An Admin opens **Ticket Apps** and adds a name, the page URL, the position (sidebar or tab), the Ticket Types to show it on, and the access level.
+2. When an Agent opens a ticket, Tikki loads the page in a sandboxed iframe and sends it the ticket, the requester and the Agent with `postMessage`, only to the page's own origin.
+3. With the context comes a **context token**: a JWT signed by Tikki that lives 5 minutes. Your backend checks it against Tikki's public keys, so it knows which Agent has which ticket open. It also works as your app's sign-in.
+4. With `comment` or `update` access, your backend can add a comment or change the ticket through the REST API with the same token. It acts as that Agent, on that one ticket only. Activity shows the change as "Sam (via Orders)".
+
+| Access | Your backend can |
+|---|---|
+| `read` (default) | Read the ticket, its comments and its Activity |
+| `comment` | Also add public replies and internal notes |
+| `update` | Also change Status, Priority, assignee and Fields |
+
+Requesters never see Ticket Apps. Your page needs no SDK: about 20 lines of JavaScript.
+
+- Developer guide: [docs/ticket-apps.md](docs/ticket-apps.md) (messages, context, token check, API calls, security checklist).
+- Example app with a backend token check: [examples/ticket-app/server.mjs](examples/ticket-app/server.mjs). Run `node examples/ticket-app/server.mjs` and add `http://localhost:5173/` as a Ticket App on your local Tikki.
 
 ## Stack
 
@@ -156,9 +178,8 @@ This runs the Playwright browser tests. They include a layout check at phone and
 
 ## Project status
 
-The product is complete for local use. These parts are not done yet:
+Production runs on Cloudflare and deploys from `main` with Workers Builds. These parts are not done yet:
 
-- Deploys to staging and production.
 - Nightly backups to R2.
 - Sign-in with Google, Microsoft or OIDC.
 - A "Deploy to Cloudflare" button and self-hosting guide.
