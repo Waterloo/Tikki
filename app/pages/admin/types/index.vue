@@ -4,7 +4,7 @@ import type { AdminType, AdminTypeList } from '~/types/ticket-types'
 definePageMeta({ roles: ['admin'] })
 
 // One grid for the header and the rows, so the columns line up (canvas: Ticket types).
-const COLUMNS = 'grid grid-cols-[minmax(320px,2fr)_80px_80px_110px_120px_150px_80px] items-center gap-4'
+const COLUMNS = 'grid grid-cols-[minmax(240px,2fr)_80px_80px_110px_120px_150px_80px] items-center gap-3'
 
 const VISIBILITY_TONE = {
   requester: 'bg-(--ui-bg-accented) text-(--ui-text-toned)',
@@ -76,7 +76,7 @@ onMounted(load)
 
       <section v-else aria-label="Active ticket types" class="rounded-[14px] border border-(--ui-border) bg-(--ui-bg) p-2">
         <div class="overflow-x-auto">
-          <div class="min-w-[980px]">
+          <div class="min-w-[960px]">
             <div :class="COLUMNS" class="px-3.5 min-h-10 text-[13px] text-(--ui-text-muted)">
               <span>Type</span><span>Prefix</span><span>Fields</span><span>Open tickets</span><span>Team</span><span>Visibility</span><span>Version</span>
             </div>
