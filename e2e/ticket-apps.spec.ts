@@ -60,6 +60,8 @@ test('a sidebar app gets the context from its own origin only, and resizes withi
   const iframe = card.locator('iframe')
   await expect(iframe).toHaveAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox')
   await expect(iframe).toHaveAttribute('referrerpolicy', 'no-referrer')
+  // No Permissions Policy grant: in particular not `tools`, so the app gets no WebMCP access through Tikki.
+  expect(await iframe.getAttribute('allow')).toBeNull()
   expect(await frameHeight(page, app.name)).toBe(200)
 
   const frame = await appFrame(page, app.name)
@@ -102,6 +104,28 @@ test('a sidebar app gets the context from its own origin only, and resizes withi
   await page.waitForTimeout(1000)
   expect(await frameHeight(page, app.name)).toBe(260)
   expect(await contexts(frame)).toEqual([])
+  await context.close()
+})
+
+test('an app with comment access adds an internal note through its backend, and the ticket reloads', async ({ browser, baseURL }) => {
+  stamp = Date.now()
+  const { 'General request': general } = await types()
+  const app = await addApp({ name: `Refunds ${stamp}`, url: appUrl(baseURL!, 'writer'), position: 'sidebar', access: 'comment' })
+  const ref = await raise(admin, general!, `Refund please ${stamp}`)
+
+  const context = await browser.newContext({ storageState: undefined })
+  const page = await staffPage(await context.newPage())
+  await page.goto(`/tickets/${ref}`)
+  const frame = await appFrame(page, app.name)
+  expect(JSON.parse(Buffer.from((await contexts(frame))[0]!.token.split('.')[1]!, 'base64url').toString()).tikki_scope).toBe('comment')
+  await frame.getByRole('button', { name: 'Add note' }).click()
+  await expect(frame.locator('#result')).toHaveText('201')
+
+  // No reload of the page: tikki:refresh brought the note in.
+  const note = page.getByRole('article').filter({ hasText: 'Refund issued by the test app.' })
+  await expect(note).toBeVisible()
+  await expect(note).toContainText('Internal')
+  await expect(note).toContainText(`via ${app.name}`)
   await context.close()
 })
 

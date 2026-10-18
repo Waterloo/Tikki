@@ -78,7 +78,11 @@ function actorJson(principal: Principal): SQL {
   if (principal.kind === 'application') {
     return sql`json((SELECT json_object('kind', 'application', 'id', a.id, 'name', a.name, 'channel', ${principal.channel}) FROM application a WHERE a.id = ${principal.applicationId}))`
   }
-  return sql`json((SELECT json_object('kind', 'user', 'id', u.id, 'name', u.name, 'channel', ${principal.channel}) FROM user u WHERE u.id = ${principal.userId}))`
+  // `applicationView` replaces a User actor with `support`, so the app name never reaches an Application endpoint.
+  const app = principal.ticketApp
+    ? sql`, 'ticket_app', json((SELECT json_object('id', ta.id, 'name', ta.name) FROM ticket_app ta WHERE ta.id = ${principal.ticketApp.id}))`
+    : sql``
+  return sql`json((SELECT json_object('kind', 'user', 'id', u.id, 'name', u.name, 'channel', ${principal.channel}${app}) FROM user u WHERE u.id = ${principal.userId}))`
 }
 
 function commentJson(id: string): SQL {

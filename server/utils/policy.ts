@@ -1,5 +1,6 @@
 import { and, eq, isNull, ne, or, sql, type SQL } from 'drizzle-orm'
-import { contact, ticket, ticketParticipant, ticketType, type ApplicationPermission, type StatusCategory, type TicketVisibility } from '../db/schema'
+import { contact, ticket, ticketParticipant, ticketType, type ApplicationPermission, type StatusCategory, type TicketAppAccess, type TicketVisibility } from '../db/schema'
+import { TICKET_REFERENCE } from '../../shared/ticket-type-rules'
 import type { ApplicationPrincipal, Principal, UserPrincipal } from './tickets'
 
 /**
@@ -12,6 +13,8 @@ export type TicketAction = typeof TICKET_ACTIONS[number]
 
 /** The facts about a ticket that the rules use. */
 export interface PolicyTicket {
+  /** The Ticket Number, for the one-ticket rule of a Ticket App (issue 35). */
+  number: number
   /** The User who is the Requester, or null when the Requester is a Contact. */
   requesterId: string | null
   /** The Application whose Contact is the Requester, or null. This is the Application that created the ticket. */
@@ -66,6 +69,46 @@ function isStaff(principal: Principal) {
   return principal.kind === 'user' && STAFF_ROLES.includes(principal.role)
 }
 
+/** Only an Agent or Admin can open a Ticket App, and its context token stops when the User is no longer one. */
+export function isStaffRole(role: string) {
+  return STAFF_ROLES.includes(role)
+}
+
+/**
+ * The ticket actions of each Ticket App access level (docs/ticket-apps.md#scopes). Type change, Team move, description,
+ * Participants, cancel, reopen and delete are never allowed: people do those in Tikki.
+ */
+const APP_ACTIONS: Record<TicketAppAccess, readonly TicketAction[]> = {
+  read: ['read'],
+  comment: ['read', 'comment', 'comment_internal'],
+  update: ['read', 'comment', 'comment_internal', 'change_status', 'change_priority', 'assign', 'edit_fields'],
+}
+
+/** A User through a Ticket App's context token: limited to one ticket and the app's access (issue 35). */
+function viaApp(principal: Principal): boolean {
+  return principal.kind === 'user' && principal.ticketApp !== undefined
+}
+
+/**
+ * The REST routes a context token may call (docs/ticket-apps.md#scopes). Every other route refuses it, so a new route
+ * is closed to Ticket Apps until it is added here. Which ticket and which action is `authorize`.
+ */
+// A Ticket Reference or a bare number, so `/tickets/deleted` and `/tickets/similar` do not match.
+const REF = TICKET_REFERENCE
+const APP_ROUTES: readonly [string, RegExp][] = [
+  ['GET', new RegExp(`^/api/v1/tickets/${REF}$`)],
+  ['PATCH', new RegExp(`^/api/v1/tickets/${REF}$`)],
+  ['GET', new RegExp(`^/api/v1/tickets/${REF}/comments$`)],
+  ['POST', new RegExp(`^/api/v1/tickets/${REF}/comments$`)],
+  ['GET', new RegExp(`^/api/v1/tickets/${REF}/activity$`)],
+]
+
+export function isTicketAppRoute(method: string, path: string): boolean {
+  return APP_ROUTES.some(([m, re]) => m === method && re.test(path))
+}
+
+const APP_REFUSED: Refusal = { status: 403, code: 'FORBIDDEN', message: 'A Ticket App token can only read and change its own ticket.' }
+
 // Not the `isAdmin` type guard: its false branch would narrow a User to never.
 function hasAdminRole(principal: Principal) {
   return principal.kind === 'user' && principal.role === 'admin'
@@ -81,7 +124,7 @@ function missing(permission: ApplicationPermission): Refusal {
 
 /** Only a User who works on tickets can own one. */
 export function canBeAssignee(role: string) {
-  return STAFF_ROLES.includes(role)
+  return isStaffRole(role)
 }
 
 /** The Requester, the assignee, or an added User (glossary: Participant). */
@@ -92,6 +135,8 @@ function isParticipant(principal: UserPrincipal, t: PolicyTicket) {
 function canRead(principal: Principal, t: PolicyTicket) {
   // A deleted ticket is hidden from every channel, Admins included; they see it only in the deleted list.
   if (t.deleted) return false
+  // Any other ticket than the token's is "not found" for a Ticket App. The User's own read rule still applies below.
+  if (principal.kind === 'user' && principal.ticketApp && principal.ticketApp.ticketNumber !== t.number) return false
   // An Application sees only the tickets it created (3.11), never a Restricted ticket, and "visible to all" is for
   // internal Users only.
   if (principal.kind === 'application') return t.applicationId === principal.applicationId && t.visibility !== 'participants'
@@ -105,6 +150,9 @@ function canRead(principal: Principal, t: PolicyTicket) {
 export function authorize(principal: Principal, action: TicketAction, t: PolicyTicket): Refusal | null {
   if (!canRead(principal, t)) return NOT_FOUND
   const forbidden = (message: string): Refusal => ({ status: 403, code: 'FORBIDDEN', message })
+  if (principal.kind === 'user' && principal.ticketApp && !APP_ACTIONS[principal.ticketApp.access].includes(action)) {
+    return forbidden(`This Ticket App has ${principal.ticketApp.access} access, which does not allow this action.`)
+  }
   if (principal.kind === 'application') {
     // Every action needs `tickets:read`, because each one answers with the ticket or the comment.
     if (!has(principal, 'tickets:read')) return missing('tickets:read')
@@ -146,16 +194,19 @@ export function authorize(principal: Principal, action: TicketAction, t: PolicyT
 
 /** The people a ticket can be assigned to, and the Teams it can move to, are staff data (issue 29). */
 export function authorizeListAssignees(principal: Principal): Refusal | null {
+  if (viaApp(principal)) return APP_REFUSED
   return isStaff(principal) ? null : { status: 403, code: 'FORBIDDEN', message: 'Only Agents can see who a ticket can be assigned to.' }
 }
 
 /** Ticket Apps and their context tokens are for staff only (ADR 0004). Which ticket is the read rule. */
 export function authorizeTicketApps(principal: Principal): Refusal | null {
+  if (viaApp(principal)) return APP_REFUSED
   return isStaff(principal) ? null : { status: 403, code: 'FORBIDDEN', message: 'Only Agents and Admins can use Ticket Apps.' }
 }
 
 /** Null when the Principal may list tickets. Which tickets is `readableTickets`. */
 export function authorizeList(principal: Principal): Refusal | null {
+  if (viaApp(principal)) return APP_REFUSED
   return principal.kind === 'application' && !has(principal, 'tickets:read') ? missing('tickets:read') : null
 }
 
@@ -166,6 +217,7 @@ const TYPE_NOT_ALLOWED: Refusal = { status: 403, code: 'FORBIDDEN', message: 'Th
  * An Application needs `tickets:create`, and the type must be in its allowed list (3.10).
  */
 export function assertMayCreate(principal: Principal, ticketTypeId?: number): void {
+  if (viaApp(principal)) throw new PolicyRefusal(APP_REFUSED)
   if (principal.kind === 'user') return
   if (!has(principal, 'tickets:create')) throw new PolicyRefusal(missing('tickets:create'))
   if (ticketTypeId !== undefined && !principal.ticketTypeIds.includes(ticketTypeId)) throw new PolicyRefusal(TYPE_NOT_ALLOWED)
@@ -178,7 +230,8 @@ export function assertMayCreateWithVisibility(principal: Principal, visibility: 
 
 /** Whether the Principal may see this Ticket Type and its Fields. An Application sees only its allowed types. */
 export function canSeeTicketType(principal: Principal, ticketTypeId: number): boolean {
-  return principal.kind === 'user' || principal.ticketTypeIds.includes(ticketTypeId)
+  if (principal.kind === 'user') return !viaApp(principal)
+  return principal.ticketTypeIds.includes(ticketTypeId)
 }
 
 /**
@@ -200,9 +253,9 @@ export function authorizeApplicationComment(principal: ApplicationPrincipal, t: 
   return null
 }
 
-/** Admin screens and settings are for Admins who sign in, never for an Application. */
+/** Admin screens and settings are for Admins who sign in, never for an Application or a Ticket App. */
 export function isAdmin(principal: Principal): principal is UserPrincipal {
-  return principal.kind === 'user' && principal.role === 'admin'
+  return principal.kind === 'user' && principal.role === 'admin' && !viaApp(principal)
 }
 
 export function assertAllowed(principal: Principal, action: TicketAction, t: PolicyTicket): void {
@@ -223,6 +276,7 @@ export function readableTickets(principal: Principal): SQL {
   const visible = isNull(ticket.deletedAt)
   const unrestricted = ne(ticketType.visibility, 'participants')
   if (principal.kind === 'application') return and(visible, eq(contact.applicationId, principal.applicationId), unrestricted)!
+  if (principal.ticketApp) return and(eq(ticket.number, principal.ticketApp.ticketNumber), readableTickets({ kind: 'user', userId: principal.userId, role: principal.role, channel: 'web' }))!
   if (hasAdminRole(principal)) return visible
   const me = principal.userId
   const participant = or(
@@ -260,17 +314,19 @@ export const NO_ATTACHMENT: Refusal = { status: 404, code: 'NOT_FOUND', message:
 
 /** Adding a file to a ticket takes the right to read the ticket. An Application can read only its own tickets. */
 export function authorizeAttach(principal: Principal, t: PolicyTicket): Refusal | null {
-  return canRead(principal, t) ? null : NOT_FOUND
+  if (!canRead(principal, t)) return NOT_FOUND
+  return viaApp(principal) ? APP_REFUSED : null
 }
 
 /** Only a User can upload before the ticket exists: an Application's create takes no file IDs. */
 export function authorizeUnattachedUpload(principal: Principal): Refusal | null {
+  if (viaApp(principal)) return APP_REFUSED
   return principal.kind === 'user' ? null : { status: 403, code: 'FORBIDDEN', message: 'An Application can add files only to its own tickets.' }
 }
 
 /** An upload made before its ticket exists (`ticket` is null) belongs to its uploader alone. */
 export function authorizeAttachmentRead(principal: Principal, a: { uploaderId: string | null, ticket: PolicyTicket | null }): Refusal | null {
-  if (a.ticket === null) return principal.kind === 'user' && a.uploaderId === principal.userId ? null : NO_ATTACHMENT
+  if (a.ticket === null) return principal.kind === 'user' && !viaApp(principal) && a.uploaderId === principal.userId ? null : NO_ATTACHMENT
   return canRead(principal, a.ticket) ? null : NO_ATTACHMENT
 }
 
@@ -295,5 +351,5 @@ export function assertCanDeactivate(principal: Principal, targetId: string): voi
 
 /** A Team member must be an Agent or an Admin, because a Team is a group of Agents. */
 export function canJoinTeam(role: string) {
-  return STAFF_ROLES.includes(role)
+  return isStaffRole(role)
 }

@@ -6,8 +6,8 @@ export const TIKKI_ORIGIN = `http://localhost:${Number(process.env.E2E_PORT ?? 8
 export const APP_PORT = Number(process.env.E2E_APP_PORT ?? Number(process.env.E2E_PORT ?? 8799) + 100)
 export const APP_ORIGIN = `http://localhost:${APP_PORT}`
 
-/** The test app URL. `mode`: `normal` asks for the context, `silent` never answers. */
-export function appUrl(tikkiOrigin: string, mode: 'normal' | 'silent' = 'normal', extra = '') {
+/** The test app URL. `mode`: `normal` asks for the context, `silent` never answers, `writer` also has an "Add note" button. */
+export function appUrl(tikkiOrigin: string, mode: 'normal' | 'silent' | 'writer' = 'normal', extra = '') {
   return `${APP_ORIGIN}/app.html?tikki=${encodeURIComponent(tikkiOrigin)}&mode=${mode}${extra}`
 }
 

@@ -23,6 +23,9 @@ export const TYPE_COLORS = [
 
 export const PREFIX_PATTERN = /^[A-Z]{2,5}$/
 
+/** A Ticket Reference (`BUG-12`) or a bare number, as regex source; group 1 is the number. Any case for the prefix. */
+export const TICKET_REFERENCE = String.raw`(?:[A-Za-z]{2,5}-)?([1-9]\d{0,15})`
+
 /** Core attributes of a ticket. Validation errors use these names as `key`, so a Field Key must not reuse them. */
 export const RESERVED_FIELD_KEYS: readonly string[] = ['title', 'description', 'priority', 'ticket_type_id', 'fields', 'status', 'assignee_id', 'body']
 

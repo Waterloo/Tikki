@@ -5,8 +5,8 @@ import { db, useAuth } from './services'
 import { RevertRefusal } from './activity'
 import { limitMessage, takeSlot, USER_WEB_LIMIT, type Limited } from './rate-limit'
 import { PeopleError } from './people'
-import { authorizeManagePeople, isAdmin, NOT_FOUND, PolicyRefusal } from './policy'
-import { TicketAppError } from './ticket-apps'
+import { authorizeManagePeople, isAdmin, isTicketAppRoute, NOT_FOUND, PolicyRefusal } from './policy'
+import { looksLikeJwt, principalForContextToken, TicketAppError } from './ticket-apps'
 import { TypeAdminError } from './ticket-type-admin'
 import { IdempotencyMismatch, parseTicketReference, TicketValidationError, type Principal, type UserPrincipal } from './tickets'
 
@@ -32,14 +32,16 @@ export async function sessionPrincipal(event: H3Event): Promise<UserPrincipal | 
 }
 
 /**
- * The Principal for a REST request: an Application with `Authorization: Bearer gt_live_...`, else the web session.
- * A request with an Authorization header is never read as a session, so a bad key cannot fall back to a cookie.
+ * The Principal for a REST request: an Application with `Authorization: Bearer gt_live_...`, a User through a Ticket
+ * App with `Authorization: Bearer <context token>`, else the web session. A request with an Authorization header is
+ * never read as a session, so a bad key cannot fall back to a cookie.
  */
 export async function restPrincipal(event: H3Event): Promise<Principal | Response> {
   // `event.headers`, not getHeader: the upload routes pass only the headers (server/utils/upload.ts).
   const authorization = event.headers.get('authorization')
   if (authorization === null) return sessionPrincipal(event)
   const key = /^Bearer\s+(\S+)$/i.exec(authorization)?.[1]
+  if (key && looksLikeJwt(key)) return contextTokenPrincipal(event, key)
   const check = key ? await principalForKey(db, key) : { ok: false as const, reason: 'invalid' as const }
   if (check.ok) {
     const { applicationId } = check.principal
@@ -52,6 +54,19 @@ export async function restPrincipal(event: H3Event): Promise<Principal | Respons
   }
   if (check.reason === 'disabled') return apiError(403, 'APPLICATION_DISABLED', 'This Application is disabled. An Admin can enable it again.')
   return apiError(401, 'UNAUTHENTICATED', 'The API key is not valid. It may be revoked. Send it as "Authorization: Bearer gt_live_...".')
+}
+
+async function contextTokenPrincipal(event: H3Event, token: string): Promise<UserPrincipal | Response> {
+  const principal = await principalForContextToken(db, token)
+  if (!principal) return apiError(401, 'UNAUTHENTICATED', 'The context token is not valid. It may be expired, or its Ticket App is off or deleted. Ask Tikki for a new one with tikki:fetch-context.')
+  // The upload routes pass no method or path, so they are refused too.
+  if (!isTicketAppRoute(event.method ?? '', (event.path ?? '').split('?')[0]!)) {
+    return apiError(403, 'FORBIDDEN', 'A context token can use only the ticket, comment and activity routes of its own ticket.')
+  }
+  // The Agent's own web limit: an app cannot do more than the Agent could by hand.
+  const limited = await takeSlot(db, `user:${principal.userId}`, USER_WEB_LIMIT)
+  if (limited) return rateLimited('requests', limited)
+  return principal
 }
 
 /** Like an Admin check, but for the REST routes that are only for Admins (12.3a). An API key is never an Admin. */

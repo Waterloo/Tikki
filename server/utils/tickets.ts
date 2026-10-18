@@ -2,7 +2,7 @@ import { and, asc, count, desc, eq, gt, isNull, lt, lte, ne, or, sql, type SQL, 
 import { alias } from 'drizzle-orm/sqlite-core'
 import type { BatchItem } from 'drizzle-orm/batch'
 import { z } from 'zod'
-import { application, comment, contact, idempotencyKey, PRIORITIES, schemaVersion, status, team, ticket, ticketParticipant, ticketType, user, type ApplicationPermission, type AuditAction, type Priority } from '../db/schema'
+import { application, comment, contact, idempotencyKey, PRIORITIES, type Channel, type TicketAppAccess, schemaVersion, status, team, ticket, ticketParticipant, ticketType, user, type ApplicationPermission, type AuditAction, type Priority } from '../db/schema'
 import { auditEntry } from './audit'
 import type { Db, Role } from './auth'
 import { checkFileRefs, claimUploads } from './attachments'
@@ -13,16 +13,25 @@ import { allowedActions, assertAllowed, assertMayCreate, assertMayCreateWithVisi
 import type { StatusView } from './statuses'
 import { loadTicketType } from './ticket-types'
 import { changedKey, withEvent } from './outbox'
+import { TICKET_REFERENCE } from '../../shared/ticket-type-rules'
 
-export type Channel = 'web' | 'ai' | 'api'
+export type { Channel }
 
-/** A User. `channel: 'ai'` is a User acting through Claude, with the same rights as the User (5.1). */
-export interface UserPrincipal {
-  kind: 'user'
-  userId: string
-  role: Role
-  channel: 'web' | 'ai'
+/** What a Ticket App's context token allows: one ticket and one access level (ADR 0004). */
+export interface TicketAppGrant {
+  id: number
+  ticketNumber: number
+  access: TicketAppAccess
 }
+
+/**
+ * A User. `channel: 'ai'` is a User acting through Claude, with the same rights as the User (5.1). `channel: 'app'`
+ * is a User acting through a Ticket App's backend; the policy limits it to the grant (issue 35).
+ */
+export type UserPrincipal = { kind: 'user', userId: string, role: Role } & (
+  | { channel: 'web' | 'ai', ticketApp?: undefined }
+  | { channel: 'app', ticketApp: TicketAppGrant }
+)
 
 /** An Application with an API key. Its rights are its permissions and allowed Ticket Types, never a Role. */
 export interface ApplicationPrincipal {
@@ -160,9 +169,11 @@ export class TicketValidationError extends Error {
   }
 }
 
+const REFERENCE = new RegExp(`^${TICKET_REFERENCE}$`)
+
 /** A Ticket Reference (`BUG-12`) or a bare number. Lookup uses only the number, so every earlier prefix still works (4.9a). */
 export function parseTicketReference(value: string): number | null {
-  const match = /^(?:[A-Za-z]{2,5}-)?([1-9]\d{0,15})$/.exec(value.trim())
+  const match = REFERENCE.exec(value.trim())
   return match ? Number(match[1]) : null
 }
 
@@ -283,9 +294,10 @@ function forViewer(principal: Principal, summary: TicketSummary): TicketSummary 
   return { ...rest, assignee: null }
 }
 
-export function policyFacts(row: Pick<DetailRow, 'requesterId' | 'applicationId' | 'assigneeId' | 'visibility' | 'participantIds' | 'statusKey' | 'statusCategory' | 'deletedAt'>): PolicyTicket {
+export function policyFacts(row: Pick<DetailRow, 'number' | 'requesterId' | 'applicationId' | 'assigneeId' | 'visibility' | 'participantIds' | 'statusKey' | 'statusCategory' | 'deletedAt'>): PolicyTicket {
   if (row.statusKey === null || row.statusCategory === null) throw new Error('A ticket has no Status. Every ticket must have one (4.10).')
   return {
+    number: row.number,
     requesterId: row.requesterId,
     applicationId: row.applicationId,
     assigneeId: row.assigneeId,

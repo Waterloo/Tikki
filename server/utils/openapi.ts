@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { FIELD_TYPES, type FieldError } from './fields'
-import { PRIORITIES, STATUS_CATEGORIES, TICKET_VISIBILITIES } from '../db/schema'
+import { CHANNELS, PRIORITIES, STATUS_CATEGORIES, TICKET_VISIBILITIES } from '../db/schema'
 import { TICKET_ACTIONS } from './policy'
 import type { TicketTypeView, TicketTypeWithFields } from './ticket-types'
 import { applicationTicketInput } from './ticket-input'
@@ -29,7 +29,7 @@ const ticketSummaryOut = z.object({
   assignee: person.nullable().describe('Always null for an Application. Use `assigned`.'),
   assigned: z.boolean().describe('Whether a staff member is assigned. Their name is not shared.'),
   team: z.object({ id: z.number().int(), name: z.string() }).optional().describe('The ticket\'s Team. Left out for an Application: staff structure is private.'),
-  channel: z.enum(['web', 'ai', 'api']),
+  channel: z.enum(CHANNELS),
   application: z.object({ id: z.number().int(), name: z.string() }).nullable(),
   created_at: z.iso.datetime(),
   updated_at: z.iso.datetime(),

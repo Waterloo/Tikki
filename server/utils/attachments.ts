@@ -80,11 +80,12 @@ export function parseUploadHeaders(headers: Headers): UploadInfo {
   return { size, filename, contentType: /^[a-z0-9!#$&^_.+-]{1,60}\/[a-z0-9!#$&^_.+-]{1,60}$/.test(type) ? type : 'application/octet-stream' }
 }
 
-interface FactsRow { requesterId: string | null, applicationId: number | null, assigneeId: string | null, visibility: TicketVisibility | null, participantIds: string, statusKey: string | null, statusCategory: StatusCategory | null, deletedAt: Date | null }
+interface FactsRow { number: number | null, requesterId: string | null, applicationId: number | null, assigneeId: string | null, visibility: TicketVisibility | null, participantIds: string, statusKey: string | null, statusCategory: StatusCategory | null, deletedAt: Date | null }
 
 function policyTicket(row: FactsRow): PolicyTicket {
-  if (row.statusKey === null || row.statusCategory === null || row.visibility === null) throw new Error('A ticket has no Status or type. Every ticket must have both.')
+  if (row.number === null || row.statusKey === null || row.statusCategory === null || row.visibility === null) throw new Error('A ticket has no Status or type. Every ticket must have both.')
   return {
+    number: row.number,
     requesterId: row.requesterId,
     applicationId: row.applicationId,
     assigneeId: row.assigneeId,
@@ -97,6 +98,7 @@ function policyTicket(row: FactsRow): PolicyTicket {
 }
 
 const factsColumns = {
+  number: ticket.number,
   requesterId: ticket.requesterId,
   applicationId: contact.applicationId,
   assigneeId: ticket.assigneeId,

@@ -1,7 +1,5 @@
 # Build a Ticket App
 
-> **Status: planned.** This guide is the contract for issues [34](issues/34-ticket-apps.md) and [35](issues/35-ticket-app-writes.md). The design is fixed. The code is not built yet.
-
 A **Ticket App** is your own web page, shown inside a Tikki ticket. Agents see it as a card in the ticket sidebar or as a tab next to Conversation and Activity. Tikki tells your page which ticket is open and who is looking at it, and gives you a signed token that proves it.
 
 Typical apps:
@@ -98,7 +96,7 @@ An Admin opens **Ticket Apps** in Tikki and fills in:
 | URL | `https://...` | The page Tikki loads. Its **origin** is the token audience. `http://` works only for a loopback address (`localhost`, `127.0.0.1`, `[::1]`) on a development or test instance. It cannot be on Tikki's own origin. |
 | Position | `sidebar` or `tab` | See [Positions](#positions). |
 | Show on | "All Ticket Types", or "Only these types" with a checklist | For example, check "Data request" and "Payment issue". "All Ticket Types" also covers types added later. |
-| Access | `read`, `comment` or `update` | What your backend may do with the token. Default `read`. See [scopes](#scopes). |
+| Access | `read`, `comment` or `update` | What your backend may do with the token. Default `read`. See [scopes](#scopes). A lower access applies at once, also to tokens made before. A higher access applies to new tokens only. |
 | On | On or off | Off hides the app and stops its tokens at once. |
 
 Apps appear in the order of the admin list.
@@ -206,7 +204,7 @@ A JSON Web Token, signed by Tikki. It lives 5 minutes. `expires_at` in the messa
 | `sub` | The Agent's User id (same as `agent.id`) |
 | `tikki_app` | Your app id (same as `app.id`) |
 | `tikki_ticket` | The ticket ref, for example `PAY-1048` |
-| `tikki_scope` | `read`, `comment` or `update` |
+| `tikki_scope` | `read`, `comment` or `update`: the app's access when Tikki made the token |
 | `iat`, `exp` | Issued at, expires (5 minutes later) |
 
 ### Check it on your backend
@@ -262,7 +260,9 @@ Call the API only from your backend. The API sends no CORS headers for this, so 
 | `comment` | All of `read`, plus `POST /api/v1/tickets/{ref}/comments` |
 | `update` | All of `comment`, plus `PATCH /api/v1/tickets/{ref}` (Status, Priority, assignee and Fields) |
 
-A token never allows: lists or search, a type change, a Team move, Participants, cancel, delete, revert, or any admin route. People do those in Tikki.
+A token never allows: lists or search, a type change, a Team move, a description edit, Participants, attachments, cancel, delete, revert, or any admin route. People do those in Tikki. These routes answer `403`, or `401` for a route that is only for the Tikki web app.
+
+Tikki uses the lower of `tikki_scope` and the app's access now. So when an Admin lowers the access, the old tokens lose the higher rights at once.
 
 ### Examples
 
@@ -294,7 +294,15 @@ window.parent.postMessage({ type: 'tikki:refresh' }, TIKKI_ORIGIN)
 
 ### What people see
 
-Every change by your app appears in the ticket's Activity and audit log as **"Sam Lee via Orders"**. It makes the same webhook Event and notifications as a change in the web app. The Event has `channel: "app"`.
+Every change by your app appears in the ticket's Activity as **"Sam Lee (via Orders)"**, and a comment shows the chip **"via Orders"** next to the Agent's name. If the app is deleted later, it shows "via a Ticket App". The audit log records the Agent and the app.
+
+A change by your app makes the same webhook Event and notifications as a change in the web app. The Event has `channel: "app"`, and its `actor` names the app:
+
+```json
+{ "kind": "user", "id": "u_8f2c", "name": "Sam Lee", "channel": "app", "ticket_app": { "id": 4, "name": "Orders" } }
+```
+
+The webhook of an Application gets `{ "kind": "support" }` as the actor, without the Agent or the app.
 
 ## Security checklist
 
@@ -311,7 +319,8 @@ What Tikki does on its side:
 - It loads your page in a sandboxed iframe (`allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox`). The frame itself cannot navigate the Tikki tab. A popup that your page opens has no sandbox; do not use its `opener`.
 - It sends no referrer to your page.
 - It never shows apps to Requesters and never makes tokens for them.
-- It checks that your app is on with each API call. When an Admin turns your app off, its tokens stop working at once.
+- It checks your app with each API call: it must be on and still shown on the ticket's type. When an Admin turns your app off or deletes it, its tokens stop working at once.
+- It checks the Agent with each API call. A deactivated Agent, or one who is now a Requester, makes the token stop.
 
 ## Errors and edge cases
 
@@ -322,7 +331,8 @@ What Tikki does on its side:
 | Wrong ticket in the URL | `404` | Use `tikki_ticket` from the checked token. |
 | Action outside your scope | `403` with code `FORBIDDEN` | Ask the Admin for a higher access level, or hide the button. |
 | The Agent lost access to the ticket | `404` | Show a short message. Do not retry. |
-| The app was turned off or deleted | `401` | Show a short message. |
+| The app was turned off or deleted, or no longer shows on this Ticket Type | `401` | Show a short message. |
+| The Agent was deactivated or is no longer an Agent | `401` | Show a short message. |
 | Too many calls | `429` with `Retry-After` | The limit is the Agent's own web limit. Wait and retry. |
 | The ticket changed in Tikki | You get a new `tikki:context` | Re-render from the new data. |
 

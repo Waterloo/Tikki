@@ -20,8 +20,8 @@ export interface AuditInput {
 /** The audit columns of the actor: a User or an Application, exactly one (CHECK). */
 export function actor(principal: Principal) {
   return principal.kind === 'user'
-    ? { principalId: principal.userId, applicationId: null }
-    : { principalId: null, applicationId: principal.applicationId }
+    ? { principalId: principal.userId, applicationId: null, ticketAppId: principal.ticketApp?.id ?? null }
+    : { principalId: null, applicationId: principal.applicationId, ticketAppId: null }
 }
 
 /**

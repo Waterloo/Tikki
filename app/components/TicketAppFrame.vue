@@ -8,6 +8,8 @@ const props = defineProps<{
   /** Changes when the ticket changed, so the app gets a new context. */
   ticketVersion: string
 }>()
+// The app's backend changed the ticket: the page reloads it.
+const emit = defineEmits<{ refresh: [] }>()
 
 const LOAD_TIMEOUT_MS = 10_000
 const MIN_HEIGHT = 120
@@ -99,6 +101,8 @@ function onMessage(event: MessageEvent) {
     sendContext()
   } else if (msg.type === 'tikki:resize' && props.app.position === 'sidebar' && typeof msg.height === 'number' && Number.isFinite(msg.height)) {
     height.value = Math.min(MAX_HEIGHT, Math.max(MIN_HEIGHT, Math.round(msg.height)))
+  } else if (msg.type === 'tikki:refresh') {
+    emit('refresh')
   }
 }
 
