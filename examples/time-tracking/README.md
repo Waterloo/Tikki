@@ -11,7 +11,7 @@ It is a separate Cloudflare Worker with its own D1 database. It follows the [Tic
 - An entry stores the ticket reference, the Agent's User id, the minutes and the note. The Agent's name is display text from the context; it is never used for a decision.
 - Only the Agent who logged an entry can delete it. A delete waits 5 seconds with Undo, so Undo needs no server call.
 - The page uses Tikki's colors, font and radius (`src/page.js`), follows Tikki's light or dark mode, and has quick buttons for 15m, 30m, 1h and 2h.
-- "Add an internal note to the ticket" calls `POST /api/v1/tickets/{ref}/comments` on Tikki with the same token. This needs the app's access to be **Comment** or **Update**. With **Read**, the box is off.
+- The "Note on ticket" switch calls `POST /api/v1/tickets/{ref}/comments` on Tikki with the same token. This needs the app's access to be **Comment** or **Update**. With **Read**, the box is off.
 
 Time formats: `45`, `45m`, `1h`, `1h 30m`, `1.5h`, `1:30`. One entry is at most 24 hours.
 
