@@ -1,10 +1,11 @@
 import { expect, test } from '@playwright/test'
 import { expectToast } from './toast'
 import { signInAsAdmin } from './sign-in'
+import { openApplications } from './settings'
 
 test('an Admin adds the webhook of an Application, sees the secret once, and a failed test event shows as Failing', async ({ page }) => {
   await signInAsAdmin(page)
-  await page.getByRole('link', { name: 'Applications' }).click()
+  await openApplications(page)
 
   const name = `Hooked ${Date.now()}`
   await page.getByRole('button', { name: 'New application' }).first().click()

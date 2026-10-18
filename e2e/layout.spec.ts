@@ -93,6 +93,7 @@ const PAGES: [string, (s: Seed) => string][] = [
   ['Ticket Apps', () => '/admin/apps'],
   ['App page', s => `/apps/${s.ticketAppIds[0]}`],
   ['Settings', () => '/settings'],
+  ['Settings menu', () => '/admin'],
 ]
 
 async function check(page: Page, name: string, path: string) {

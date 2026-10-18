@@ -143,12 +143,12 @@ test.describe('links from the app', () => {
 
   test('Webhooks, Applications, Ticket Apps and Settings link to the docs', async ({ page }) => {
     await page.goto('/webhooks')
-    await expect(page.getByRole('link', { name: 'Developer docs' })).toHaveAttribute('href', '/docs/webhooks')
+    await expect(page.getByRole('link', { name: 'Developer docs', exact: true })).toHaveAttribute('href', '/docs/webhooks')
     await page.goto('/applications')
-    await expect(page.getByRole('link', { name: 'Developer docs' })).toHaveAttribute('href', '/docs/api')
+    await expect(page.getByRole('link', { name: 'Developer docs', exact: true })).toHaveAttribute('href', '/docs/api')
     await page.goto('/admin/apps')
     await expect(page.getByRole('link', { name: 'Read the developer guide' })).toHaveAttribute('href', '/docs/ticket-apps')
     await page.goto('/settings')
-    await expect(page.getByRole('link', { name: 'Developer docs' })).toHaveAttribute('href', '/docs/')
+    await expect(page.getByRole('link', { name: 'Developer docs', exact: true })).toHaveAttribute('href', '/docs/')
   })
 })

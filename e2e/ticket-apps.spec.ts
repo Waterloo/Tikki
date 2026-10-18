@@ -1,6 +1,7 @@
 import { expect, test, type APIRequestContext, type Locator, type Page } from '@playwright/test'
 import { ADMIN_STATE, signInAsAdmin } from './sign-in'
 import { APP_ORIGIN, appFrame, appUrl, contexts } from './ticket-app'
+import { openSettings } from './settings'
 
 interface Type { id: number, name: string }
 
@@ -241,7 +242,7 @@ test('the admin page adds, orders, turns off and deletes an app', async ({ brows
   const { Bug: bug } = await types()
   const context = await browser.newContext({ storageState: undefined })
   const page = await staffPage(await context.newPage())
-  await page.getByRole('link', { name: 'Ticket Apps' }).click()
+  await openSettings(page, 'Ticket Apps')
   await expect(page.getByRole('heading', { name: 'Ticket Apps', level: 1 })).toBeVisible()
   await expect(page.getByRole('link', { name: 'Read the developer guide' })).toHaveAttribute('href', '/docs/ticket-apps')
 
