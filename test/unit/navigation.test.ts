@@ -15,6 +15,12 @@ describe('navigationFor', () => {
     expect(navigationFor('requester').map(i => i.to)).not.toContain('/admin/types')
   })
 
+  it('lists Ticket Apps for Admins only', () => {
+    expect(navigationFor('admin').map(i => i.to)).toContain('/admin/apps')
+    expect(navigationFor('agent').map(i => i.to)).not.toContain('/admin/apps')
+    expect(navigationFor('requester').map(i => i.to)).not.toContain('/admin/apps')
+  })
+
   it('lists Teams and users for Admins only', () => {
     expect(navigationFor('admin').map(i => i.to)).toContain('/people')
     expect(navigationFor('agent').map(i => i.to)).not.toContain('/people')

@@ -1,10 +1,13 @@
 <script setup lang="ts">
+import type { TicketAppFrame } from '~/types/ticket-apps'
 import type { ActivityItem, CommentView, TicketDetail } from '~/types/tickets'
 
 const props = defineProps<{
   ticket: TicketDetail
   /** Changes when the page saved a property, so the timeline reloads. */
   version: number
+  /** Ticket Apps with the `tab` position. */
+  apps?: TicketAppFrame[]
 }>()
 const emit = defineEmits<{ reverted: [ticket: TicketDetail] }>()
 
@@ -18,21 +21,28 @@ const sending = ref(false)
 const draft = ref('')
 const mode = ref<'internal' | 'public'>('internal')
 
-// Issue 34 adds one entry per Ticket App with the `tab` position. Each needs a `slot` name equal to its `value`.
-const tabs = [
+// Each tab needs a `slot` name equal to its `value`.
+const appTab = (app: TicketAppFrame) => `app-${app.id}`
+const tabs = computed(() => [
   { label: 'Conversation', value: 'conversation', slot: 'conversation' },
-  { label: 'Activity', value: 'activity', slot: 'activity' }
-]
+  { label: 'Activity', value: 'activity', slot: 'activity' },
+  ...(props.apps ?? []).map(a => ({ label: a.name, value: appTab(a), slot: appTab(a) })),
+])
 const tab = computed({
   get: () => {
     const q = Array.isArray(route.query.tab) ? route.query.tab[0] : route.query.tab
-    return tabs.some(t => t.value === q) ? String(q) : tabs[0]!.value
+    return tabs.value.some(t => t.value === q) ? String(q) : tabs.value[0]!.value
   },
   set: (value: string) => {
     const { tab: _drop, ...rest } = route.query
-    router.replace({ query: value === tabs[0]!.value ? rest : { ...rest, tab: value } })
+    router.replace({ query: value === tabs.value[0]!.value ? rest : { ...rest, tab: value } })
   }
 })
+// An app tab loads the first time it opens, then stays loaded (panels are not unmounted).
+const openedApps = ref(new Set<string>())
+watch(tab, (value) => {
+  if (value.startsWith('app-')) openedApps.value.add(value)
+}, { immediate: true })
 
 type EventItem = Extract<ActivityItem, { type: 'event' }>
 type CommentItem = Extract<ActivityItem, { type: 'comment' }>
@@ -256,6 +266,10 @@ onMounted(() => load())
             </div>
           </li>
         </ol>
+      </template>
+
+      <template v-for="app in apps ?? []" :key="app.id" #[appTab(app)]>
+        <TicketAppFrame v-if="openedApps.has(appTab(app))" :app="app" :ticket-ref="ticket.ref" :ticket-version="ticket.updated_at" />
       </template>
     </UTabs>
 

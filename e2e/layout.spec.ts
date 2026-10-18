@@ -1,5 +1,6 @@
 import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test'
 import { ADMIN_STATE } from './sign-in'
+import { appUrl, TIKKI_ORIGIN } from './ticket-app'
 
 const WIDTHS = [375, 1100, 1280, 1440]
 
@@ -39,7 +40,7 @@ function findClipped() {
   return out
 }
 
-interface Seed { ref: string, typeId: number, appId: number }
+interface Seed { ref: string, typeId: number, appId: number, ticketAppIds: number[] }
 let seeded: Promise<Seed> | undefined
 
 // Once for both color schemes. The page needs data that makes every panel and the widest action set show.
@@ -64,7 +65,10 @@ function seed(context: BrowserContext): Promise<Seed> {
       data: { name: `Layout app ${stamp}`, description: 'layout', permissions: ['tickets:create', 'tickets:read'], ticket_type_ids: [bug.id] },
     })) as { id: number }
     await ok(await api.post('/api/v1/webhooks', { data: { name: `Layout hook ${stamp}`, url: 'http://localhost/nowhere' } }))
-    return { ref: ticket.ref, typeId: bug.id, appId: app.id }
+    // One sidebar app and one tab app (issue 34), on Bug tickets only.
+    const sidebar = await ok(await api.post('/api/v1/admin/ticket-apps', { data: { name: 'Orders', url: appUrl(TIKKI_ORIGIN), position: 'sidebar', ticket_type_ids: [bug.id] } })) as { id: number }
+    const tab = await ok(await api.post('/api/v1/admin/ticket-apps', { data: { name: 'Order history', url: appUrl(TIKKI_ORIGIN), position: 'tab', ticket_type_ids: [bug.id] } })) as { id: number }
+    return { ref: ticket.ref, typeId: bug.id, appId: app.id, ticketAppIds: [sidebar.id, tab.id] }
   })()
   return seeded
 }
@@ -73,6 +77,7 @@ const PAGES: [string, (s: Seed) => string][] = [
   ['My tickets', () => '/'],
   ['All tickets', () => '/tickets'],
   ['Ticket', s => `/tickets/${s.ref}`],
+  ['Ticket, app tab', s => `/tickets/${s.ref}?tab=app-${s.ticketAppIds[1]}`],
   ['New ticket', () => '/tickets/new'],
   ['Inbox', () => '/inbox'],
   ['Types and fields', () => '/admin/types'],
@@ -81,6 +86,7 @@ const PAGES: [string, (s: Seed) => string][] = [
   ['Applications', () => '/applications'],
   ['Application', s => `/applications/${s.appId}`],
   ['Webhooks', () => '/webhooks'],
+  ['Ticket Apps', () => '/admin/apps'],
   ['Settings', () => '/settings'],
 ]
 
@@ -103,6 +109,14 @@ async function check(page: Page, name: string, path: string) {
   }
   expect(problems).toEqual([])
 }
+
+// Apps show on every Bug ticket, so none stays for the other specs.
+test.afterAll(async ({ playwright, baseURL }) => {
+  if (!seeded) return
+  const api = await playwright.request.newContext({ baseURL, storageState: ADMIN_STATE })
+  for (const id of (await seeded).ticketAppIds) await api.delete(`/api/v1/admin/ticket-apps/${id}`)
+  await api.dispose()
+})
 
 for (const colorScheme of ['light', 'dark'] as const) {
   test.describe(`layout, ${colorScheme}`, () => {

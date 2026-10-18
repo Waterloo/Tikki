@@ -143,9 +143,11 @@ describe('migrations keep data', () => {
     const dropped = (m: { queries: string[] }, t: string) =>
       m.queries.join('\n').match(new RegExp('DROP TABLE\\s+(IF EXISTS\\s+)?[`"]?' + t + '[`"]?(?![\\w])', 'i')) !== null
 
+    let seeded: string[] = []
     for (const m of migrations) {
       await seedAllTables()
       const beforeCounts = await counts()
+      seeded = Object.keys(beforeCounts)
       const beforeSeq = await sequences()
 
       await applyD1Migrations(db, [m])
@@ -168,8 +170,9 @@ describe('migrations keep data', () => {
       }
     }
 
-    // Guards against a seeding bug that makes the checks above pass on empty tables.
+    // Guards against a seeding bug that makes the checks above pass on empty tables. A table that the last migration
+    // made was never seeded, so it is left out.
     const final = await counts()
-    expect(Object.values(final).filter(n => n === 0), 'tables without rows at the end').toEqual([])
+    expect(seeded.filter(t => final[t] === 0), 'tables without rows at the end').toEqual([])
   }, 60_000)
 })

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { Attachment, Priority, Status, TicketDetail } from '~/types/tickets'
 import type { Field } from '~/components/FieldInput.vue'
+import type { TicketAppFrame } from '~/types/ticket-apps'
 
 const PRIORITIES: { value: Priority, label: string }[] = [
   { value: 'low', label: 'Low' },
@@ -43,6 +44,19 @@ const activityVersion = ref(0)
 
 const isStaff = computed(() => role.value === 'admin' || role.value === 'agent')
 const back = computed(() => isStaff.value ? { label: 'All tickets', to: '/tickets' } : { label: 'My tickets', to: '/' })
+// Ticket Apps are for staff only, and depend on the type. A failed load just shows no apps.
+const apps = ref<TicketAppFrame[]>([])
+// A text key, so a saved ticket with the same ref and type does not reload them.
+watch(() => isStaff.value && ticket.value ? `${ticket.value.ref} ${ticket.value.ticket_type.id}` : null, async (key, _old, onCleanup) => {
+  let stale = false
+  onCleanup(() => { stale = true })
+  if (!key) {
+    apps.value = []
+    return
+  }
+  const list = await $fetch<{ data: TicketAppFrame[] }>(`/api/v1/tickets/${encodeURIComponent(key.split(' ')[0]!)}/apps`).then(r => r.data, () => [])
+  if (!stale) apps.value = list
+})
 const can = (action: TicketDetail['allowed_actions'][number]) => ticket.value?.allowed_actions.includes(action) ?? false
 const assignedToMe = computed(() => !!ticket.value?.assignee && ticket.value.assignee.id === user.value?.id)
 const canEdit = computed(() => can('edit_description') || can('edit_fields'))
@@ -468,7 +482,7 @@ onMounted(load)
           </div>
 
           <TicketAttachments :ticket-ref="ticket.ref" :attachments="attachments" :state="attachmentsState" @uploaded="attachments.push($event)" @retry="loadAttachments(ticket.ref)" />
-          <TicketConversation :ticket="ticket" :version="activityVersion" @reverted="ticket = $event" />
+          <TicketConversation :ticket="ticket" :version="activityVersion" :apps="apps.filter(a => a.position === 'tab')" @reverted="ticket = $event" />
         </div>
 
         <aside aria-label="Ticket properties" class="flex-[1_1_300px] min-w-0 flex flex-col gap-4">
@@ -608,6 +622,8 @@ onMounted(load)
               <dd><SourceChip :channel="ticket.channel" :application="ticket.application?.name" /></dd>
             </dl>
           </div>
+
+          <TicketAppCard v-for="app in apps.filter(a => a.position === 'sidebar')" :key="app.id" :app="app" :ticket-ref="ticket.ref" :ticket-version="ticket.updated_at" />
 
           <div class="flex flex-col gap-1.5 px-1 text-[13px] text-(--ui-text-muted)">
             <span>Created <time :datetime="ticket.created_at">{{ formatDateTime(ticket.created_at) }}</time></span>

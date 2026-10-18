@@ -6,6 +6,7 @@ import { RevertRefusal } from './activity'
 import { limitMessage, takeSlot, USER_WEB_LIMIT, type Limited } from './rate-limit'
 import { PeopleError } from './people'
 import { authorizeManagePeople, isAdmin, NOT_FOUND, PolicyRefusal } from './policy'
+import { TicketAppError } from './ticket-apps'
 import { TypeAdminError } from './ticket-type-admin'
 import { IdempotencyMismatch, parseTicketReference, TicketValidationError, type Principal, type UserPrincipal } from './tickets'
 
@@ -138,5 +139,12 @@ export function applicationNotFound(): Response {
 
 export function applicationError(error: unknown): Response {
   if (error instanceof ApplicationInputError) return apiError(422, 'VALIDATION_FAILED', 'The request has invalid values.', error.details)
+  throw error
+}
+
+/** Maps the errors of the Ticket Apps module to responses. Anything else is a bug and goes on as a 500. */
+export function ticketAppError(error: unknown): Response {
+  if (error instanceof TicketAppError) return apiError(error.status, error.code, error.message, error.details)
+  if (error instanceof PolicyRefusal) return apiError(error.refusal.status, error.refusal.code, error.refusal.message)
   throw error
 }

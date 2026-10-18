@@ -150,10 +150,12 @@ export const AUDIT_ACTIONS = ['ticket_created', 'status_changed', 'priority_chan
   'invite_changed',
   // Issue 29: a ticket moved to another Team
   'team_changed',
+  // Issue 34: Ticket Apps
+  'ticket_app_created', 'ticket_app_changed', 'ticket_app_moved', 'ticket_app_enabled', 'ticket_app_disabled', 'ticket_app_deleted',
 ] as const
 
 /** What an Admin change without a ticket is about. A ticket entry has `ticketNumber` and no subject. */
-export const AUDIT_SUBJECT_TYPES = ['ticket_type', 'user', 'invite', 'team'] as const
+export const AUDIT_SUBJECT_TYPES = ['ticket_type', 'user', 'invite', 'team', 'ticket_app'] as const
 export type AuditSubjectType = typeof AUDIT_SUBJECT_TYPES[number]
 export type AuditAction = typeof AUDIT_ACTIONS[number]
 
@@ -477,3 +479,22 @@ export const inviteTeam = sqliteTable('invite_team', {
   inviteId: integer('invite_id').notNull().references(() => invite.id, { onDelete: 'cascade' }),
   teamId: integer('team_id').notNull().references(() => team.id),
 }, t => [primaryKey({ columns: [t.inviteId, t.teamId] })])
+
+// Issue 34: Ticket Apps
+
+export const TICKET_APP_POSITIONS = ['sidebar', 'tab'] as const
+export type TicketAppPosition = typeof TICKET_APP_POSITIONS[number]
+
+/** An external page that Agents see inside the ticket (ADR 0004). It holds no personal data. */
+export const ticketApp = sqliteTable('ticket_app', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  name: text('name').notNull(),
+  url: text('url').notNull(),
+  position: text('position', { enum: TICKET_APP_POSITIONS }).notNull(),
+  /** Null: all Ticket Types, also later ones. Else the chosen types; an archived type drops out. */
+  ticketTypeIds: text('ticket_type_ids', { mode: 'json' }).$type<number[] | null>(),
+  /** The order on the admin page and on the ticket. */
+  sortOrder: integer('sort_order').notNull(),
+  enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(() => new Date()),
+})

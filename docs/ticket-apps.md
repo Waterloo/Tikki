@@ -95,7 +95,7 @@ An Admin opens **Ticket Apps** in Tikki and fills in:
 | Setting | Values | Notes |
 |---|---|---|
 | Name | Text | Shown as the card title or the tab name. Keep it short: "Orders". |
-| URL | `https://...` | The page Tikki loads. Its **origin** is the token audience. `http://localhost` works only on a development instance. |
+| URL | `https://...` | The page Tikki loads. Its **origin** is the token audience. `http://` works only for a loopback address (`localhost`, `127.0.0.1`, `[::1]`) on a development or test instance. It cannot be on Tikki's own origin. |
 | Position | `sidebar` or `tab` | See [Positions](#positions). |
 | Show on | "All Ticket Types", or "Only these types" with a checklist | For example, check "Data request" and "Payment issue". "All Ticket Types" also covers types added later. |
 | Access | `read`, `comment` or `update` | What your backend may do with the token. Default `read`. See [scopes](#scopes). |
@@ -133,7 +133,7 @@ All messages are plain objects with a `type`. Always pass Tikki's origin as the 
 
 | `type` | Fields | Effect |
 |---|---|---|
-| `tikki:fetch-context` | — | Tikki answers with `tikki:context`. Use it at start-up and when your token is close to expiry. |
+| `tikki:fetch-context` | — | Tikki answers with `tikki:context`. Use it at start-up and when your token is close to expiry. Send a first message within 10 s of load, or Tikki shows "The app did not answer". |
 | `tikki:resize` | `height` (number, px) | Sidebar only. Tikki clamps it to 120–600. Ignored for tabs. |
 | `tikki:refresh` | — | Tikki reloads the ticket. Send it after your backend changed the ticket. |
 
@@ -143,7 +143,7 @@ Tikki ignores other types, and messages from any window other than your iframe.
 
 | `type` | Fields | When |
 |---|---|---|
-| `tikki:context` | `data`, `token`, `expires_at` | When the frame loads, after `tikki:fetch-context`, and after the ticket changes (Status, assignee, Fields, ...) |
+| `tikki:context` | `data`, `token`, `expires_at` | When the frame loads, after `tikki:fetch-context`, and after the Agent changes the ticket on this page (Status, assignee, Fields, ...). A change by another person does not send it. |
 
 ## The context
 
@@ -308,7 +308,7 @@ Every change by your app appears in the ticket's Activity and audit log as **"Sa
 
 What Tikki does on its side:
 
-- It loads your page in a sandboxed iframe (`allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox`). Your page cannot navigate the Tikki tab.
+- It loads your page in a sandboxed iframe (`allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox`). The frame itself cannot navigate the Tikki tab. A popup that your page opens has no sandbox; do not use its `opener`.
 - It sends no referrer to your page.
 - It never shows apps to Requesters and never makes tokens for them.
 - It checks that your app is on with each API call. When an Admin turns your app off, its tokens stop working at once.
@@ -317,7 +317,7 @@ What Tikki does on its side:
 
 | Situation | What happens | What to do |
 |---|---|---|
-| Your page does not load in 10 s | Tikki shows "The app did not answer" with Retry | Keep the first paint fast. Load data after you show something. |
+| Your page sends no message in 10 s | Tikki shows "The app did not answer" with Retry | Send `tikki:fetch-context` at start-up. Keep the first paint fast. Load data after you show something. |
 | Token expired | API answers `401` | Send `tikki:fetch-context` and retry once. |
 | Wrong ticket in the URL | `404` | Use `tikki_ticket` from the checked token. |
 | Action outside your scope | `403` with code `FORBIDDEN` | Ask the Admin for a higher access level, or hide the button. |
@@ -336,7 +336,7 @@ Errors use the Tikki API error format:
 
 1. Run Tikki locally (see the README). It listens on `http://localhost:8787`.
 2. Serve your app on another port, for example `npx serve -p 5173`.
-3. In Tikki, open Ticket Apps and add `http://localhost:5173` (allowed only on a development instance).
+3. In Tikki, open Ticket Apps and add `http://localhost:5173` (allowed only on a development or test instance).
 4. Open any ticket as the Admin (`admin@example.com`). Your app shows in the sidebar or as a tab.
 5. In your app, use `TIKKI_ORIGIN = 'http://localhost:8787'` and audience `http://localhost:5173`.
 
@@ -358,4 +358,4 @@ No. Call `GET /api/v1/tickets/{ref}/comments` with the token. The answer has the
 No. Add it twice, once for each position, if you need both.
 
 **Can I open a link or a popup?**
-Yes. Popups and `target="_blank"` links work. Your page cannot navigate the Tikki tab itself.
+Yes. Popups and `target="_blank"` links work. The frame cannot navigate the Tikki tab itself.
