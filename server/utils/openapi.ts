@@ -198,6 +198,20 @@ export function buildOpenApiDocument() {
           },
         },
       },
+      '/api/v1/contacts/{id}': {
+        delete: {
+          operationId: 'eraseContact',
+          summary: 'Erase a Contact',
+          description: 'Erasure: the name, email and external ID become `[erased]`; the title, description, Field values, comments and files of the Contact\'s tickets are removed. The tickets stay with their numbers and Statuses. Only for Contacts of this Application. A repeat answers 204 too and finishes an Erasure that failed half way. The Contact id is `requester.id` of its tickets.',
+          parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
+          responses: {
+            204: { description: 'The Contact is erased.' },
+            401: error('The API key is missing, unknown, or revoked.'),
+            403: error('The Application is disabled.'),
+            404: error('No Contact of this Application has this ID.'),
+          },
+        },
+      },
     },
   }
 }

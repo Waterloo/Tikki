@@ -248,14 +248,7 @@ onMounted(load)
         </dl>
       </SettingsSection>
 
-      <SettingsSection title="Privacy" description="How long data is kept.">
-        <ul class="list-disc pl-5 flex flex-col gap-2 text-sm text-(--ui-text)">
-          <li>A deleted ticket is hidden and can be restored. It is removed for good only by Erasure.</li>
-          <li>Delivered webhook payloads are deleted after 30 days.</li>
-          <li>The audit log is never deleted. It keeps who did what and when, not the values. Erasure removes the values.</li>
-          <li>Erasure removes the personal data of one Contact. It comes in a later release.</li>
-        </ul>
-      </SettingsSection>
+      <SettingsPrivacy />
     </div>
   </AppPage>
 </template>

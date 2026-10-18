@@ -134,6 +134,13 @@
       "when": 1792312848619,
       "tag": "0018_issue_15_application_webhook",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1792313240630,
+      "tag": "0019_issue_22_soft_delete_and_erasure",
+      "breakpoints": true
     }
   ]
 }

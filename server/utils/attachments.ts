@@ -80,11 +80,11 @@ export function parseUploadHeaders(headers: Headers): UploadInfo {
   return { size, filename, contentType: /^[a-z0-9!#$&^_.+-]{1,60}\/[a-z0-9!#$&^_.+-]{1,60}$/.test(type) ? type : 'application/octet-stream' }
 }
 
-interface FactsRow { requesterId: string | null, applicationId: number | null, visibleToAll: boolean | null, statusKey: string | null, statusCategory: StatusCategory | null }
+interface FactsRow { requesterId: string | null, applicationId: number | null, visibleToAll: boolean | null, statusKey: string | null, statusCategory: StatusCategory | null, deletedAt: Date | null }
 
 function policyTicket(row: FactsRow): PolicyTicket {
   if (row.statusKey === null || row.statusCategory === null || row.visibleToAll === null) throw new Error('A ticket has no Status or type. Every ticket must have both.')
-  return { requesterId: row.requesterId, applicationId: row.applicationId, visibleToAll: row.visibleToAll, statusKey: row.statusKey, statusCategory: row.statusCategory }
+  return { requesterId: row.requesterId, applicationId: row.applicationId, visibleToAll: row.visibleToAll, statusKey: row.statusKey, statusCategory: row.statusCategory, deleted: row.deletedAt !== null }
 }
 
 const factsColumns = {
@@ -93,6 +93,7 @@ const factsColumns = {
   visibleToAll: ticketType.visibleToAll,
   statusKey: status.key,
   statusCategory: status.category,
+  deletedAt: ticket.deletedAt,
 }
 
 async function loadPolicyTicket(db: Db, number: number): Promise<PolicyTicket | null> {
@@ -183,7 +184,7 @@ export async function listAttachments(db: Db, principal: Principal, ticketNumber
   const facts = await loadPolicyTicket(db, ticketNumber)
   const refusal = facts ? authorizeAttach(principal, facts) : NOT_FOUND
   if (refusal) throw new PolicyRefusal(refusal)
-  const rows = await db.select().from(attachment).where(eq(attachment.ticketNumber, ticketNumber)).orderBy(asc(attachment.createdAt), asc(attachment.id))
+  const rows = await db.select().from(attachment).where(and(eq(attachment.ticketNumber, ticketNumber), isNull(attachment.erasedAt))).orderBy(asc(attachment.createdAt), asc(attachment.id))
   return rows.map(toView)
 }
 
@@ -211,7 +212,8 @@ export async function downloadAttachment(db: Db, bucket: R2Bucket, principal: Pr
     .leftJoin(status, eq(ticket.status, status.key))
     .leftJoin(contact, eq(ticket.contactId, contact.id))
     .where(eq(attachment.id, id)).limit(1)
-  if (!row) throw new PolicyRefusal(NO_ATTACHMENT)
+  // An erased file may still be in R2 until Erasure finishes; its row must never lead to it.
+  if (!row || row.file.erasedAt !== null) throw new PolicyRefusal(NO_ATTACHMENT)
   // Not `requesterId === null`: a Contact's ticket has no User Requester.
   const refusal = authorizeAttachmentRead(principal, {
     uploaderId: row.file.uploaderId,

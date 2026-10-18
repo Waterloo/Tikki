@@ -75,6 +75,8 @@ export const ticket = sqliteTable('ticket', {
   updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(() => new Date()),
   // Issue 09: set when a Requester reopened a resolved ticket after the 14 days. Points to the old ticket.
   reopenedFrom: integer('reopened_from').references((): AnySQLiteColumn => ticket.number),
+  // Issue 22: set while an Admin has soft-deleted the ticket. The read rule in policy.ts hides it everywhere.
+  deletedAt: integer('deleted_at', { mode: 'timestamp_ms' }),
 }, t => [
   index('ticket_requester_idx').on(t.requesterId),
   // Issue 10: list filters and the Status-ordered cursor.
@@ -127,6 +129,8 @@ export const comment = sqliteTable('comment', {
 ])
 
 export const AUDIT_ACTIONS = ['ticket_created', 'status_changed', 'priority_changed', 'assignee_changed', 'field_changed', 'comment_added', 'type_changed', 'description_changed', 'ticket_cancelled', 'ticket_reopened', 'attachment_added',
+  // Issue 22: soft delete, restore, and Erasure of the Contact's data
+  'ticket_deleted', 'ticket_restored', 'ticket_erased',
   // Admin changes with no ticket (subject = ticket type, user, invite or team)
   'type_created', 'type_settings_changed', 'schema_version_created', 'type_archived', 'type_restored',
   'role_changed', 'user_invited', 'invite_resent', 'invite_revoked', 'user_deactivated', 'user_reactivated',
@@ -190,6 +194,8 @@ export const attachment = sqliteTable('attachment', {
   contentType: text('content_type').notNull(),
   size: integer('size').notNull(),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(() => new Date()),
+  // Issue 22: set by Erasure. The row stays so a re-run can find the R2 object; nobody can download it.
+  erasedAt: integer('erased_at', { mode: 'timestamp_ms' }),
 }, t => [
   index('attachment_ticket_idx').on(t.ticketNumber),
   // Plain column names: drizzle-kit qualifies `${t.col}` with the temporary table name of its table rebuild.
@@ -319,6 +325,8 @@ export const contact = sqliteTable('contact', {
   email: text('email').notNull(),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(() => new Date()),
   updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(() => new Date()),
+  // Issue 22: set by Erasure. Name, email and external ID are then placeholders.
+  erasedAt: integer('erased_at', { mode: 'timestamp_ms' }),
 }, t => [uniqueIndex('contact_application_external_unique').on(t.applicationId, t.externalId)])
 
 /** The first result of a create with an `Idempotency-Key`, for 24 hours (6.3). */
