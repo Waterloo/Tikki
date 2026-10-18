@@ -148,6 +148,17 @@ _Avoid_: Dashboard app, plugin, integration
 A short-lived signed token that says which Agent has which ticket open in which Ticket App. The app's backend uses it to trust the context and, with the right scope, to change that one ticket through the API as that Agent.
 _Avoid_: App key, session token
 
+**Placement**:
+Where a Ticket App shows: a card in the ticket sidebar, a tab on the ticket, or a page in the Apps menu. Each placement has its own URL.
+_Avoid_: Position, slot
+
+**App page**:
+The page placement of a Ticket App: a full page in Tikki, outside any ticket, listed in the Apps menu.
+_Avoid_: Dashboard app, full-screen app
+
+**App manifest**:
+A JSON file that a Ticket App publishes to describe itself: name, icons, URLs, and the access it asks for. An Admin reviews it before the app is added or changed.
+
 **Ticket App access**:
 What a Ticket App's backend may do with its Context Token: read, comment, or update. Each level includes the one before. An Admin sets it.
 

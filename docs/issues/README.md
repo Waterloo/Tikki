@@ -43,9 +43,13 @@ Vertical slices of [the PRD](../PRD.md). Each slice goes through every layer and
 | 34 | [Ticket Apps: an external page inside the ticket](34-ticket-apps.md) | AFK | 32, 33 | Done |
 | 35 | [Ticket Apps change the ticket through the API](35-ticket-app-writes.md) | AFK | 34 | Done |
 | 36 | [WebMCP tools in the Tikki page](36-webmcp-tools.md) | AFK | 35 | Done |
+| 37 | [One Ticket App, one URL for each placement](37-ticket-app-placements.md) | AFK | — | Planned |
+| 38 | [Ticket App icons, light and dark](38-ticket-app-icons.md) | AFK | 37 | Planned |
+| 39 | [App pages: an Apps menu in the main sidebar](39-app-pages.md) | AFK | 37 | Planned |
+| 40 | [Add a Ticket App from its manifest](40-ticket-app-manifest.md) | AFK | 38, 39 | Planned |
 
 All AFK issues except 02 are merged into `integration` on 2026-10-18. The cloud setup is deferred (issues 02, 24 and 25, and the staging checks).
 
 Email OTP is the first sign-in method (issue 01). Issue 25 must be done before a public release, because the `free` profile has no email.
 
-**Can run in parallel:** after 01: 02, 03, 24, 25. After 03: 04, 05, 21. After 05: 06, 07, 10, 12, 16, 20. Then 32 and 33 in parallel, then 34, then 35. 36 can run next to 34 (coordinate the `allow="tools"` test).
+**Can run in parallel:** after 01: 02, 03, 24, 25. After 03: 04, 05, 21. After 05: 06, 07, 10, 12, 16, 20. Then 32 and 33 in parallel, then 34, then 35. 36 can run next to 34 (coordinate the `allow="tools"` test). Then 37; then 38 and 39 in parallel; then 40.

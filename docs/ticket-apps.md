@@ -1,5 +1,7 @@
 # Build a Ticket App
 
+> **Planned (issues 37–40):** one URL for each placement (sidebar, tab, page), app pages in an Apps menu with a page token that proves identity only, `tikki:navigate`, light and dark icons, and adding an app from a manifest (`tikki-app.json`). See [ADR 0005](adr/0005-ticket-app-placements-pages-manifest.md). This guide changes when they are built.
+
 A **Ticket App** is your own web page, shown inside a Tikki ticket. Agents see it as a card in the ticket sidebar or as a tab next to Conversation and Activity. Tikki tells your page which ticket is open and who is looking at it, and gives you a signed token that proves it.
 
 Typical apps:
