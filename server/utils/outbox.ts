@@ -95,7 +95,25 @@ function commentJson(id: string): SQL {
  * are Public (an Application endpoint never gets an internal Event) and name their author without an email.
  */
 function applicationView(payload: SQL): SQL {
-  return sql`json_remove(${payload}, '$.before.assignee.email', '$.after.assignee.email')`
+  // The same staff privacy as the REST view for an Application (issue 13): no assignee, only `assigned`; an Agent or
+  // Admin is "Support"; a comment from the Application shows as its Contact. json_set does nothing where `before` or
+  // `after` is null.
+  const p = payload
+  const support = sql`json_object('kind', 'support')`
+  const staffOr = (path: string) => sql`CASE WHEN json_extract(${p}, ${path + '.kind'}) = 'user' THEN ${support} ELSE json(json_extract(${p}, ${path})) END`
+  const assigned = (side: string) => sql`json(CASE WHEN json_extract(${p}, ${`$.${side}.assignee`}) IS NULL THEN 'false' ELSE 'true' END)`
+  const commentAuthor = sql`CASE json_extract(${p}, '$.comment.author.kind')
+    WHEN 'user' THEN ${support}
+    WHEN 'application' THEN json_object(
+      'kind', 'contact',
+      'contact', json_remove(json(json_extract(${p}, '$.after.requester')), '$.kind', '$.application_id'),
+      'application', json_object('id', json_extract(${p}, '$.comment.author.id'), 'name', json_extract(${p}, '$.comment.author.name')))
+    ELSE json(json_extract(${p}, '$.comment.author')) END`
+  return sql`json_set(${p},
+    '$.before.assigned', ${assigned('before')}, '$.before.assignee', NULL,
+    '$.after.assigned', ${assigned('after')}, '$.after.assignee', NULL,
+    '$.actor', ${staffOr('$.actor')},
+    '$.comment.author', ${commentAuthor})`
 }
 
 /**

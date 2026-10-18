@@ -117,6 +117,22 @@ describe('Application Webhook Endpoint: what it receives', () => {
     expect(got[0]!.body).not.toContain('Secret note')
   })
 
+  it('shows a comment from the Application as its Contact, and an Agent reply as Support', async () => {
+    const [admin, agent] = await Promise.all([signInAs('admin'), signInAs('agent')])
+    const app = await newApplication(admin)
+    const hook = await addHook(admin, app)
+    const t = await appTicket(app)
+    expect((await postJson(`/api/v1/tickets/${t.ref}/comments`, { body: 'From the shop.' }, app.auth)).status).toBe(201)
+    expect((await postJson(`/api/v1/tickets/${t.ref}/comments`, { body: 'From support.', visibility: 'public' }, headers(agent))).status).toBe(201)
+    await runCron(Date.now())
+
+    const comments = receiver.requests.filter(toHook(hook)).filter(r => r.payload.type === 'comment.created').map(r => r.payload)
+    expect(comments[0]!.comment.author).toMatchObject({ kind: 'contact', contact: { external_id: 'cus_1', name: 'Ana Lima' }, application: { id: app.id } })
+    expect(comments[1]!.comment.author).toEqual({ kind: 'support' })
+    expect(comments[1]!.actor).toEqual({ kind: 'support' })
+    expect(JSON.stringify(comments)).not.toContain(agent.user.email)
+  })
+
   it('has no staff email in the payload, while the Admin endpoint keeps it', async () => {
     const [admin, agent] = await Promise.all([signInAs('admin'), signInAs('agent')])
     const app = await newApplication(admin)
@@ -127,8 +143,12 @@ describe('Application Webhook Endpoint: what it receives', () => {
     await runCron(Date.now())
 
     const update = receiver.requests.filter(toHook(hook)).find(r => r.payload.type === 'ticket.updated')!
-    expect(update.payload.after.assignee).toEqual({ id: agent.user.id, name: agent.user.name })
+    // As in the REST view for an Application (issue 13): no assignee, and staff show as Support.
+    expect(update.payload.after).toMatchObject({ assignee: null, assigned: true })
+    expect(update.payload.before).toMatchObject({ assignee: null, assigned: false })
+    expect(update.payload.actor).toEqual({ kind: 'support' })
     expect(update.body).not.toContain(agent.user.email)
+    expect(update.body).not.toContain(agent.user.id)
     expect(await verify(hook.secret, update)).toBe(true)
     const full = receiver.requests.filter(toHook(adminHook)).find(r => r.payload.type === 'ticket.updated' && r.payload.after.number === t.number)!
     expect(full.payload.after.assignee.email).toBe(agent.user.email)
