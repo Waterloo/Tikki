@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { signIn } from './sign-in'
+import { signInAsAdmin } from './sign-in'
 
 test('an Agent replies in public, the Requester sees it, and an internal note stays hidden', async ({ page, browser }) => {
   const types = await page.request.get('/api/v1/ticket-types')
@@ -12,7 +12,7 @@ test('an Agent replies in public, the Requester sees it, and an internal note st
   // The Admin works the ticket in a second browser session.
   const staff = await browser.newContext({ storageState: undefined })
   const agentPage = await staff.newPage()
-  await signIn(agentPage, 'admin@example.com')
+  await signInAsAdmin(agentPage)
   await agentPage.goto(`/tickets/${ref}`)
 
   // Internal is the default mode.

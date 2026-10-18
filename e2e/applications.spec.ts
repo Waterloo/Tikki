@@ -1,11 +1,11 @@
 import { expect, test } from '@playwright/test'
-import { signIn } from './sign-in'
+import { signInAsAdmin } from './sign-in'
 
 // The Admin is a different User from the shared session, so this test signs in on its own.
 test.use({ storageState: { cookies: [], origins: [] } })
 
 test('an Admin creates an Application and a key, the key works, and Revoke stops it', async ({ page, request }) => {
-  await signIn(page, 'admin@example.com')
+  await signInAsAdmin(page)
   await page.getByRole('link', { name: 'Applications' }).click()
 
   const name = `Checkout ${Date.now()}`

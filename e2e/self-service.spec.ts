@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { signIn } from './sign-in'
+import { signInAsAdmin } from './sign-in'
 
 test('a Requester edits while open, cannot edit later, reopens a resolved ticket, and cancels', async ({ page, browser }) => {
   const types = await page.request.get('/api/v1/ticket-types')
@@ -25,7 +25,7 @@ test('a Requester edits while open, cannot edit later, reopens a resolved ticket
   // The Admin works the ticket in a second session.
   const staff = await browser.newContext({ storageState: undefined })
   const agentPage = await staff.newPage()
-  await signIn(agentPage, 'admin@example.com')
+  await signInAsAdmin(agentPage)
   const move = (status: string) => agentPage.request.patch(`/api/v1/tickets/${ref}`, { data: { status } })
   expect((await move('in_progress')).ok()).toBe(true)
 

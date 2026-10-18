@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { signIn } from './sign-in'
+import { signInAsAdmin } from './sign-in'
 
 test('an Agent changes Bug to Payment issue, and the header shows the new reference', async ({ browser, page }) => {
   const stamp = Date.now()
@@ -9,7 +9,7 @@ test('an Agent changes Bug to Payment issue, and the header shows the new refere
   // The Admin makes the target type and works the ticket. The shared session is a Requester.
   const staff = await browser.newContext({ storageState: undefined })
   const admin = await staff.newPage()
-  await signIn(admin, 'admin@example.com')
+  await signInAsAdmin(admin)
   const name = `Payment issue ${stamp}`
   const prefix = `P${String.fromCharCode(65 + (stamp % 26))}${String.fromCharCode(65 + (Math.floor(stamp / 26) % 26))}`
   const made = await admin.request.post('/api/v1/ticket-types', { data: { name, prefix, description: 'Money problems.', visible_to_all: true } })

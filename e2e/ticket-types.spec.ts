@@ -1,11 +1,11 @@
 import { expect, test, type Page } from '@playwright/test'
-import { signIn } from './sign-in'
+import { signInAsAdmin } from './sign-in'
 
 // The Admin is the first sign-in with ADMIN_EMAIL. The shared session of the other tests is a Requester.
 async function adminPage(browser: import('@playwright/test').Browser) {
   const context = await browser.newContext({ storageState: undefined })
   const page = await context.newPage()
-  await signIn(page, 'admin@example.com')
+  await signInAsAdmin(page)
   return page
 }
 

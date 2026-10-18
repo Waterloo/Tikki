@@ -1,11 +1,11 @@
 import { expect, test, type Browser } from '@playwright/test'
-import { signIn } from './sign-in'
+import { signIn, signInAsAdmin } from './sign-in'
 
 // A fresh context: the shared session belongs to a Requester.
 async function adminPage(browser: Browser) {
   const context = await browser.newContext({ storageState: undefined })
   const page = await context.newPage()
-  await signIn(page, 'admin@example.com')
+  await signInAsAdmin(page)
   return { context, page }
 }
 

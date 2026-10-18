@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { expect, test } from '@playwright/test'
-import { signIn } from './sign-in'
+import { signIn, signInAsAdmin } from './sign-in'
 
 const PORT = Number(process.env.E2E_PORT ?? 8799)
 
@@ -32,7 +32,7 @@ test('an Agent assigns a ticket; the assignee sees the notice and opens the tick
   // The Admin assigns it.
   const adminContext = await browser.newContext({ storageState: undefined })
   const adminPage = await adminContext.newPage()
-  await signIn(adminPage, 'admin@example.com')
+  await signInAsAdmin(adminPage)
   const assigned = await adminPage.request.patch(`/api/v1/tickets/${ref}`, { data: { assignee_id: me.user.id } })
   expect(assigned.ok()).toBe(true)
 
