@@ -98,7 +98,7 @@ export async function sendNoticeMail(db: Db, scope: NoticeScope, ctx: MailContex
       commentBody: comment.body,
       actorName: actor.name,
       actorEmail: actor.email,
-      // As in the Inbox: a notice without an actor on a Contact's ticket came from its Application.
+      // As in the Inbox: the acting Application; older notices name the Contact's Application.
       applicationName: application.name,
     }).from(notification)
       .innerJoin(recipient, eq(recipient.id, notification.userId))
@@ -108,7 +108,7 @@ export async function sendNoticeMail(db: Db, scope: NoticeScope, ctx: MailContex
       .leftJoin(comment, eq(comment.id, notification.commentId))
       .leftJoin(actor, eq(actor.id, notification.actorId))
       .leftJoin(contact, eq(contact.id, ticket.contactId))
-      .leftJoin(application, eq(application.id, contact.applicationId))
+      .leftJoin(application, eq(application.id, sql`coalesce(${notification.applicationId}, ${contact.applicationId})`))
       .where(inArray(notification.id, ids))
 
     const messages: MailMessage[] = []

@@ -2,7 +2,7 @@ import { applicationUpdateInput, updateApplication } from '../../../utils/applic
 import { adminPrincipal, applicationError, applicationNotFound, readJson, routeId, validationFailed } from '../../../utils/rest'
 import { db } from '../../../utils/services'
 
-/** `{ name?, description?, permissions?, ticket_type_ids?, enabled? }`. Lists replace the old list. */
+/** `{ name?, description?, permissions?, ticket_type_ids?, enabled?, rate_limit?, create_limit?, ticket_scopes?, include_restricted? }`. Lists replace the old list. */
 export default defineEventHandler(async (event) => {
   const principal = await adminPrincipal(event)
   if (principal instanceof Response) return principal
@@ -13,7 +13,7 @@ export default defineEventHandler(async (event) => {
   const parsed = applicationUpdateInput.safeParse(body.value)
   if (!parsed.success) return validationFailed(parsed.error.issues)
   try {
-    return (await updateApplication(db, id, parsed.data)) ?? applicationNotFound()
+    return (await updateApplication(db, principal, id, parsed.data)) ?? applicationNotFound()
   } catch (error) {
     return applicationError(error)
   }

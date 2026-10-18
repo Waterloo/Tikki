@@ -72,6 +72,9 @@ Anything that reaches an Application shows staff as `support`: no name, no email
 | REST ticket | `forViewer` in `tickets.ts` |
 | REST Activity and comments | `toActor` in [`activity.ts`](../server/utils/activity.ts); `canReadInternalComments` in `policy.ts` |
 | Webhook payload | `applicationView` in `outbox.ts` |
+| REST attachments | `toView` in [`attachments.ts`](../server/utils/attachments.ts) |
+
+Every User is `support` to an Application, also as Requester, and a `user` Field value is left out (issue 42).
 
 A new output for an Application gets its view function in the same change.
 

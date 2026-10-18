@@ -1,8 +1,9 @@
 import { and, asc, count, desc, eq, inArray, isNull, max } from 'drizzle-orm'
 import { z } from 'zod'
-import { apiKey, application, APPLICATION_PERMISSIONS, contact, ticket, ticketType } from '../db/schema'
+import { apiKey, application, APPLICATION_PERMISSIONS, contact, ticket, TICKET_SCOPES, ticketType, type ApplicationPermission, type TicketScopes } from '../db/schema'
+import { adminAuditEntry } from './audit'
 import type { Db } from './auth'
-import type { ApplicationPrincipal } from './tickets'
+import type { ApplicationPrincipal, UserPrincipal } from './tickets'
 
 export const API_KEY_PREFIX = 'gt_live_'
 /** `gt_live_` and the first 4 characters of the secret: enough to tell keys apart, far too few to guess the rest. */
@@ -46,6 +47,8 @@ export async function principalForKey(db: Db, key: string): Promise<KeyCheck> {
     disabledAt: application.disabledAt,
     rateLimit: application.rateLimit,
     createLimit: application.createLimit,
+    scopes: application.ticketScopes,
+    includeRestricted: application.includeRestricted,
   }).from(apiKey)
     .innerJoin(application, eq(apiKey.applicationId, application.id))
     .where(and(eq(apiKey.keyHash, await sha256Hex(key)), isNull(apiKey.revokedAt)))
@@ -59,7 +62,7 @@ export async function principalForKey(db: Db, key: string): Promise<KeyCheck> {
   }
   return {
     ok: true,
-    principal: { kind: 'application', applicationId: row.applicationId, permissions: row.permissions, ticketTypeIds: row.ticketTypeIds, channel: 'api' },
+    principal: { kind: 'application', applicationId: row.applicationId, permissions: row.permissions, ticketTypeIds: row.ticketTypeIds, scopes: row.scopes, includeRestricted: row.includeRestricted, channel: 'api' },
     limits: { requests: row.rateLimit, creates: row.createLimit },
   }
 }
@@ -85,6 +88,9 @@ export interface ApplicationSummary {
 
 export interface ApplicationDetail extends ApplicationSummary {
   permissions: string[]
+  /** Issue 42: which tickets each permission reaches. */
+  ticket_scopes: TicketScopes
+  include_restricted: boolean
   ticket_types: { id: number, name: string, prefix: string, icon: string, color: string }[]
   rate_limit: number
   create_limit: number
@@ -96,6 +102,9 @@ const nameInput = z.string({ error: 'Must be text.' }).trim().min(1, 'Name is re
 const descriptionInput = z.string({ error: 'Must be text.' }).trim().max(500, 'Description must be 500 characters or fewer.')
 const permissionsInput = z.array(z.enum(APPLICATION_PERMISSIONS, { error: `Must be one of ${APPLICATION_PERMISSIONS.join(', ')}.` }), { error: 'Must be a list.' })
 const typeIdsInput = z.array(z.number({ error: 'Must be Ticket Type IDs.' }).int().positive(), { error: 'Must be a list of Ticket Type IDs.' })
+
+const scopeInput = z.enum(TICKET_SCOPES, { error: 'Must be own or all.' })
+const scopesInput = z.strictObject({ read: scopeInput, update: scopeInput, comment: scopeInput }, { error: 'Must be an object with read, update and comment.' })
 
 const limitInput = z.number({ error: 'Must be a whole number.' }).int('Must be a whole number.').min(1, 'Must be at least 1.').max(10_000, 'Must be 10000 or fewer.')
 
@@ -114,6 +123,8 @@ export const applicationUpdateInput = z.strictObject({
   enabled: z.boolean({ error: 'Must be true or false.' }).optional(),
   rate_limit: limitInput.optional(),
   create_limit: limitInput.optional(),
+  ticket_scopes: scopesInput.optional(),
+  include_restricted: z.boolean({ error: 'Must be true or false.' }).optional(),
 })
 
 export const keyCreateInput = z.strictObject({ name: nameInput })
@@ -141,6 +152,24 @@ async function checkTypeIds(db: Db, ids: number[]) {
 async function checkNameFree(db: Db, name: string, exceptId?: number) {
   const [taken] = await db.select({ id: application.id }).from(application).where(eq(application.name, name)).limit(1)
   if (taken && taken.id !== exceptId) throw new ApplicationInputError([{ key: 'name', reason: 'Another Application has this name.' }])
+}
+
+const SCOPE_PERMISSION: Record<keyof TicketScopes, ApplicationPermission> = { read: 'tickets:read', update: 'tickets:update', comment: 'comments:create' }
+
+/**
+ * Issue 42. Checked on the result of each change, so removing a permission cannot leave its `all` scope behind. The
+ * policy also fails closed (`scopeOf`), so a bad row never widens a rule.
+ */
+function checkScopes(permissions: readonly ApplicationPermission[], scopes: TicketScopes, includeRestricted: boolean) {
+  const errors: { key: string, reason: string }[] = []
+  for (const key of ['read', 'update', 'comment'] as const) {
+    if (scopes[key] === 'all' && !permissions.includes(SCOPE_PERMISSION[key])) errors.push({ key: `ticket_scopes.${key}`, reason: `All tickets needs the ${SCOPE_PERMISSION[key]} permission.` })
+  }
+  for (const key of ['update', 'comment'] as const) {
+    if (scopes[key] === 'all' && scopes.read !== 'all') errors.push({ key: `ticket_scopes.${key}`, reason: 'All tickets needs read on all tickets too.' })
+  }
+  if (includeRestricted && !Object.values(scopes).includes('all')) errors.push({ key: 'include_restricted', reason: 'Restricted tickets need at least one permission on all tickets.' })
+  if (errors.length) throw new ApplicationInputError(errors)
 }
 
 function iso(date: Date | null) {
@@ -186,6 +215,8 @@ export async function getApplication(db: Db, id: number): Promise<ApplicationDet
     rate_limit: app.rateLimit,
     create_limit: app.createLimit,
     permissions: APPLICATION_PERMISSIONS.filter(p => app.permissions.includes(p)),
+    ticket_scopes: app.ticketScopes,
+    include_restricted: app.includeRestricted,
     ticket_types: types,
     keys: keys.map(k => ({ id: k.id, name: k.name, prefix: k.prefix, created_at: k.createdAt.toISOString(), last_used_at: iso(k.lastUsedAt) })),
     created_at: app.createdAt.toISOString(),
@@ -204,9 +235,12 @@ export async function createApplication(db: Db, input: z.output<typeof applicati
   return (await getApplication(db, created!.id))!
 }
 
-/** Null when no Application has this ID. Disabling refuses its keys at once, because each request reads the flag. */
-export async function updateApplication(db: Db, id: number, input: z.output<typeof applicationUpdateInput>): Promise<ApplicationDetail | null> {
-  const [app] = await db.select({ id: application.id, disabledAt: application.disabledAt, rateLimit: application.rateLimit, createLimit: application.createLimit }).from(application).where(eq(application.id, id)).limit(1)
+/**
+ * Null when no Application has this ID. Disabling refuses its keys at once, because each request reads the flag.
+ * Each change writes one `application_changed` entry with the old and new values of the changed keys.
+ */
+export async function updateApplication(db: Db, principal: UserPrincipal, id: number, input: z.output<typeof applicationUpdateInput>): Promise<ApplicationDetail | null> {
+  const [app] = await db.select().from(application).where(eq(application.id, id)).limit(1)
   if (!app) return null
   const set: Partial<typeof application.$inferInsert> = {}
   if (input.name !== undefined) {
@@ -221,9 +255,29 @@ export async function updateApplication(db: Db, id: number, input: z.output<type
   if (nextCreate > nextRate) throw new ApplicationInputError([{ key: 'create_limit', reason: 'Creates are part of the requests, so this cannot be more than the request limit.' }])
   if (input.rate_limit !== undefined) set.rateLimit = input.rate_limit
   if (input.create_limit !== undefined) set.createLimit = input.create_limit
+  if (input.ticket_scopes !== undefined) set.ticketScopes = input.ticket_scopes
+  if (input.include_restricted !== undefined) set.includeRestricted = input.include_restricted
+  checkScopes(set.permissions ?? app.permissions, set.ticketScopes ?? app.ticketScopes, set.includeRestricted ?? app.includeRestricted)
   // Keep the first disable time when an Admin disables twice.
   if (input.enabled !== undefined) set.disabledAt = input.enabled ? null : (app.disabledAt ?? new Date())
-  if (Object.keys(set).length) await db.update(application).set(set).where(eq(application.id, id))
+
+  const audited = (a: typeof app) => ({
+    name: a.name, description: a.description, permissions: a.permissions, ticket_type_ids: a.ticketTypeIds, enabled: a.disabledAt === null,
+    rate_limit: a.rateLimit, create_limit: a.createLimit, ticket_scopes: a.ticketScopes, include_restricted: a.includeRestricted,
+  })
+  const before = audited(app)
+  const after = audited({ ...app, ...set })
+  const changed = (Object.keys(after) as (keyof typeof after)[]).filter(k => JSON.stringify(before[k]) !== JSON.stringify(after[k]))
+  if (changed.length) {
+    await db.batch([
+      db.update(application).set(set).where(eq(application.id, id)),
+      adminAuditEntry(db, principal, {
+        subject: { type: 'application', id },
+        action: 'application_changed',
+        values: { before: Object.fromEntries(changed.map(k => [k, before[k]])), after: Object.fromEntries(changed.map(k => [k, after[k]])) },
+      }),
+    ])
+  }
   return getApplication(db, id)
 }
 

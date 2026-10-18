@@ -107,19 +107,30 @@ function applicationView(payload: SQL): SQL {
   const support = sql`json_object('kind', 'support')`
   const staffOr = (path: string) => sql`CASE WHEN json_extract(${p}, ${path + '.kind'}) = 'user' THEN ${support} ELSE json(json_extract(${p}, ${path})) END`
   const assigned = (side: string) => sql`json(CASE WHEN json_extract(${p}, ${`$.${side}.assignee`}) IS NULL THEN 'false' ELSE 'true' END)`
-  const commentAuthor = sql`CASE json_extract(${p}, '$.comment.author.kind')
-    WHEN 'user' THEN ${support}
-    WHEN 'application' THEN json_object(
+  // An Application acts for its Contact only on its own ticket; on another ticket (issue 42) it is the author itself.
+  const authorApp = sql`json_object('id', json_extract(${p}, '$.comment.author.id'), 'name', json_extract(${p}, '$.comment.author.name'))`
+  const ownTicket = sql`json_extract(${p}, '$.after.requester.kind') = 'contact' AND json_extract(${p}, '$.after.requester.application_id') = json_extract(${p}, '$.comment.author.id')`
+  const commentAuthor = sql`CASE
+    WHEN json_extract(${p}, '$.comment.author.kind') = 'user' THEN ${support}
+    WHEN json_extract(${p}, '$.comment.author.kind') = 'application' AND ${ownTicket} THEN json_object(
       'kind', 'contact',
       'contact', json_remove(json(json_extract(${p}, '$.after.requester')), '$.kind', '$.application_id'),
-      'application', json_object('id', json_extract(${p}, '$.comment.author.id'), 'name', json_extract(${p}, '$.comment.author.name')))
+      'application', ${authorApp})
+    WHEN json_extract(${p}, '$.comment.author.kind') = 'application' THEN json_object('kind', 'application', 'application', ${authorApp})
     ELSE json(json_extract(${p}, '$.comment.author')) END`
   // Team is staff structure (issue 13): removed from the views, and a change of only the Team is not delivered (see fanOut).
   const changedWithoutTeam = sql`json((SELECT json_group_array(value) FROM json_each(json_extract(${p}, '$.changed')) WHERE value <> 'team'))`
+  // A `user` Field holds a User ID (issue 42): json_patch with a null removes each such key of the pinned Schema Version.
+  const userFields = (side: string) => sql`json_patch(json(json_extract(${p}, ${`$.${side}.fields`})), coalesce((SELECT json_group_object(json_extract(f.value, '$.key'), json('null'))
+    FROM schema_version sv, json_each(sv.fields) f
+    WHERE sv.ticket_type_id = json_extract(${p}, ${`$.${side}.ticket_type.id`}) AND sv.version = json_extract(${p}, ${`$.${side}.schema_version`})
+      AND json_extract(f.value, '$.type') = 'user'), '{}'))`
   return sql`json_remove(json_set(${p},
+    '$.before.fields', ${userFields('before')}, '$.after.fields', ${userFields('after')},
     '$.before.assigned', ${assigned('before')}, '$.before.assignee', NULL,
     '$.after.assigned', ${assigned('after')}, '$.after.assignee', NULL,
     '$.actor', ${staffOr('$.actor')},
+    '$.before.requester', ${staffOr('$.before.requester')}, '$.after.requester', ${staffOr('$.after.requester')},
     '$.comment.author', ${commentAuthor},
     '$.changed', ${changedWithoutTeam}),
     '$.before.team', '$.after.team')`
@@ -128,13 +139,19 @@ function applicationView(payload: SQL): SQL {
 /**
  * One delivery for each endpoint that is on, wants this type, and may get this Event. The access rule is here and only
  * here. An Admin endpoint gets internal Events if it has "include internal data". An Application endpoint (issue 15) gets
- * only `ticket.created`, `ticket.updated` and `comment.created` about a ticket of its own Application, never an internal
- * Event, whatever is stored in `events` or `include_internal`; it also gets its own view of the payload. An insert-select
- * with SQL names every column of the table in order; a new column fails here loudly until it is added.
+ * only `ticket.created`, `ticket.updated` and `comment.created` about a ticket its Application can read (`applicationReads`
+ * in policy.ts, issue 42), never an internal Event, whatever is stored in `events` or `include_internal`; it also gets its
+ * own view of the payload. An insert-select with SQL names every column of the table in order; a new column fails here
+ * loudly until it is added.
  */
 function fanOut(db: Db, id: string, type: string, now: Date) {
   const app = WEBHOOK_EVENTS as readonly string[]
   const restricted = sql`EXISTS (SELECT 1 FROM ticket t JOIN ticket_type tt ON tt.id = t.ticket_type_id WHERE t.number = ev.ticket_number AND tt.visibility = 'participants')`
+  const own = sql`EXISTS (SELECT 1 FROM ticket t JOIN contact c ON c.id = t.contact_id WHERE t.number = ev.ticket_number AND c.application_id = e.application_id)`
+  // The SQL form of `scopeOf(principal, 'read') === 'all'`: the scope counts only with its permission.
+  const readAll = sql`EXISTS (SELECT 1 FROM application a WHERE a.id = e.application_id AND json_extract(a.ticket_scopes, '$.read') = 'all'
+    AND EXISTS (SELECT 1 FROM json_each(a.permissions) WHERE value = 'tickets:read'))`
+  const includeRestricted = sql`EXISTS (SELECT 1 FROM application a WHERE a.id = e.application_id AND a.include_restricted = 1)`
   return db.insert(webhookDelivery).select(sql`SELECT NULL, ${id}, e.id, 'pending', 0, ${now.getTime()}, NULL, NULL, NULL, ev.created_at,
       CASE WHEN e.owner = 'application' THEN ${applicationView(sql`ev.payload`)} END
     FROM webhook_endpoint e
@@ -144,10 +161,9 @@ function fanOut(db: Db, id: string, type: string, now: Date) {
       AND (
         -- A Restricted ticket counts as internal data: its title must not reach a team channel (8.31).
         (e.owner = 'admin' AND (e.include_internal = 1 OR (ev.internal = 0 AND NOT ${restricted})))
-        OR (e.owner = 'application' AND ev.internal = 0 AND NOT ${restricted} AND ${type} IN (${sql.join(app.map(t => sql`${t}`), sql`, `)})
+        OR (e.owner = 'application' AND ev.internal = 0 AND ${type} IN (${sql.join(app.map(t => sql`${t}`), sql`, `)})
           AND (${type} <> 'ticket.updated' OR EXISTS (SELECT 1 FROM json_each(ev.payload, '$.changed') WHERE value <> 'team'))
-          AND EXISTS (SELECT 1 FROM ticket t JOIN contact c ON c.id = t.contact_id
-            WHERE t.number = ev.ticket_number AND c.application_id = e.application_id))
+          AND CASE WHEN ${restricted} THEN ${readAll} AND ${includeRestricted} ELSE ${readAll} OR ${own} END)
       )`)
 }
 

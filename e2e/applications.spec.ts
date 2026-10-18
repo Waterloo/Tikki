@@ -59,3 +59,49 @@ test('an Admin creates an Application and a key, the key works, and Revoke stops
   await expect(page.getByText('Disabled', { exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Enable application' })).toBeVisible()
 })
+
+// Issue 42: a scope for each permission.
+test('an Admin sets read and comment to All tickets, sees the warnings, and the settings stay after a reload', async ({ page }) => {
+  await signInAsAdmin(page)
+  const types = await (await page.request.get('/api/v1/ticket-types')).json() as { data: { id: number }[] }
+  const res = await page.request.post('/api/v1/applications', { data: { name: `Timesheet ${Date.now()}`, permissions: ['tickets:read', 'comments:create'], ticket_type_ids: [types.data[0]!.id] } })
+  expect(res.status()).toBe(201)
+  const app = await res.json() as { id: number, name: string }
+  await page.goto(`/applications/${app.id}`)
+  await expect(page.getByRole('heading', { name: app.name, level: 2, exact: true })).toBeVisible()
+
+  const scope = (row: string) => page.getByRole('radiogroup', { name: `${row}: which tickets` })
+  const readWarning = page.getByText('This Application can read every ticket in Tikki, without staff data.')
+  const commentWarning = page.getByText('This Application can comment on every ticket it reads.')
+  const restricted = page.getByRole('checkbox', { name: 'Include Restricted tickets' })
+  await expect(readWarning).toHaveCount(0)
+  await expect(restricted).toBeDisabled()
+  // Update is off, so its scope cannot be chosen.
+  await expect(scope('Update tickets').getByRole('radio', { name: 'All tickets', exact: true })).toBeDisabled()
+
+  await scope('Add comments').getByRole('radio', { name: 'All tickets', exact: true }).click()
+  // Comment on all tickets needs read on all tickets, so both change together.
+  await expect(readWarning).toBeVisible()
+  await expect(commentWarning).toBeVisible()
+  await expect(scope('Read tickets').getByRole('radio', { name: 'All tickets', exact: true })).toBeChecked()
+  await expect(restricted).toBeEnabled()
+  // A click saves first; the box shows the saved value.
+  await restricted.click()
+  await expect(restricted).toBeChecked()
+  await expect(page.getByText(`${app.name} reads every ticket, and created 0.`)).toBeVisible()
+
+  await page.reload()
+  await expect(scope('Read tickets').getByRole('radio', { name: 'All tickets', exact: true })).toBeChecked()
+  await expect(scope('Add comments').getByRole('radio', { name: 'All tickets', exact: true })).toBeChecked()
+  await expect(readWarning).toBeVisible()
+  await expect(commentWarning).toBeVisible()
+  await expect(restricted).toBeChecked()
+
+  // Read back to Own: comment and Restricted follow, so the settings never break a rule.
+  await scope('Read tickets').getByRole('radio', { name: 'Own tickets', exact: true }).click()
+  await expect(readWarning).toHaveCount(0)
+  await expect(scope('Add comments').getByRole('radio', { name: 'Own tickets', exact: true })).toBeChecked()
+  await expect(restricted).not.toBeChecked()
+  const saved = await (await page.request.get(`/api/v1/applications/${app.id}`)).json() as { ticket_scopes: unknown, include_restricted: boolean }
+  expect(saved).toMatchObject({ ticket_scopes: { read: 'own', update: 'own', comment: 'own' }, include_restricted: false })
+})

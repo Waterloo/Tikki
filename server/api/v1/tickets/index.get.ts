@@ -25,7 +25,7 @@ const query = z.object({
 /**
  * Filters: `requester=me`, `assignee=me|none|<User ID>`, `q` (words, or a Ticket Reference), `type`, `team` (the ticket's own Team ID), `priority`,
  * `field=<key>:<value>` (any Schema Version), `open=true`. Paging: `limit`, `cursor` (the `next_cursor` of the last page).
- * The requester and assignee filters are for Users. An Application gets the tickets it created.
+ * The assignee and Team filters are for Users. For an Application, `requester=me` is the tickets it created (issue 42).
  */
 export default defineEventHandler(async (event) => {
   const principal = await restPrincipal(event)
@@ -35,9 +35,10 @@ export default defineEventHandler(async (event) => {
   const parsed = query.safeParse(getQuery(event))
   if (!parsed.success) return validationFailed(parsed.error.issues)
   const { field = [], ...q } = parsed.data
-  if (principal.kind === 'application' && (q.requester !== undefined || q.assignee !== undefined)) {
+  // Assignee and Team are staff data, which an Application never sees (3.11), so it cannot filter by them either.
+  if (principal.kind === 'application' && (q.assignee !== undefined || q.team !== undefined)) {
     return apiError(422, 'VALIDATION_FAILED', 'The request has invalid values.', [
-      { key: 'requester', label: 'Requester', reason: 'The requester and assignee filters are only for Users. An Application gets the tickets it created.' },
+      { key: q.assignee !== undefined ? 'assignee' : 'team', label: q.assignee !== undefined ? 'Assignee' : 'Team', reason: 'The assignee and Team filters are only for Users.' },
     ])
   }
 

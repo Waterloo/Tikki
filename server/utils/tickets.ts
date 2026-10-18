@@ -2,7 +2,7 @@ import { and, asc, count, desc, eq, gt, isNull, lt, lte, ne, or, sql, type SQL, 
 import { alias } from 'drizzle-orm/sqlite-core'
 import type { BatchItem } from 'drizzle-orm/batch'
 import { z } from 'zod'
-import { application, comment, contact, idempotencyKey, PRIORITIES, type Channel, type TicketAppAccess, schemaVersion, status, team, ticket, ticketParticipant, ticketType, user, type ApplicationPermission, type AuditAction, type Priority } from '../db/schema'
+import { application, comment, contact, idempotencyKey, PRIORITIES, type Channel, type TicketAppAccess, schemaVersion, status, team, ticket, ticketParticipant, ticketType, user, type ApplicationPermission, type AuditAction, type Priority, type TicketScopes } from '../db/schema'
 import { auditEntry } from './audit'
 import type { Db, Role } from './auth'
 import { checkFileRefs, claimUploads } from './attachments'
@@ -39,6 +39,10 @@ export interface ApplicationPrincipal {
   applicationId: number
   permissions: readonly ApplicationPermission[]
   ticketTypeIds: readonly number[]
+  /** Issue 42: which tickets `tickets:read`, `tickets:update` and `comments:create` reach. */
+  scopes: Readonly<TicketScopes>
+  /** Restricted tickets in an `all` scope (3.32). */
+  includeRestricted: boolean
   channel: 'api'
 }
 
@@ -53,11 +57,12 @@ export interface PersonView {
 
 /**
  * Who did something. An Application acts for the Contact of its own ticket, so it shows as that Contact through the
- * Application. An Application viewer sees staff as `support`, without name or email (customer systems get no staff emails).
+ * Application. On another ticket it shows as itself (issue 42). An Application viewer sees staff as `support`, without name or email (customer systems get no staff emails).
  */
 export type ActorView =
   | (PersonView & { kind: 'user' })
   | { kind: 'contact', contact: { id: number, external_id: string, name: string, email: string }, application: { id: number, name: string } }
+  | { kind: 'application', application: { id: number, name: string } }
   | { kind: 'support' }
 
 /** The columns of a row that a User or an Application wrote (`author_id`/`uploader_id`/`principal_id` or `application_id`). */
@@ -65,10 +70,11 @@ export function actorId(principal: Principal): string | null {
   return principal.kind === 'user' ? principal.userId : null
 }
 
-/** A User, or a Contact of an Application. */
+/** A User, or a Contact of an Application. An Application sees a User as `support` (issue 42: `read: all`). */
 export type RequesterView =
   | (PersonView & { kind: 'user' })
   | { kind: 'contact', id: number, external_id: string, name: string, email: string }
+  | { kind: 'support' }
 
 /** A ticket in a list. */
 export interface TicketSummary {
@@ -287,11 +293,14 @@ function toSummary(row: SummaryRow): TicketSummary {
   }
 }
 
-/** An Application learns whether a ticket has an assignee, never who it is. */
+/**
+ * An Application learns whether a ticket has an assignee, never who it is. With `read: all` it also reads Users'
+ * tickets: the same as in Activity, every User is `support` to it.
+ */
 function forViewer(principal: Principal, summary: TicketSummary): TicketSummary {
   if (principal.kind !== 'application') return summary
   const { team: _team, ...rest } = summary
-  return { ...rest, assignee: null }
+  return { ...rest, assignee: null, requester: summary.requester.kind === 'user' ? { kind: 'support' } : summary.requester }
 }
 
 export function policyFacts(row: Pick<DetailRow, 'number' | 'requesterId' | 'applicationId' | 'assigneeId' | 'visibility' | 'participantIds' | 'statusKey' | 'statusCategory' | 'deletedAt'>): PolicyTicket {
@@ -307,6 +316,11 @@ export function policyFacts(row: Pick<DetailRow, 'number' | 'requesterId' | 'app
     statusCategory: row.statusCategory,
     deleted: row.deletedAt !== null,
   }
+}
+
+/** A `user` Field holds a User ID, and every User is `support` to an Application (issue 42). */
+function withoutUserFields(values: FieldValues, defs: readonly FieldDef[]): FieldValues {
+  return Object.fromEntries(Object.entries(values).filter(([key]) => defs.find(f => f.key === key)?.type !== 'user'))
 }
 
 /** The Fields of the Schema Version that the ticket is pinned to. */
@@ -330,7 +344,7 @@ async function toDetail(db: Db, principal: Principal, row: DetailRow): Promise<T
     ...forViewer(principal, toSummary(row)),
     description: row.description,
     schema_version: row.schemaVersion,
-    fields: row.fields,
+    fields: principal.kind === 'application' ? withoutUserFields(row.fields, fields) : row.fields,
     // An archived Field still shows when this ticket has a value for it.
     schema_fields: fields.filter(f => !f.archived || f.key in row.fields).map(f => ({
       key: f.key, label: f.label, type: f.type, required: f.required, help: f.help,
@@ -416,7 +430,7 @@ export async function createTicket(db: Db, principal: UserPrincipal, input: unkn
     // An update keeps last_insert_rowid(), so the uploads join the new ticket; the audit insert must come last.
     ...(fileIds.length ? [claimUploads(db, principal, fileIds)] : []),
     auditEntry(db, principal, { ticketNumber: sql`last_insert_rowid()`, action: 'ticket_created' }),
-    noticeTicketCreated(db, principal.userId),
+    noticeTicketCreated(db, principal),
   ])) as [{ number: number }[]]
   queueNoticeMail({ ticket: created[0]!.number })
   return getTicket(db, principal, created[0]!.number)
@@ -498,7 +512,7 @@ export async function createApplicationTicket(db: Db, principal: ApplicationPrin
   // so it gets no Inbox notice; the staff of the type's Team do.
   // The new ticket has the highest number: D1 runs one batch at a time.
   const newTicketEvent = { type: 'ticket.created', ticketNumber: sql`(SELECT max(number) FROM ticket)` } as const
-  const created = (ticketNumber: SQL) => [auditEntry(db, principal, { ticketNumber, action: 'ticket_created' }), noticeTicketCreated(db, null)] as const
+  const created = (ticketNumber: SQL) => [auditEntry(db, principal, { ticketNumber, action: 'ticket_created' }), noticeTicketCreated(db, principal)] as const
 
   try {
     if (!idempotency) {
@@ -587,11 +601,13 @@ function fieldCondition(key: string, value: string): SQL {
 
 function filterCondition(principal: Principal, filter: ListFilter): SQL | undefined {
   const me = principal.kind === 'user' ? principal.userId : null
-  if (me === null && (filter.requesterIsMe || filter.assignee)) throw new Error('The requester and assignee filters are only for Users.')
+  if (me === null && (filter.assignee || filter.teamId !== undefined)) throw new Error('The assignee and Team filters are only for Users.')
   const assignee = filter.assignee === 'me' ? me! : filter.assignee
+  // For an Application, "me" is its own Contacts' tickets.
+  const mine = principal.kind === 'application' ? eq(contact.applicationId, principal.applicationId) : eq(ticket.requesterId, me!)
   return and(
     readableTickets(principal),
-    filter.requesterIsMe ? eq(ticket.requesterId, me!) : undefined,
+    filter.requesterIsMe ? mine : undefined,
     assignee === 'none' ? isNull(ticket.assigneeId) : assignee ? eq(ticket.assigneeId, assignee) : undefined,
     filter.search ? searchCondition(filter.search) : undefined,
     filter.ticketTypeId !== undefined ? eq(ticket.ticketTypeId, filter.ticketTypeId) : undefined,
@@ -796,7 +812,7 @@ export async function applyChange(db: Db, principal: Principal, number: number, 
       values: { before: e.before, after: e.after },
     })),
     ...extra,
-    ...noticesForChange(db, principal.kind === 'user' ? principal.userId : null, number, entries),
+    ...noticesForChange(db, principal, number, entries),
   ]))
   queueNoticeMail({ ticket: number })
 }

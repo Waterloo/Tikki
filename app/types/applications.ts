@@ -10,6 +10,13 @@ export const PERMISSIONS: { value: Permission, label: string }[] = [
   { value: 'comments:create', label: 'Add comments for its customers' },
 ]
 
+/** Issue 42: which tickets a permission reaches. `tickets:create` always makes the Application's own tickets. */
+export type TicketScope = 'own' | 'all'
+export interface TicketScopes { read: TicketScope, update: TicketScope, comment: TicketScope }
+
+/** The permission of each scope. */
+export const SCOPE_PERMISSION: Record<keyof TicketScopes, Permission> = { read: 'tickets:read', update: 'tickets:update', comment: 'comments:create' }
+
 export interface ApiKey {
   id: number
   name: string
@@ -31,6 +38,8 @@ export interface ApplicationDetail extends ApplicationSummary {
   rate_limit: number
   create_limit: number
   permissions: Permission[]
+  ticket_scopes: TicketScopes
+  include_restricted: boolean
   ticket_types: { id: number, name: string, prefix: string, icon: string, color: string }[]
   keys: ApiKey[]
   created_at: string

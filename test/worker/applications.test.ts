@@ -208,12 +208,16 @@ describe('the data boundary', () => {
     expect((await call(`/api/v1/tickets/${ticket.ref}`, { headers: { cookie: agent.cookie } })).status).toBe(200)
   })
 
-  it('refuses Agent changes and the "me" filters from an Application', async () => {
+  it('refuses Agent changes and the assignee and Team filters from an Application', async () => {
     const { key } = await newApp()
     const ticket = await created(key, body(gen))
     const res = await call(`/api/v1/tickets/${ticket.ref}`, { method: 'PATCH', body: JSON.stringify({ status: 'closed' }), headers: bearer(key) })
     expect(res.status).toBe(403)
-    expect((await call('/api/v1/tickets?requester=me', { headers: bearer(key) })).status).toBe(422)
+    expect((await call('/api/v1/tickets?assignee=me', { headers: bearer(key) })).status).toBe(422)
+    expect((await call('/api/v1/tickets?team=1', { headers: bearer(key) })).status).toBe(422)
+    // Issue 42: "me" is the Application's own tickets.
+    const mine = await (await call('/api/v1/tickets?requester=me', { headers: bearer(key) })).json() as { data: Ticket[] }
+    expect(mine.data.map(t => t.ref)).toEqual([ticket.ref])
   })
 
   it('shows an Application only its allowed Ticket Types', async () => {
@@ -233,7 +237,7 @@ describe('the data boundary', () => {
   })
 
   it('never lets an Application see or add Internal Comments (the rule issue 06 uses)', () => {
-    const app: ApplicationPrincipal = { kind: 'application', applicationId: 7, permissions: ALL as ApplicationPrincipal['permissions'], ticketTypeIds: [1], channel: 'api' }
+    const app: ApplicationPrincipal = { kind: 'application', applicationId: 7, permissions: ALL as ApplicationPrincipal['permissions'], ticketTypeIds: [1], scopes: { read: 'own', update: 'own', comment: 'own' }, includeRestricted: false, channel: 'api' }
     expect(canReadInternalComments(app)).toBe(false)
     expect(canReadInternalComments({ kind: 'user', userId: 'u', role: 'agent', channel: 'web' })).toBe(true)
     const own = { requesterId: null, applicationId: 7, assigneeId: null, visibility: 'requester', participantIds: [] }

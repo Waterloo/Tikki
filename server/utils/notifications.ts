@@ -3,19 +3,25 @@ import { alias } from 'drizzle-orm/sqlite-core'
 import { application, comment, contact, notification, notificationPreference, PREFERENCE_KEYS, ticket, ticketType, user, type NotificationKind, type PreferenceKey } from '../db/schema'
 import type { Db } from './auth'
 import { canReadInternalComments, readableTickets } from './policy'
-import type { ChangeEntry, UserPrincipal } from './tickets'
+import type { ChangeEntry, Principal, UserPrincipal } from './tickets'
 
 /*
  * Notices (8.10, Q31). Each writer returns statements for the `db.batch([...])` of the change, so a change and its
  * notices are stored together or not at all. The actor never gets a notice about their own change. Recipients are
  * chosen inside SQL, so a write costs a constant number of statements.
- * `actorId` is null when an Application acts (`IS NOT` keeps every recipient then). A Contact is no User: the
- * `IS NOT NULL` conditions keep a Contact's ticket from writing a notice without a recipient.
+ * `actorId` is null when an Application acts (`IS NOT` keeps every recipient then); `application_id` names it, because
+ * with an `all` scope (issue 42) it also acts on tickets of other sources. A Contact is no User: the `IS NOT NULL`
+ * conditions keep a Contact's ticket from writing a notice without a recipient.
  */
+
+/** The actor columns of a notice: a User, or an Application. */
+function noticeActor(principal: Principal) {
+  return principal.kind === 'user' ? { userId: principal.userId, applicationId: null } : { userId: null, applicationId: principal.applicationId }
+}
 
 /**
  * INSERT ... SELECT, so the recipients are chosen in SQL. D1 batches only accept query builders, not `db.run`.
- * The SELECT gives every column of the table, in order: id, user_id, kind, ticket_number, comment_id, actor_id, data, read_at, created_at.
+ * The SELECT gives every column of the table, in order: id, user_id, kind, ticket_number, comment_id, actor_id, data, read_at, created_at, application_id.
  */
 function insertSelect(db: Db, select: SQL) {
   return db.insert(notification).select(select)
@@ -26,9 +32,10 @@ function insertSelect(db: Db, select: SQL) {
  * It goes to the members of the ticket's own Team (issue 29; at first the Team of its type). The Requester gets no confirmation: a User Requester is the actor,
  * and a Contact has no Inbox (its Application learns of the ticket from the create answer).
  */
-export function noticeTicketCreated(db: Db, actorId: string | null) {
+export function noticeTicketCreated(db: Db, principal: Principal) {
+  const { userId: actorId, applicationId } = noticeActor(principal)
   return insertSelect(db, sql`
-    SELECT NULL, u.id, 'ticket_created', a.ticket_number, NULL, ${actorId}, NULL, NULL, ${Date.now()}
+    SELECT NULL, u.id, 'ticket_created', a.ticket_number, NULL, ${actorId}, NULL, NULL, ${Date.now()}, ${applicationId}
     FROM user u, audit_log a
     JOIN ticket t ON t.number = a.ticket_number
     JOIN ticket_type tt ON tt.id = t.ticket_type_id
@@ -50,18 +57,19 @@ function teamRecipient(teamId: SQL) {
 }
 
 /** For the entries of `applyChange`: a new assignee is told, the new Team is told of a move, and the Requester is told of a new Status. */
-export function noticesForChange(db: Db, actorId: string | null, number: number, entries: ChangeEntry[]) {
+export function noticesForChange(db: Db, principal: Principal, number: number, entries: ChangeEntry[]) {
+  const { userId: actorId, applicationId } = noticeActor(principal)
   const now = Date.now()
   const statements = []
   for (const e of entries) {
     if (e.action === 'assignee_changed' && typeof e.after === 'string' && e.after !== actorId) {
-      statements.push(db.insert(notification).values({ userId: e.after, kind: 'assigned', ticketNumber: number, actorId, createdAt: new Date(now) }))
+      statements.push(db.insert(notification).values({ userId: e.after, kind: 'assigned', ticketNumber: number, actorId, applicationId, createdAt: new Date(now) }))
     }
     if (e.action === 'team_changed') {
       const to = (e.after as { id: number }).id
       statements.push(insertSelect(db, sql`
         SELECT NULL, u.id, 'moved_to_team', t.number, NULL, ${actorId},
-          json_object('team', (SELECT name FROM team WHERE id = ${to})), NULL, ${now}
+          json_object('team', (SELECT name FROM team WHERE id = ${to})), NULL, ${now}, ${applicationId}
         FROM user u, ticket t JOIN ticket_type tt ON tt.id = t.ticket_type_id
         WHERE t.number = ${number} AND u.id IS NOT ${actorId} AND u.deactivated_at IS NULL AND u.role IN ('admin', 'agent')
           AND ${teamRecipient(sql`${to}`)}`))
@@ -69,7 +77,7 @@ export function noticesForChange(db: Db, actorId: string | null, number: number,
     if (e.action === 'status_changed') {
       statements.push(insertSelect(db, sql`
         SELECT NULL, t.requester_id, 'status_changed', t.number, NULL, ${actorId},
-          json_object('status', (SELECT name FROM status WHERE key = ${String(e.after)})), NULL, ${now}
+          json_object('status', (SELECT name FROM status WHERE key = ${String(e.after)})), NULL, ${now}, ${applicationId}
         FROM ticket t WHERE t.number = ${number} AND t.requester_id IS NOT NULL AND t.requester_id IS NOT ${actorId}`))
     }
   }
@@ -93,13 +101,14 @@ function addedParticipants(number: number, staffOnly: boolean) {
  * A Public Comment goes to the Requester and the assignee. An Internal Comment goes to the assignee only. On a
  * Restricted ticket the added Participants get both too (staff only for an Internal Comment).
  */
-export function noticeComment(db: Db, actorId: string | null, number: number, commentId: string, visibility: 'public' | 'internal') {
+export function noticeComment(db: Db, principal: Principal, number: number, commentId: string, visibility: 'public' | 'internal') {
+  const { userId: actorId, applicationId } = noticeActor(principal)
   const kind = visibility === 'internal' ? 'internal_comment' : 'public_comment'
   const byRule = visibility === 'internal'
     ? sql`SELECT assignee_id AS id FROM ticket WHERE number = ${number}`
     : sql`SELECT requester_id AS id FROM ticket WHERE number = ${number} UNION SELECT assignee_id FROM ticket WHERE number = ${number}`
   return insertSelect(db, sql`
-    SELECT NULL, r.id, ${kind}, ${number}, ${commentId}, ${actorId}, NULL, NULL, ${Date.now()}
+    SELECT NULL, r.id, ${kind}, ${number}, ${commentId}, ${actorId}, NULL, NULL, ${Date.now()}, ${applicationId}
     FROM (${byRule} UNION ${addedParticipants(number, visibility === 'internal')}) r
     WHERE r.id IS NOT NULL AND r.id IS NOT ${actorId}`)
 }
@@ -115,7 +124,7 @@ export interface AdminNotice {
 export async function notifyAdmins(db: Db, kind: Extract<NotificationKind, 'webhook_failing' | 'webhook_disabled'>, notice: AdminNotice) {
   const now = Date.now()
   await insertSelect(db, sql`
-    SELECT NULL, id, ${kind}, NULL, NULL, NULL, ${JSON.stringify(notice)}, NULL, ${now} FROM user WHERE role = 'admin' AND deactivated_at IS NULL`)
+    SELECT NULL, id, ${kind}, NULL, NULL, NULL, ${JSON.stringify(notice)}, NULL, ${now}, NULL FROM user WHERE role = 'admin' AND deactivated_at IS NULL`)
 }
 
 // Reading
@@ -205,7 +214,7 @@ export async function listNotices(db: Db, principal: UserPrincipal, options: { u
     commentBody: comment.body,
     actorName: actor.name,
     actorEmail: actor.email,
-    // A notice without an actor on a Contact's ticket came from its Application: it acts only on its own tickets.
+    // The acting Application; older notices name the Contact's Application.
     applicationName: application.name,
   }).from(notification)
     .leftJoin(ticket, eq(ticket.number, notification.ticketNumber))
@@ -213,7 +222,7 @@ export async function listNotices(db: Db, principal: UserPrincipal, options: { u
     .leftJoin(comment, eq(comment.id, notification.commentId))
     .leftJoin(actor, eq(actor.id, notification.actorId))
     .leftJoin(contact, eq(contact.id, ticket.contactId))
-    .leftJoin(application, eq(application.id, contact.applicationId))
+    .leftJoin(application, eq(application.id, sql`coalesce(${notification.applicationId}, ${contact.applicationId})`))
     .where(where).orderBy(desc(notification.id)).limit(limit + 1)
 
   const page = rows.slice(0, limit)

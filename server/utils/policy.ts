@@ -1,5 +1,5 @@
 import { and, eq, isNull, ne, or, sql, type SQL } from 'drizzle-orm'
-import { contact, ticket, ticketApp, ticketParticipant, ticketType, type ApplicationPermission, type StatusCategory, type TicketAppAccess, type TicketVisibility } from '../db/schema'
+import { contact, ticket, ticketApp, ticketParticipant, ticketType, type ApplicationPermission, type StatusCategory, type TicketAppAccess, type TicketScope, type TicketScopes, type TicketVisibility } from '../db/schema'
 import { TICKET_REFERENCE } from '../../shared/ticket-type-rules'
 import type { ApplicationPrincipal, Principal, UserPrincipal } from './tickets'
 
@@ -122,6 +122,28 @@ function missing(permission: ApplicationPermission): Refusal {
   return { status: 403, code: 'FORBIDDEN', message: `This Application does not have the ${permission} permission.` }
 }
 
+const SCOPE_PERMISSION: Record<keyof TicketScopes, ApplicationPermission> = { read: 'tickets:read', update: 'tickets:update', comment: 'comments:create' }
+
+/** Issue 42. `all` counts only with its permission, so a stored scope alone never widens a rule. */
+function scopeOf(principal: ApplicationPrincipal, scope: keyof TicketScopes): TicketScope {
+  return principal.scopes[scope] === 'all' && has(principal, SCOPE_PERMISSION[scope]) ? 'all' : 'own'
+}
+
+/** The Application created the ticket, for its Contact. */
+function isOwn(principal: ApplicationPrincipal, t: PolicyTicket) {
+  return t.applicationId === principal.applicationId
+}
+
+/** An Application is never a Participant, so a Restricted ticket needs `read: all` and the Admin's "Include Restricted tickets". */
+function applicationReads(principal: ApplicationPrincipal, t: PolicyTicket) {
+  const all = scopeOf(principal, 'read') === 'all'
+  if (t.visibility === 'participants') return all && principal.includeRestricted
+  return all || isOwn(principal, t)
+}
+
+/** What `tickets:update` with `update: all` allows on every ticket the Application reads. Requester actions stay its own. */
+const APPLICATION_UPDATES: readonly TicketAction[] = ['change_status', 'change_priority', 'edit_fields']
+
 /** Only a User who works on tickets can own one. */
 export function canBeAssignee(role: string) {
   return isStaffRole(role)
@@ -137,9 +159,8 @@ function canRead(principal: Principal, t: PolicyTicket) {
   if (t.deleted) return false
   // Any other ticket than the token's is "not found" for a Ticket App. The User's own read rule still applies below.
   if (principal.kind === 'user' && principal.ticketApp && principal.ticketApp.ticketNumber !== t.number) return false
-  // An Application sees only the tickets it created (3.11), never a Restricted ticket, and "visible to all" is for
-  // internal Users only.
-  if (principal.kind === 'application') return t.applicationId === principal.applicationId && t.visibility !== 'participants'
+  // "Visible to all" is for internal Users only: an Application reads by its own scope (3.11, issue 42).
+  if (principal.kind === 'application') return applicationReads(principal, t)
   // A Restricted ticket: its Participants and the Admins only, also against other Agents (3.32).
   if (t.visibility === 'participants') return hasAdminRole(principal) || isParticipant(principal, t)
   // "Visible to all" is for internal tickets. A Contact's ticket holds customer data, so only staff see it.
@@ -158,15 +179,18 @@ export function authorize(principal: Principal, action: TicketAction, t: PolicyT
     if (!has(principal, 'tickets:read')) return missing('tickets:read')
     if (action === 'comment' || action === 'comment_internal') return authorizeApplicationComment(principal, t, action === 'comment_internal')
     if (action === 'read') return null
-    // The only other actions are cancel and reopen, for the Contact it acts for, with the User rules below.
-    if (action !== 'cancel' && action !== 'reopen') return forbidden(AGENT_ONLY[action])
+    if (action !== 'cancel' && action !== 'reopen') {
+      return APPLICATION_UPDATES.includes(action) && scopeOf(principal, 'update') === 'all' ? null : forbidden(AGENT_ONLY[action])
+    }
+    // Cancel and reopen are for the Contact it acts for, with the User rules below.
+    if (!isOwn(principal, t)) return forbidden(`An Application can ${action} only the tickets it created.`)
     if (!has(principal, 'tickets:update')) return missing('tickets:update')
   }
   // Everyone who can read a ticket can write a Public Comment (4.18).
   if (action === 'read' || action === 'comment') return null
   // An Application that can read the ticket acts for its Contact, who is the Requester. A Contact's ticket has no
   // User Requester; the null check keeps it from matching.
-  const isRequester = principal.kind === 'application' || (t.requesterId !== null && t.requesterId === principal.userId)
+  const isRequester = principal.kind === 'application' ? isOwn(principal, t) : t.requesterId !== null && t.requesterId === principal.userId
   switch (action) {
     // The Requester edits only while the Status Category is `open` (4.20).
     case 'edit_fields':
@@ -261,12 +285,13 @@ export function canReadInternalComments(principal: Principal): boolean {
 
 /**
  * Null when an Application may add a Public Comment to a ticket: it can read the ticket and has `comments:create`
- * (4.19). An Application can never add an Internal Comment. Issue 06 adds the rules for Users next to this one.
+ * (4.19), and the ticket is its own or its comment scope is `all` (issue 42). Never an Internal Comment.
  */
 export function authorizeApplicationComment(principal: ApplicationPrincipal, t: PolicyTicket, internal: boolean): Refusal | null {
   if (!canRead(principal, t)) return NOT_FOUND
   if (!has(principal, 'comments:create')) return missing('comments:create')
   if (internal) return { status: 403, code: 'FORBIDDEN', message: 'An Application can add only Public Comments.' }
+  if (!isOwn(principal, t) && scopeOf(principal, 'comment') !== 'all') return { status: 403, code: 'FORBIDDEN', message: 'This Application can comment only on the tickets it created.' }
   return null
 }
 
@@ -292,7 +317,11 @@ export function allowedActions(principal: Principal, t: PolicyTicket): TicketAct
 export function readableTickets(principal: Principal): SQL {
   const visible = isNull(ticket.deletedAt)
   const unrestricted = ne(ticketType.visibility, 'participants')
-  if (principal.kind === 'application') return and(visible, eq(contact.applicationId, principal.applicationId), unrestricted)!
+  if (principal.kind === 'application') {
+    // The SQL form of `applicationReads`.
+    const all = scopeOf(principal, 'read') === 'all'
+    return and(visible, all ? undefined : eq(contact.applicationId, principal.applicationId), all && principal.includeRestricted ? undefined : unrestricted)!
+  }
   if (principal.ticketApp) return and(eq(ticket.number, principal.ticketApp.ticketNumber), readableTickets({ kind: 'user', userId: principal.userId, role: principal.role, channel: 'web' }))!
   if (hasAdminRole(principal)) return visible
   const me = principal.userId
@@ -329,8 +358,17 @@ export function authorizeErasure(principal: Principal, contactApplicationId: num
 // Attachments (issue 16). A file is as visible as its ticket (7.1).
 export const NO_ATTACHMENT: Refusal = { status: 404, code: 'NOT_FOUND', message: 'No attachment with this ID.' }
 
-/** Adding a file to a ticket takes the right to read the ticket. An Application can read only its own tickets. */
+/** Adding a file to a ticket takes the right to read the ticket. An Application needs its own ticket or `update: all`. */
 export function authorizeAttach(principal: Principal, t: PolicyTicket): Refusal | null {
+  if (!canRead(principal, t)) return NOT_FOUND
+  if (principal.kind === 'application' && !isOwn(principal, t) && scopeOf(principal, 'update') !== 'all') {
+    return { status: 403, code: 'FORBIDDEN', message: 'This Application can add files only to the tickets it created.' }
+  }
+  return viaApp(principal) ? APP_REFUSED : null
+}
+
+/** The file list of a ticket: the read rule. A Ticket App token has no attachment routes. */
+export function authorizeListAttachments(principal: Principal, t: PolicyTicket): Refusal | null {
   if (!canRead(principal, t)) return NOT_FOUND
   return viaApp(principal) ? APP_REFUSED : null
 }

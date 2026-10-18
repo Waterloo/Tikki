@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { PERMISSIONS, type ApiKey, type ApplicationDetail, type ApplicationSummary, type Permission, type TicketTypeOption } from '~/types/applications'
+import { SCOPE_PERMISSION, type ApiKey, type ApplicationDetail, type ApplicationSummary, type Permission, type TicketScope, type TicketScopes, type TicketTypeOption } from '~/types/applications'
 
 definePageMeta({ roles: ['admin'] })
 
@@ -103,11 +103,58 @@ async function update(body: Record<string, unknown>, done: string) {
   }
 }
 
-function togglePermission(permission: Permission, on: boolean | 'indeterminate') {
+/** The rows of "What it can do". A row with a scope also has the Own / All choice (issue 42). */
+const ACCESS_ROWS: { permission: Permission, scope?: keyof TicketScopes, label: string, own: string, all?: string }[] = [
+  { permission: 'tickets:create', label: 'Create tickets', own: 'For its customers, of the allowed types.' },
+  { permission: 'tickets:read', scope: 'read', label: 'Read tickets', own: 'Only the tickets it created.', all: 'Every ticket that is not deleted.' },
+  { permission: 'tickets:update', scope: 'update', label: 'Update tickets', own: 'Cancel or reopen the tickets it created.', all: 'Also change the Status, Priority and Fields of every ticket it reads.' },
+  { permission: 'comments:create', scope: 'comment', label: 'Add comments', own: 'Public comments on the tickets it created.', all: 'Public comments on every ticket it reads.' },
+]
+const SCOPE_ITEMS = [{ value: 'own', label: 'Own tickets' }, { value: 'all', label: 'All tickets' }]
+
+const WARNINGS: Record<keyof TicketScopes, string> = {
+  read: 'This Application can read every ticket in Tikki, without staff data.',
+  update: 'This Application can change every ticket it reads.',
+  comment: 'This Application can comment on every ticket it reads.',
+}
+const warnings = computed(() => detail.value ? (Object.keys(WARNINGS) as (keyof TicketScopes)[]).filter(k => detail.value!.ticket_scopes[k] === 'all').map(k => WARNINGS[k]) : [])
+const anyAll = computed(() => !!detail.value && Object.values(detail.value.ticket_scopes).includes('all'))
+
+/**
+ * Saves permissions and scopes together, after the server's rules are applied: `all` needs its permission, update or
+ * comment on all tickets needs read on all tickets, and Restricted tickets need one `all`. So no click answers 422.
+ */
+function saveAccess(permissions: Permission[], scopes: TicketScopes, includeRestricted: boolean) {
+  const next = { ...scopes }
+  for (const key of Object.keys(next) as (keyof TicketScopes)[]) {
+    if (!permissions.includes(SCOPE_PERMISSION[key])) next[key] = 'own'
+  }
+  if (next.read === 'own') next.update = next.comment = 'own'
+  const restricted = includeRestricted && Object.values(next).includes('all')
+  update({ permissions, ticket_scopes: next, include_restricted: restricted }, 'Permissions saved')
+}
+
+function togglePermission(permission: Permission, on: boolean) {
   if (!detail.value) return
   const current = detail.value.permissions
-  const next = on === true ? [...current, permission] : current.filter(p => p !== permission)
-  update({ permissions: next }, 'Permissions saved')
+  saveAccess(on ? [...current, permission] : current.filter(p => p !== permission), detail.value.ticket_scopes, detail.value.include_restricted)
+}
+
+function setScope(scope: keyof TicketScopes, value: TicketScope) {
+  if (!detail.value) return
+  const scopes = { ...detail.value.ticket_scopes, [scope]: value }
+  let permissions = detail.value.permissions
+  // Update or comment on all tickets needs read on all tickets.
+  if (value === 'all' && scope !== 'read') {
+    scopes.read = 'all'
+    if (!permissions.includes('tickets:read')) permissions = [...permissions, 'tickets:read']
+  }
+  saveAccess(permissions, scopes, detail.value.include_restricted)
+}
+
+function setRestricted(on: boolean | 'indeterminate') {
+  if (!detail.value) return
+  saveAccess(detail.value.permissions, detail.value.ticket_scopes, on === true)
 }
 
 function setTypes(ids: number[]) {
@@ -201,7 +248,7 @@ onMounted(() => Promise.all([loadList(), loadDetail()]))
   <AppPage id="applications" title="Applications">
     <PageHeader
       title="Applications"
-      subtitle="Your other systems create tickets for their customers with an API key. Each application sees only its own tickets and gets updates through its own webhook."
+      subtitle="Your other systems create tickets for their customers with an API key. Each application sees its own tickets, or all tickets if you allow it, and gets updates through its own webhook."
       :breadcrumb="[{ label: 'Admin' }, { label: 'Applications', to: detail ? '/applications' : undefined }, ...(detail ? [{ label: detail.name }] : [])]"
     >
       <template #actions>
@@ -272,22 +319,60 @@ onMounted(() => Promise.all([loadList(), loadDetail()]))
             <h2 id="access-h" class="text-[15px] font-semibold text-(--ui-text-highlighted)">
               What it can do
             </h2>
-            <div class="grid grid-cols-[repeat(auto-fit,minmax(240px,1fr))] gap-[18px]">
-              <fieldset class="flex flex-col gap-2" :disabled="busy">
-                <legend class="mb-2 text-[13px] text-(--ui-text-muted)">
-                  Permissions
-                </legend>
-                <UCheckbox
-                  v-for="p in PERMISSIONS"
-                  :key="p.value"
-                  :model-value="detail.permissions.includes(p.value)"
-                  :label="p.label"
-                  :description="p.value"
-                  :disabled="busy"
-                  :ui="{ description: 'font-mono text-xs' }"
-                  @update:model-value="togglePermission(p.value, $event)"
-                />
-              </fieldset>
+            <fieldset class="flex flex-col" :disabled="busy">
+              <legend class="mb-1 text-[13px] text-(--ui-text-muted)">
+                Permissions
+              </legend>
+              <div
+                v-for="row in ACCESS_ROWS"
+                :key="row.permission"
+                class="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 py-3 border-t border-(--ui-border-muted) first-of-type:border-t-0"
+              >
+                <div class="flex-[1_1_220px] min-w-0 flex flex-col gap-0.5">
+                  <span :id="`perm-${row.permission}`" class="text-sm font-medium text-(--ui-text-highlighted)">{{ row.label }}</span>
+                  <span class="text-[13px] text-(--ui-text-muted)">
+                    {{ row.scope && detail.ticket_scopes[row.scope] === 'all' ? row.all : row.own }}
+                    <span class="font-mono text-xs">{{ row.permission }}</span>
+                  </span>
+                </div>
+                <div class="flex flex-wrap items-center gap-4">
+                  <URadioGroup
+                    v-if="row.scope"
+                    :model-value="detail.ticket_scopes[row.scope]"
+                    :items="SCOPE_ITEMS"
+                    orientation="horizontal"
+                    size="sm"
+                    :disabled="busy || !detail.permissions.includes(row.permission)"
+                    :aria-label="`${row.label}: which tickets`"
+                    @update:model-value="setScope(row.scope, $event as TicketScope)"
+                  />
+                  <USwitch
+                    :model-value="detail.permissions.includes(row.permission)"
+                    :disabled="busy"
+                    :aria-labelledby="`perm-${row.permission}`"
+                    @update:model-value="togglePermission(row.permission, $event)"
+                  />
+                </div>
+              </div>
+              <UAlert
+                v-for="w in warnings"
+                :key="w"
+                color="warning"
+                variant="subtle"
+                icon="i-lucide-triangle-alert"
+                :title="w"
+                class="mb-2"
+              />
+              <UCheckbox
+                :model-value="detail.include_restricted"
+                :disabled="busy || !anyAll"
+                label="Include Restricted tickets"
+                :description="anyAll ? 'Participants only tickets. Without this, they stay hidden from it.' : 'Choose All tickets for a permission first.'"
+                class="pt-1"
+                @update:model-value="setRestricted($event)"
+              />
+            </fieldset>
+            <div class="grid grid-cols-[repeat(auto-fit,minmax(240px,1fr))] gap-[18px] pt-2 border-t border-(--ui-border-muted)">
               <div class="flex flex-col gap-2">
                 <span class="text-[13px] text-(--ui-text-muted)">Allowed ticket types</span>
                 <div class="flex flex-wrap items-center gap-1.5">
@@ -332,7 +417,12 @@ onMounted(() => Promise.all([loadList(), loadDetail()]))
             </div>
             <p class="flex items-start gap-2 px-3 py-2.5 rounded-[10px] bg-(--ui-bg-elevated) text-[13px] leading-normal text-(--ui-text-toned)">
               <UIcon name="i-lucide-lock" class="size-[15px] shrink-0 mt-0.5" aria-hidden="true" />
-              {{ detail.name }} sees only the {{ detail.ticket_count }} {{ detail.ticket_count === 1 ? 'ticket' : 'tickets' }} it created. It never sees internal comments or tickets from other sources.
+              <template v-if="detail.ticket_scopes.read === 'all'">
+                {{ detail.name }} reads every ticket{{ detail.include_restricted ? '' : ' except Restricted tickets' }}, and created {{ detail.ticket_count }}. It never sees internal comments, assignees, Teams or staff names.
+              </template>
+              <template v-else>
+                {{ detail.name }} sees only the {{ detail.ticket_count }} {{ detail.ticket_count === 1 ? 'ticket' : 'tickets' }} it created. It never sees internal comments or tickets from other sources.
+              </template>
             </p>
           </section>
 

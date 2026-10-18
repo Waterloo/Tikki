@@ -16,6 +16,7 @@ const person = z.object({ id: z.string(), name: z.string(), email: z.string() })
 const requesterOut = z.discriminatedUnion('kind', [
   person.extend({ kind: z.literal('user') }),
   z.object({ kind: z.literal('contact'), id: z.number().int(), external_id: z.string(), name: z.string(), email: z.string() }),
+  z.object({ kind: z.literal('support') }).describe('A person in the organization. An Application never gets their name or email.'),
 ])
 
 const ticketSummaryOut = z.object({
@@ -46,7 +47,7 @@ const ticketDetailOut = ticketSummaryOut.extend({
   comment_count: z.number().int().describe('The comments the caller can see. An Application never sees Internal Comments.'),
   reopened_from: z.object({ number: z.number().int(), ref: z.string() }).nullable(),
   allowed_actions: z.array(z.enum(TICKET_ACTIONS)),
-  restricted: z.boolean().describe('Always false for an Application: it never sees a Restricted ticket.'),
+  restricted: z.boolean().describe('A Restricted ticket (Participants only). An Application sees one only with `read: all` and `include_restricted`.'),
 })
 
 const ticketTypeOut = z.object({
@@ -171,12 +172,18 @@ export function buildOpenApiDocument() {
     info: {
       title: 'Ticketing API',
       version: '1',
-      description: 'Create and read tickets for your Contacts with an API key. An Application sees only the tickets it created, and never Internal Comments.',
+      description: [
+        'Create and read tickets for your Contacts with an API key.',
+        'The Admin gives each permission a scope (the Application settings `ticket_scopes` and `include_restricted`). `own`, the default: only the tickets the Application created. `all`: every ticket that is not deleted, also tickets of Users and of other Applications. `tickets:create` always makes your own tickets.',
+        '`tickets:read` with `all` reads every ticket. `tickets:update` with `own` cancels and reopens your own tickets; with `all` it also changes the Status, Priority and Fields of every ticket you read, and adds files to them. `comments:create` with `all` adds Public Comments to every ticket you read. On a ticket you did not create, you act as the Application itself (`author.kind: application`); on your own ticket, you act for its Contact.',
+        'Restricted tickets (Participants only) stay hidden from every `all` scope unless `include_restricted` is on.',
+        'An Application never sees staff data in any scope: no assignee (only `assigned`), no Team, no Internal Comments, no Ticket App names. People in the organization are `{ kind: "support" }`, as actors and as Requesters. Your webhook gets the Events of every ticket you can read, in the same view.',
+      ].join('\n\n'),
     },
     servers: [{ url: '/' }],
     security: [{ apiKey: [] }],
     tags: [
-      { name: 'Tickets', description: 'Tickets of this Application\'s Contacts.' },
+      { name: 'Tickets', description: 'The tickets of this Application\'s read scope: its own Contacts\' tickets, or all tickets.' },
       { name: 'Ticket Types', description: 'The types this Application may use, and their Fields.' },
       { name: 'Contacts', description: 'The people an Application creates tickets for.' },
     ],
@@ -222,9 +229,10 @@ export function buildOpenApiDocument() {
         get: {
           operationId: 'listTickets',
           tags: ['Tickets'],
-          summary: 'List the tickets of this Application',
-          description: 'Needs `tickets:read`. One page of tickets, in Status order: 50 by default, at most 200 with `limit`. To get all tickets, call again with `cursor` set to `next_cursor` until it is null.',
+          summary: 'List the tickets this Application can read',
+          description: 'Needs `tickets:read`. The tickets of its read scope: its own, or all. One page of tickets, in Status order: 50 by default, at most 200 with `limit`. To get all tickets, call again with `cursor` set to `next_cursor` until it is null.',
           parameters: [
+            { name: 'requester', in: 'query', required: false, schema: { type: 'string', enum: ['me'] }, description: '`me`: only the tickets this Application created.' },
             { name: 'q', in: 'query', required: false, schema: { type: 'string', maxLength: 200 }, description: 'Words that must all be in the title or description, or a Ticket Reference.' },
             { name: 'type', in: 'query', required: false, schema: { type: 'integer' }, description: 'Only this Ticket Type ID.' },
             { name: 'priority', in: 'query', required: false, schema: { type: 'string', enum: [...PRIORITIES] } },
@@ -256,14 +264,14 @@ export function buildOpenApiDocument() {
           operationId: 'getTicket',
           tags: ['Tickets'],
           summary: 'Get one ticket',
-          description: 'Needs `tickets:read`. A ticket of another source answers 404, the same as one that does not exist.',
+          description: 'Needs `tickets:read`. A ticket outside the read scope answers 404, the same as one that does not exist.',
           parameters: [{ name: 'ref', in: 'path', required: true, schema: { type: 'string' }, example: 'PAY-1048', description: 'The Ticket Number, or a Ticket Reference such as PAY-1048.' }],
           responses: {
             200: { description: 'The ticket.', content: json('Ticket', ticketExample) },
             401: unauthorized(),
             429: rateLimited(),
             403: error('The Application is disabled or has no `tickets:read`.'),
-            404: error('No ticket of this Application has this reference.', errorExample('NOT_FOUND', 'No ticket with this reference.')),
+            404: error('No ticket that this Application can read has this reference.', errorExample('NOT_FOUND', 'No ticket with this reference.')),
           },
         },
       },

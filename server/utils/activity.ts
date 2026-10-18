@@ -8,7 +8,7 @@ import { queueNoticeMail } from './notice-mail'
 import type { FieldDef } from './fields'
 import { withEvent } from './outbox'
 import { assertAllowed, authorize, canBeAssignee, canReadInternalComments, NOT_FOUND, PolicyRefusal, type TicketAction } from './policy'
-import { actorId, applyChange, loadFor, pinnedFields, policyFacts, TicketValidationError, type ActorView, type Channel, type ChangeEntry, type DetailRow, type Principal } from './tickets'
+import { applyChange, loadFor, pinnedFields, policyFacts, TicketValidationError, type ActorView, type Channel, type ChangeEntry, type DetailRow, type Principal } from './tickets'
 
 export interface CommentView {
   id: string
@@ -46,14 +46,15 @@ function toTicketApp(r: ActorRow, viewer: Principal): TicketAppRef | null {
 }
 
 /**
- * The row must left join `user` and `application` on its two actor columns; a CHECK sets exactly one. An Application
- * acts only on its own Contact's ticket, so its actions show as that Contact through the Application (no schema
- * change). An Application viewer sees staff as `support`, without name or email.
+ * The row must left join `user` and `application` on its two actor columns; a CHECK sets exactly one. On its own
+ * Contact's ticket an Application acts for that Contact. On another ticket (an `all` scope, issue 42) there is no
+ * Contact, so the actor is the Application itself. An Application viewer sees staff as `support`, without name or email.
  */
 function toActor(r: ActorRow, viewer: Principal, t: DetailRow): ActorView {
   if (r.applicationId !== null) {
-    if (t.contactId === null || t.applicationId !== r.applicationId) throw new Error(`Application ${r.applicationId} acted on ticket ${t.number}, which is not its Contact's ticket.`)
-    return { kind: 'contact', contact: { id: t.contactId, external_id: t.contactExternalId!, name: t.contactName!, email: t.contactEmail! }, application: { id: r.applicationId, name: r.applicationName! } }
+    const application = { id: r.applicationId, name: r.applicationName! }
+    if (t.contactId === null || t.applicationId !== r.applicationId) return { kind: 'application', application }
+    return { kind: 'contact', contact: { id: t.contactId, external_id: t.contactExternalId!, name: t.contactName!, email: t.contactEmail! }, application }
   }
   if (r.userId === null) throw new Error('A row has neither a User nor an Application as its actor.')
   if (viewer.kind === 'application') return { kind: 'support' }
@@ -103,7 +104,7 @@ export async function createComment(db: Db, principal: Principal, number: number
     db.insert(comment).values({ id, ticketNumber: number, ...commentAuthor(principal), channel: principal.channel, ticketAppId: principal.kind === 'user' ? principal.ticketApp?.id ?? null : null, visibility, body: parsed.data.body, createdAt: now }),
     auditEntry(db, principal, { ticketNumber: number, action: 'comment_added', commentId: id }),
     db.update(ticket).set({ updatedAt: now }).where(eq(ticket.number, number)),
-    noticeComment(db, actorId(principal), number, id, visibility),
+    noticeComment(db, principal, number, id, visibility),
   ]))
   queueNoticeMail({ ticket: number })
   return (await getComment(db, principal, number, id))!
@@ -164,10 +165,14 @@ function currentValue(row: DetailRow, action: AuditAction, fieldKey: string | nu
   }
 }
 
+function plain(value: unknown): string {
+  return Array.isArray(value) ? value.join(', ') : typeof value === 'boolean' ? (value ? 'Yes' : 'No') : String(value)
+}
+
 function unmovedOf(e: { action: string, before: string | null }): { key: string, label: string, value: string }[] {
   if (e.action !== 'type_changed' || e.before === null) return []
   const list = (JSON.parse(e.before) as { unmoved?: { key: string, label: string, value: unknown }[] }).unmoved ?? []
-  return list.map(u => ({ key: u.key, label: u.label, value: Array.isArray(u.value) ? u.value.join(', ') : typeof u.value === 'boolean' ? (u.value ? 'Yes' : 'No') : String(u.value) }))
+  return list.map(u => ({ key: u.key, label: u.label, value: plain(u.value) }))
 }
 
 const keyOf = (e: { action: string, fieldKey: string | null }) => `${e.action}:${e.fieldKey ?? ''}`
@@ -227,11 +232,13 @@ export async function listActivity(db: Db, principal: Principal, number: number)
       case 'participant_added':
       case 'participant_removed': return personNames.get(String(value)) ?? 'unknown User'
       case 'team_changed': return (value as { name: string }).name
+      // A `user` Field holds a User ID: an Application learns only that it is set.
+      case 'field_changed': return principal.kind === 'application' && defByKey.get(e.fieldKey!)?.type === 'user' ? 'Support' : plain(value)
       case 'type_changed': {
         const v = value as { type: string, ref: string }
         return `${v.type} (${v.ref})`
       }
-      default: return Array.isArray(value) ? value.join(', ') : typeof value === 'boolean' ? (value ? 'Yes' : 'No') : String(value)
+      default: return plain(value)
     }
   }
 
@@ -252,7 +259,8 @@ export async function listActivity(db: Db, principal: Principal, number: number)
       field: e.fieldKey === null ? null : { key: e.fieldKey, label: defByKey.get(e.fieldKey)?.label ?? e.fieldKey },
       before: show(e, e.before),
       after: show(e, e.after),
-      unmoved: unmovedOf(e),
+      // The left-behind values have no Field type, so an Application gets none of them (a User ID may be one).
+      unmoved: principal.kind === 'application' ? [] : unmovedOf(e),
       erased: (!!action || e.action === 'type_changed' || e.action === 'team_changed') && e.before === null,
       reverts_id: e.revertsId,
       reverted: revertedIds.has(e.id),

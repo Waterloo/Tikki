@@ -151,7 +151,7 @@ const summary = (t: TicketSummary) => ({
 })
 
 const author = (a: CommentView['author']) =>
-  a.kind === 'user' ? name(a) : a.kind === 'contact' ? `${a.contact.name} (Contact · ${a.application.name})` : 'Support'
+  a.kind === 'user' ? name(a) : a.kind === 'contact' ? `${a.contact.name} (Contact · ${a.application.name})` : a.kind === 'application' ? `${a.application.name} (Application)` : 'Support'
 
 const enc = encodeURIComponent
 
