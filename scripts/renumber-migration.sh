@@ -33,8 +33,20 @@ name=${old%.sql}; name=${name#[0-9][0-9][0-9][0-9]_}
 tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
 git show "$branch:migrations/$old" > "$tmp/saved.sql"
 
+on_err() {
+  cat >&2 <<MSG
+renumber-migration: failed. The merge is still in progress and migrations/ may be half changed.
+Recover:
+  git checkout $branch -- migrations/$old   # get the branch SQL back
+  git checkout HEAD -- migrations/meta      # reset the journal and snapshots
+Then fix the cause and run the script again.
+MSG
+}
+trap on_err ERR
+
 # Meta: the target's journal and snapshots win; drizzle-kit adds the new entry.
-for f in $(git diff --name-only --diff-filter=A HEAD "$branch" -- migrations/meta); do
+added=$(git diff --name-only --diff-filter=A HEAD "$branch" -- migrations/meta)
+for f in $added; do
   git rm -q -f --ignore-unmatch -- "$f"; rm -f -- "$f"
 done
 git checkout HEAD -- migrations/meta

@@ -14,7 +14,7 @@
  * Usage notes
  *   pnpm lint:migrations              lint ./migrations
  *   pnpm lint:migrations <dir>        lint another directory (used to try a bad sample)
- * Needs Node 22+ (`node:sqlite`).
+ * Needs Node 22.13+ (`node:sqlite` loads without a flag from that version).
  */
 import { DatabaseSync } from 'node:sqlite'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'

@@ -24,12 +24,20 @@ Read this before you start work next to other agents, and before you write a mig
 
 ## Migrations
 
-- Generate with `pnpm exec drizzle-kit generate --name issue_NN_<topic>`. The lead renumbers at merge. Put seed data in the same file, by hand.
-- drizzle-kit rebuilds a table in three ways that are wrong on D1. Fix each by hand:
-  1. It writes `PRAGMA foreign_keys=OFF`. D1 ignores it. Use `PRAGMA defer_foreign_keys = on`, and rebuild as: copy the rows aside, drop, recreate, insert.
+- Generate with `pnpm exec drizzle-kit generate --name issue_NN_<topic>`. The lead renumbers at merge with `scripts/renumber-migration.sh`. Put seed data in the same file, by hand.
+- drizzle-kit rebuilds a table in ways that are wrong on D1. Fix each by hand:
+  1. It writes `PRAGMA foreign_keys=OFF`. D1 ignores it. Delete it.
+     - If no other table has a foreign key to the rebuilt table (for example `audit_log` in 0013), drizzle's own steps are correct: create `__new_<table>`, copy the rows, drop the old table, rename.
+     - If another table has a foreign key to the rebuilt table, write `PRAGMA defer_foreign_keys = on`. Then copy the rows aside, drop, recreate under the original name, and insert the rows back (see 0018). A plain drop and rename would break the references.
   2. The copy step must name only columns of the old table. A column that is new in the rebuilt table is not in the copy.
   3. Write plain column names inside `CHECK`. The `__new_` prefix breaks after the rename.
-- `pnpm lint:migrations` and `test/worker/migrations.test.ts` check these. Run both. They do not replace reading the SQL.
+- `pnpm lint:migrations` fails on:
+  - any `PRAGMA foreign_keys`,
+  - `__new_` inside a `CHECK`,
+  - an `INSERT ... SELECT` that names a column the source table does not have at that point,
+  - a mismatch between the SQL files and `migrations/meta/_journal.json`.
+- `test/worker/migrations.test.ts` applies the migrations one at a time. After each one it checks that no table lost rows, that `PRAGMA foreign_key_check` is empty, and that `sqlite_sequence` values did not go down.
+- Neither check replaces reading the SQL.
 
 ## Decisions and docs
 

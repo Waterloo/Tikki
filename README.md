@@ -26,7 +26,7 @@ Issue 01 (walking skeleton): email-code sign-in, the Claude connector (OAuth 2.1
 
 ## Local development
 
-Needs Node 22+ and pnpm 10.
+Needs Node 22.13+ and pnpm 10.
 
 ```bash
 pnpm install

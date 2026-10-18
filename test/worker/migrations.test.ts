@@ -1,5 +1,5 @@
 /**
- * Data-keeping test for migrations. Run: `pnpm vitest run test/worker/migrations.test.ts`.
+ * Data-keeping test for migrations. Run: `pnpm test`, or `pnpm exec nuxt build` first and then `pnpm vitest run test/worker/migrations.test.ts`. The worker tests run the built `.output`.
  *
  * The worker project applies all migrations in a setup file, so env.DB is already migrated. This test first
  * drops every table, then applies the migrations one at a time with `applyD1Migrations` (one migration is one

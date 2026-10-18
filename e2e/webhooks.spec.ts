@@ -1,10 +1,10 @@
 import { expect, test } from '@playwright/test'
 import { expectToast } from './toast'
-import { signIn } from './sign-in'
+import { signInAsAdmin } from './sign-in'
 
 test('an Admin adds an endpoint, sees the secret once, and a failed test event shows as Failing', async ({ browser, baseURL }) => {
   const admin = await (await browser.newContext({ storageState: undefined })).newPage()
-  await signIn(admin, 'admin@example.com')
+  await signInAsAdmin(admin)
   await admin.getByRole('link', { name: 'Webhooks' }).first().click()
   await expect(admin.getByRole('heading', { name: 'Webhooks', level: 1 })).toBeVisible()
 
