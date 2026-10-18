@@ -24,6 +24,7 @@ Read this when you review a diff. Check every rule against every changed hunk. M
 
 13. **A changed rule has a test that fails without the change.** Permission and view rules need a test per Principal kind: User and Application.
 14. **E2E toast checks use `expectToast`** (`e2e/toast.ts`). A Nuxt UI toast also writes its text into a hidden live region, so a plain text locator is flaky.
+14a. **E2E role locators for a one-word name use `exact: true`.** `getByRole('button', { name: 'Reopen' })` also matches "Latest change: … reopened this ticket". A count of 0 then passes only in a short race window.
 15. **E2E Admin sign-in uses `signInAsAdmin`** (`e2e/sign-in.ts`). Sign-in codes are limited to 5 an hour for one address. Only `e2e/auth.setup.ts` and `e2e/sign-in.spec.ts` sign the Admin in through the UI.
 
 ## UI
