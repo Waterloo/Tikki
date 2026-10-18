@@ -24,6 +24,7 @@ const ITEMS: readonly NavItem[] = [
   { label: 'Types and fields', icon: 'i-lucide-sliders-horizontal', to: '/admin/types', roles: ['admin'] },
   { label: 'Teams and users', icon: 'i-lucide-users', to: '/people', roles: ['admin'] },
   { label: 'Applications', icon: 'i-lucide-key-round', to: '/applications', roles: ['admin'], prefix: true },
+  { label: 'Webhooks', icon: 'i-lucide-link', to: '/webhooks', roles: ['admin'] },
   { label: 'Settings', icon: 'i-lucide-settings', to: '/settings', roles: ['admin'] },
 ]
 

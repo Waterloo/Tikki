@@ -83,7 +83,7 @@ export interface AdminNotice {
 export async function notifyAdmins(db: Db, kind: Extract<NotificationKind, 'webhook_failing' | 'webhook_disabled'>, notice: AdminNotice) {
   const now = Date.now()
   await insertSelect(db, sql`
-    SELECT NULL, id, ${kind}, NULL, NULL, NULL, ${JSON.stringify(notice)}, NULL, ${now} FROM user WHERE role = 'admin'`)
+    SELECT NULL, id, ${kind}, NULL, NULL, NULL, ${JSON.stringify(notice)}, NULL, ${now} FROM user WHERE role = 'admin' AND deactivated_at IS NULL`)
 }
 
 // Reading

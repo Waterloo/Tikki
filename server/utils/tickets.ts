@@ -11,6 +11,7 @@ import { noticeTicketCreated, noticesForChange } from './notifications'
 import { allowedActions, assertAllowed, assertMayCreate, canBeAssignee, canReadInternalComments, NOT_FOUND, PolicyRefusal, readableTickets, type PolicyTicket, type TicketAction } from './policy'
 import type { StatusView } from './statuses'
 import { loadTicketType } from './ticket-types'
+import { changedKey, withEvent } from './outbox'
 
 export type Channel = 'web' | 'ai' | 'api'
 
@@ -385,13 +386,13 @@ async function checkNewTicket(db: Db, principal: Principal, input: unknown, extr
 /** Creates a ticket with the User as Requester. Throws TicketValidationError or PolicyRefusal. */
 export async function createTicket(db: Db, principal: UserPrincipal, input: unknown): Promise<TicketDetail> {
   const { values, fileIds } = await checkNewTicket(db, principal, input)
-  const [created] = await db.batch([
+  const [created] = await db.batch(withEvent(db, principal, { type: 'ticket.created', ticketNumber: sql`(SELECT max(number) FROM ticket)` }, [
     db.insert(ticket).values({ ...values, requesterId: principal.userId, channel: principal.channel }).returning({ number: ticket.number }),
     // An update keeps last_insert_rowid(), so the uploads join the new ticket; the audit insert must come last.
     ...(fileIds.length ? [claimUploads(db, principal, fileIds)] : []),
     auditEntry(db, principal, { ticketNumber: sql`last_insert_rowid()`, action: 'ticket_created' }),
     noticeTicketCreated(db, principal.userId),
-  ])
+  ])) as [{ number: number }[]]
   return getTicket(db, principal, created[0]!.number)
 }
 
@@ -469,14 +470,16 @@ export async function createApplicationTicket(db: Db, principal: ApplicationPrin
 
   // noticeTicketCreated reads last_insert_rowid() as the audit entry, so it comes right after it. A Contact is no User,
   // so it gets no Inbox notice; the staff of the type's Team do.
+  // The new ticket has the highest number: D1 runs one batch at a time.
+  const newTicketEvent = { type: 'ticket.created', ticketNumber: sql`(SELECT max(number) FROM ticket)` } as const
   const created = (ticketNumber: SQL) => [auditEntry(db, principal, { ticketNumber, action: 'ticket_created' }), noticeTicketCreated(db, null)] as const
 
   try {
     if (!idempotency) {
-      const [, inserted] = await db.batch([upsertContact, insertTicket, ...created(sql`last_insert_rowid()`)])
+      const [, inserted] = await db.batch(withEvent(db, principal, newTicketEvent, [upsertContact, insertTicket, ...created(sql`last_insert_rowid()`)])) as [unknown, { number: number }[]]
       return { ticket: await createdTicket(db, principal, inserted[0]!.number), replayed: false }
     }
-    const [, , inserted] = await db.batch([
+    const [, , inserted] = await db.batch(withEvent(db, principal, newTicketEvent, [
       // An expired key may be used again. This also keeps the table small.
       db.delete(idempotencyKey).where(and(eq(idempotencyKey.applicationId, appId), lte(idempotencyKey.createdAt, new Date(now - IDEMPOTENCY_WINDOW_MS)))),
       upsertContact,
@@ -484,7 +487,7 @@ export async function createApplicationTicket(db: Db, principal: ApplicationPrin
       // The primary key refuses a second row for the key, so a concurrent repeat rolls back its whole batch.
       db.insert(idempotencyKey).values({ applicationId: appId, key: idempotency.key, requestHash: idempotency.requestHash, ticketNumber: sql`last_insert_rowid()`, createdAt: new Date(now) }),
       ...created(sql`(SELECT ${idempotencyKey.ticketNumber} FROM ${idempotencyKey} WHERE ${idempotencyKey.applicationId} = ${appId} AND ${idempotencyKey.key} = ${idempotency.key})`),
-    ])
+    ])) as [unknown, unknown, { number: number }[]]
     return { ticket: await createdTicket(db, principal, inserted[0]!.number), replayed: false }
   } catch (error) {
     if (!idempotency || !isIdempotencyConflict(error)) throw error
@@ -729,9 +732,9 @@ export interface ChangeEntry {
   revertsId?: number
 }
 
-/** Writes the change and one audit entry for each value in one batch. Every change to a ticket goes through here. */
+/** Writes the change, one audit entry for each value, and the outbox Event in one batch. Every change to a ticket goes through here. */
 export async function applyChange(db: Db, principal: Principal, number: number, set: Partial<typeof ticket.$inferInsert>, entries: ChangeEntry[], extra: BatchItem<'sqlite'>[] = [], now = new Date()) {
-  await db.batch([
+  await db.batch(withEvent(db, principal, { type: 'ticket.updated', ticketNumber: number, changed: entries.map(changedKey) }, [
     db.update(ticket).set({ ...set, updatedAt: now }).where(eq(ticket.number, number)),
     ...entries.map(e => auditEntry(db, principal, {
       ticketNumber: number,
@@ -742,5 +745,5 @@ export async function applyChange(db: Db, principal: Principal, number: number, 
     })),
     ...extra,
     ...noticesForChange(db, principal.kind === 'user' ? principal.userId : null, number, entries),
-  ])
+  ]))
 }

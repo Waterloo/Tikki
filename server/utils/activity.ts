@@ -5,6 +5,7 @@ import { auditEntry } from './audit'
 import type { Db } from './auth'
 import { noticeComment } from './notifications'
 import type { FieldDef } from './fields'
+import { withEvent } from './outbox'
 import { assertAllowed, authorize, canBeAssignee, canReadInternalComments, NOT_FOUND, PolicyRefusal, type TicketAction } from './policy'
 import { actorId, applyChange, loadFor, pinnedFields, policyFacts, TicketValidationError, type ActorView, type Channel, type ChangeEntry, type DetailRow, type Principal } from './tickets'
 
@@ -79,12 +80,12 @@ export async function createComment(db: Db, principal: Principal, number: number
 
   const id = crypto.randomUUID()
   const now = new Date()
-  await db.batch([
+  await db.batch(withEvent(db, principal, { type: 'comment.created', ticketNumber: number, comment: { id, visibility } }, [
     db.insert(comment).values({ id, ticketNumber: number, ...commentAuthor(principal), channel: principal.channel, visibility, body: parsed.data.body, createdAt: now }),
     auditEntry(db, principal, { ticketNumber: number, action: 'comment_added', commentId: id }),
     db.update(ticket).set({ updatedAt: now }).where(eq(ticket.number, number)),
     noticeComment(db, actorId(principal), number, id, visibility),
-  ])
+  ]))
   return (await getComment(db, principal, number, id))!
 }
 
